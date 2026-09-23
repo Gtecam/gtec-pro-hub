@@ -2,6 +2,7 @@ import { useMutation, useQuery } from "convex/react";
 import { motion } from "framer-motion";
 import {
   ArrowRight,
+  CalendarCheck,
   CalendarClock,
   FileText,
   IdCard,
@@ -47,7 +48,15 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { useAuth } from "@/hooks/use-auth";
 import { cn } from "@/lib/utils";
-import { CITIES, fcfa, SERVICES, statusMeta } from "@/lib/gtec";
+import {
+  CITIES,
+  CONTRACT_STATUS_META,
+  contractFrequencyLabel,
+  fcfa,
+  formatDate,
+  SERVICES,
+  statusMeta,
+} from "@/lib/gtec";
 
 function serviceIcon(key: string) {
   return SERVICES.find((s) => s.key === key)?.icon ?? Sparkles;
@@ -61,6 +70,7 @@ export default function ClientDashboard() {
   const { user } = useAuth();
   const navigate = useNavigate();
   const requests = useQuery(api.gtec.listMyRequests);
+  const contracts = useQuery(api.gtec.listMyContracts);
   const cancelRequest = useMutation(api.gtec.cancelRequest);
   const updateIdentity = useMutation(api.gtec.updateClientIdentity);
 
@@ -374,6 +384,105 @@ export default function ClientDashboard() {
                 </button>
               ))}
             </div>
+          </section>
+        )}
+
+        {/* Contrats de maintenance */}
+        {contracts !== undefined && contracts.length > 0 && (
+          <section className="flex flex-col gap-4">
+            <h2 className="font-display text-lg font-semibold">
+              Contrats de maintenance
+            </h2>
+            {contracts.map(({ contract, visits }) => {
+              const meta =
+                CONTRACT_STATUS_META[contract.status] ??
+                CONTRACT_STATUS_META.actif;
+              const done = visits.filter((v) => v.status === "faite").length;
+              const next = visits.find(
+                (v) => v.status === "planifiee",
+              );
+              return (
+                <Card key={contract._id} className="card-layered">
+                  <CardHeader className="pb-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <CardTitle className="flex items-center gap-2 text-base">
+                        <ShieldCheck className="size-4 text-primary" />
+                        {contract.title}
+                      </CardTitle>
+                      <span
+                        className={cn(
+                          "rounded-full px-2.5 py-1 text-xs font-medium ring-1 ring-inset",
+                          meta.className,
+                        )}
+                      >
+                        {meta.label}
+                      </span>
+                    </div>
+                    <CardDescription>
+                      {contract.reference} · {contractFrequencyLabel(contract.frequency)} ·{" "}
+                      {fcfa(contract.monthlyAmount)}
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="flex flex-col gap-3 text-sm">
+                    <div className="grid gap-2 sm:grid-cols-3">
+                      <div className="rounded-lg bg-muted/60 px-3 py-2">
+                        <p className="text-xs text-muted-foreground">Prochaine visite</p>
+                        <p className="flex items-center gap-1.5 font-medium">
+                          <CalendarClock className="size-3.5 text-primary" />
+                          {contract.status === "actif" && next
+                            ? formatDate(next.scheduledAt)
+                            : "—"}
+                        </p>
+                      </div>
+                      <div className="rounded-lg bg-muted/60 px-3 py-2">
+                        <p className="text-xs text-muted-foreground">Visites faites</p>
+                        <p className="font-medium">
+                          {done} / {visits.length}
+                        </p>
+                      </div>
+                      <div className="rounded-lg bg-muted/60 px-3 py-2">
+                        <p className="text-xs text-muted-foreground">Jusqu'au</p>
+                        <p className="font-medium">{formatDate(contract.endDate)}</p>
+                      </div>
+                    </div>
+                    {visits.length > 0 && (
+                      <div className="flex flex-col gap-1.5">
+                        {visits
+                          .slice()
+                          .reverse()
+                          .slice(0, 4)
+                          .map((v) => (
+                            <div
+                              key={v._id}
+                              className="flex items-center justify-between gap-3 rounded-lg border border-border/60 px-3 py-2"
+                            >
+                              <span className="flex items-center gap-2">
+                                <CalendarCheck
+                                  className={cn(
+                                    "size-4",
+                                    v.status === "faite" ? "text-primary" : "text-muted-foreground",
+                                  )}
+                                />
+                                <span className="font-medium">
+                                  {formatDate(v.scheduledAt)}
+                                </span>
+                                {v.doneAt && (
+                                  <span className="text-xs text-muted-foreground">
+                                    (réalisée le {formatDate(v.doneAt)})
+                                  </span>
+                                )}
+                              </span>
+                              <span className="max-w-[50%] truncate text-xs text-muted-foreground">
+                                {v.report ?? (v.status === "planifiee" ? "Planifiée" : "Annulée")}
+                              </span>
+                            </div>
+                          ))}
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              );
+            })}
           </section>
         )}
       </div>

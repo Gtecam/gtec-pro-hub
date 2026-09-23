@@ -53,7 +53,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { useAuth } from "@/hooks/use-auth";
 import { cn } from "@/lib/utils";
-import { CITIES, fcfa, formatDateTime, PAYMENT_METHODS } from "@/lib/gtec";
+import { CITIES, fcfa, formatDate, formatDateTime, PAYMENT_METHODS } from "@/lib/gtec";
 import { Navigate } from "react-router";
 
 const PLANS = [
@@ -266,9 +266,11 @@ export default function TechnicianSpace() {
   const requestSubPayment = useMutation(api.gtec.requestSubscriptionPayment);
   const requestMaterial = useMutation(api.gtec.requestMaterial);
   const collectCash = useMutation(api.gtec.technicianCollectCash);
+  const completeVisit = useMutation(api.gtec.completeContractVisit);
 
   const pendingSubPayment = useQuery(api.gtec.myPendingSubscriptionPayment);
   const myPayouts = useQuery(api.gtec.listMyPayouts);
+  const myVisits = useQuery(api.gtec.listMyVisits);
   const myReviews = useQuery(api.gtec.myTechnicianReviews);
   const myRating = useQuery(
     api.gtec.technicianRating,
@@ -433,6 +435,15 @@ export default function TechnicianSpace() {
       setCashFor(null);
       setCashProof(null);
       setCashPhone("");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Erreur");
+    }
+  };
+
+  const handleCompleteVisit = async (visitId: string, report: string) => {
+    try {
+      await completeVisit({ visitId: visitId as never, report });
+      toast.success("Visite clôturée — compte rendu enregistré");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Erreur");
     }
@@ -783,6 +794,15 @@ export default function TechnicianSpace() {
                     {myReviews.length}
                   </span>
                 )}
+              </TabsTrigger>
+              <TabsTrigger value="visites">
+                <ClipboardCheck className="mr-1.5 size-4" /> Visites
+                {myVisits &&
+                  myVisits.some((v) => v.visit.status === "planifiee") && (
+                    <span className="ml-1.5 rounded-full bg-primary px-1.5 py-0.5 text-[10px] font-bold text-primary-foreground">
+                      {myVisits.filter((v) => v.visit.status === "planifiee").length}
+                    </span>
+                  )}
               </TabsTrigger>
             </TabsList>
 
@@ -1336,10 +1356,112 @@ export default function TechnicianSpace() {
                   </div>
                 </div>
               )}            </TabsContent>
+
+            {/* Visites de maintenance */}
+            <TabsContent value="visites" className="mt-4">
+              {myVisits === undefined ? (
+                <div className="h-40 animate-pulse rounded-xl bg-muted" />
+              ) : myVisits.length === 0 ? (
+                <Card className="card-layered">
+                  <CardContent className="flex flex-col items-center gap-3 py-12 text-center">
+                    <ClipboardCheck className="size-8 text-muted-foreground" />
+                    <p className="font-display text-lg font-semibold">
+                      Aucune visite de maintenance
+                    </p>
+                    <p className="max-w-sm text-sm text-muted-foreground">
+                      Les visites des contrats de maintenance qui vous sont
+                      assignées apparaissent ici.
+                    </p>
+                  </CardContent>
+                </Card>
+              ) : (
+                <div className="flex flex-col gap-3">
+                  {myVisits.map(({ visit, contract }) => (
+                    <Card key={visit._id} className="card-layered">
+                      <CardContent className="flex flex-col gap-2.5 py-4">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div className="min-w-0">
+                            <p className="flex items-center gap-2 text-sm font-semibold">
+                              <CalendarClock
+                                className={cn(
+                                  "size-4",
+                                  visit.status === "faite" ? "text-primary" : "text-amber-500",
+                                )}
+                              />
+                              {contract.title}
+                            </p>
+                            <p className="truncate text-xs text-muted-foreground">
+                              {contract.reference} · {contract.city} ·{" "}
+                              {contract.address}
+                            </p>
+                          </div>
+                          <span
+                            className={cn(
+                              "rounded-full px-2.5 py-1 text-xs font-medium ring-1 ring-inset",
+                              visit.status === "faite"
+                                ? "bg-primary/10 text-primary ring-primary/20"
+                                : "bg-amber-500/10 text-amber-700 ring-amber-500/20 dark:text-amber-400",
+                            )}
+                          >
+                            {visit.status === "faite" ? "Faite" : "À faire"}
+                          </span>
+                        </div>
+                        <p className="text-sm">
+                          Visite prévue le{" "}
+                          <span className="font-medium">
+                            {formatDate(visit.scheduledAt)}
+                          </span>
+                        </p>
+                        {visit.status === "faite" ? (
+                          visit.report && (
+                            <p className="rounded-lg bg-muted/60 px-3 py-2 text-xs text-muted-foreground">
+                              {visit.report}
+                            </p>
+                          )
+                        ) : (
+                          <VisitReportForm
+                            disabled={busy}
+                            onSubmit={(report) => handleCompleteVisit(visit._id, report)}
+                          />
+                        )}
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              )}
+            </TabsContent>
           </Tabs>
         )}
       </div>
     </AppShell>
+  );
+}
+
+function VisitReportForm({
+  disabled,
+  onSubmit,
+}: {
+  disabled: boolean;
+  onSubmit: (report: string) => void;
+}) {
+  const [report, setReport] = useState("");
+  return (
+    <div className="flex flex-col gap-2">
+      <Textarea
+        value={report}
+        onChange={(e) => setReport(e.target.value)}
+        placeholder="Compte rendu : équipements contrôlés, anomalie relevée, pièces remplacées, recommandations…"
+        rows={3}
+      />
+      <Button
+        size="sm"
+        className="self-end"
+        disabled={disabled || report.trim().length < 10}
+        onClick={() => onSubmit(report.trim())}
+      >
+        <ClipboardCheck className="mr-1.5 size-4" /> Clôturer la visite
+      </Button>
+    </div>
   );
 }
 

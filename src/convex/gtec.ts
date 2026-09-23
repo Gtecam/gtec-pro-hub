@@ -44,7 +44,11 @@ function pad(n: number) {
 
 async function nextRef(
   ctx: any,
-  table: "serviceRequests" | "quotes" | "invoices",
+  table:
+    | "serviceRequests"
+    | "quotes"
+    | "invoices"
+    | "maintenanceContracts",
   prefix: string,
 ): Promise<string> {
   const all = await ctx.db.query(table).collect();
@@ -1329,7 +1333,7 @@ export const listMaterialRequests = query({
     await requireAdmin(ctx);
     const all = await ctx.db
       .query("materialRequests")
-      .withIndex("by_status", (q) => q.eq("status", "demande"))
+      .filter((q) => q.eq(q.field("status"), "valide")) // (q) => q.eq("status", "demande"))
       .collect();
     return await Promise.all(
       all.map(async (m) => {
@@ -1471,6 +1475,53 @@ export const clientReception = mutation({
 // ---------- rémunérations (paiement techniciens) ----------
 
 /** Rémunérations du technicien connecté. */
+/** Visites de maintenance assignées au technicien connecté (à venir ou récentes). */
+export const listMyVisits = query({
+  args: {},
+  handler: async (ctx) => {
+    const user = await requireUser(ctx);
+    if (user.role === "admin") return [];
+    const visits = await ctx.db
+      .query("contractVisits")
+      .withIndex("by_leader", (q) =>
+        q.eq("assignedTeamLeaderId", user._id),
+      )
+      .collect();
+    const out = [];
+    for (const v of visits.sort((a, b) => a.scheduledAt - b.scheduledAt)) {
+      const contract = await ctx.db.get(v.contractId);
+      if (!contract) continue;
+      out.push({ visit: v, contract });
+    }
+    // Les planifiées à venir d'abord, puis les plus récentes.
+    return out.sort((a, b) => {
+      const doneA = a.visit.status === "faite" ? 1 : 0;
+      const doneB = b.visit.status === "faite" ? 1 : 0;
+      if (doneA !== doneB) return doneA - doneB;
+      return a.visit.scheduledAt - b.visit.scheduledAt;
+    });
+  },
+});
+
+/** Clients (comptes non-admin) pour la création de contrats de maintenance. */
+export const adminListClients = query({
+  args: {},
+  handler: async (ctx) => {
+    await requireAdmin(ctx);
+    const users = await ctx.db.query("users").collect();
+    return users
+      .filter((u) => u.role !== "admin")
+      .map((u) => ({
+        _id: u._id,
+        name: u.name ?? "Client",
+        phone: u.phone,
+        city: u.city,
+        accountType: u.accountType,
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  },
+});
+
 export const listMyPayouts = query({
   args: {},
   handler: async (ctx) => {
@@ -1740,5 +1791,305 @@ export const adminStats = query({
       revenue: validated.reduce((s, p) => s + p.amount, 0),
       invoices: invoices.length,
     };
+  },
+});
+
+// ===================== V2 : contrats de maintenance =====================
+
+const VISIT_STEP_MS: Record<string, number> = {
+  mensuel: 30 * 24 * 3600 * 1000,
+  trimestriel: 90 * 24 * 3600 * 1000,
+  semestriel: 180 * 24 * 3600 * 1000,
+  annuel: 365 * 24 * 3600 * 1000,
+};
+
+/** Crée un contrat de maintenance et planifie toutes ses visites périodiques. */
+export const adminCreateContract = mutation({
+  args: {
+    clientId: v.id("users"),
+    serviceKey: v.string(),
+    title: v.string(),
+    description: v.optional(v.string()),
+    frequency: v.union(
+      v.literal("mensuel"),
+      v.literal("trimestriel"),
+      v.literal("semestriel"),
+      v.literal("annuel"),
+    ),
+    monthlyAmount: v.number(),
+    city: v.string(),
+    address: v.string(),
+    months: v.number(), // durée du contrat en mois
+  },
+  handler: async (ctx, args) => {
+    await requireAdmin(ctx);
+    if (args.monthlyAmount <= 0) throw new Error("Montant invalide.");
+    if (args.months < 1 || args.months > 36)
+      throw new Error("Durée invalide (1 à 36 mois).");
+    const client = await ctx.db.get(args.clientId);
+    if (!client) throw new Error("Client introuvable.");
+
+    const reference = await nextRef(ctx, "maintenanceContracts", "CTR");
+    const now = Date.now();
+    const step = VISIT_STEP_MS[args.frequency] ?? 90 * 24 * 3600 * 1000;
+    const endDate = now + args.months * 30 * 24 * 3600 * 1000;
+
+    const contractId = await ctx.db.insert("maintenanceContracts", {
+      reference,
+      clientId: args.clientId,
+      serviceKey: args.serviceKey,
+      title: args.title,
+      description: args.description,
+      frequency: args.frequency,
+      monthlyAmount: args.monthlyAmount,
+      city: args.city,
+      address: args.address,
+      status: "actif",
+      startDate: now,
+      endDate,
+    });
+
+    // Planification de toutes les visites périodiques jusqu'à la fin du contrat.
+    let visitAt = now + step;
+    let first = true;
+    let count = 0;
+    while (visitAt <= endDate && count < 60) {
+      await ctx.db.insert("contractVisits", {
+        contractId,
+        scheduledAt: visitAt,
+        status: "planifiee",
+      });
+      if (first) {
+        await ctx.db.patch(contractId, { nextVisitAt: visitAt });
+        first = false;
+      }
+      visitAt += step;
+      count++;
+    }
+
+    return contractId;
+  },
+});
+
+/** Change le statut d'un contrat (suspendre, reprendre, résilier). */
+export const adminUpdateContractStatus = mutation({
+  args: {
+    contractId: v.id("maintenanceContracts"),
+    status: v.union(
+      v.literal("actif"),
+      v.literal("suspendu"),
+      v.literal("resilie"),
+    ),
+  },
+  handler: async (ctx, args) => {
+    await requireAdmin(ctx);
+    const contract = await ctx.db.get(args.contractId);
+    if (!contract) throw new Error("Contrat introuvable.");
+    if (contract.status === "expire")
+      throw new Error("Ce contrat est expiré.");
+    await ctx.db.patch(args.contractId, { status: args.status });
+  },
+});
+
+/** Planifie une visite supplémentaire (intermédiaire ou de rattrapage). */
+export const adminScheduleContractVisit = mutation({
+  args: {
+    contractId: v.id("maintenanceContracts"),
+    scheduledAt: v.number(),
+  },
+  handler: async (ctx, args) => {
+    await requireAdmin(ctx);
+    const contract = await ctx.db.get(args.contractId);
+    if (!contract) throw new Error("Contrat introuvable.");
+    if (contract.status !== "actif")
+      throw new Error("Le contrat doit être actif pour planifier une visite.");
+    if (args.scheduledAt < Date.now() - 24 * 3600 * 1000)
+      throw new Error("La date de visite doit être future.");
+    await ctx.db.insert("contractVisits", {
+      contractId: args.contractId,
+      scheduledAt: args.scheduledAt,
+      status: "planifiee",
+    });
+    const next = Math.min(
+      contract.nextVisitAt ?? Infinity,
+      args.scheduledAt,
+    );
+    await ctx.db.patch(args.contractId, {
+      nextVisitAt: Number.isFinite(next) ? next : undefined,
+    });
+  },
+});
+
+/** Le chef d'équipe (ou l'admin) clôture une visite avec son compte rendu. */
+export const completeContractVisit = mutation({
+  args: {
+    visitId: v.id("contractVisits"),
+    report: v.string(),
+    teamLeaderId: v.optional(v.id("users")),
+  },
+  handler: async (ctx, args) => {
+    const user = await requireUser(ctx);
+    const visit = await ctx.db.get(args.visitId);
+    if (!visit) throw new Error("Visite introuvable.");
+    if (visit.status === "faite")
+      throw new Error("Cette visite est déjà clôturée.");
+    if (args.report.trim().length < 10)
+      throw new Error("Compte rendu trop court (10 caractères min.).");
+    if (user.role !== "admin") {
+      if (!visit.assignedTeamLeaderId || visit.assignedTeamLeaderId !== user._id)
+        throw new Error("Seul le chef d'équipe assigné peut clôturer cette visite.");
+    }
+
+    const now = Date.now();
+    await ctx.db.patch(args.visitId, {
+      doneAt: now,
+      report: args.report.trim(),
+      status: "faite",
+      assignedTeamLeaderId:
+        visit.assignedTeamLeaderId ?? args.teamLeaderId ?? undefined,
+    });
+
+    // Prochaine visite planifiée restante.
+    const remaining = await ctx.db
+      .query("contractVisits")
+      .withIndex("by_contract", (q) =>
+        q.eq("contractId", visit.contractId),
+      )
+      .collect();
+    const nextPlanned = remaining
+      .filter((v) => v.status === "planifiee")
+      .sort((a, b) => a.scheduledAt - b.scheduledAt)[0];
+    await ctx.db.patch(visit.contractId, {
+      nextVisitAt: nextPlanned?.scheduledAt,
+    });
+  },
+});
+
+/** Affecte un chef d'équipe à une visite de maintenance. */
+export const adminAssignVisit = mutation({
+  args: {
+    visitId: v.id("contractVisits"),
+    teamLeaderId: v.id("users"),
+  },
+  handler: async (ctx, args) => {
+    await requireAdmin(ctx);
+    const visit = await ctx.db.get(args.visitId);
+    if (!visit) throw new Error("Visite introuvable.");
+    if (visit.status !== "planifiee")
+      throw new Error("Cette visite n'est plus planifiable.");
+    await ctx.db.patch(args.visitId, {
+      assignedTeamLeaderId: args.teamLeaderId,
+    });
+  },
+});
+
+/** Contrats du client connecté, avec leurs visites. */
+export const listMyContracts = query({
+  args: {},
+  handler: async (ctx) => {
+    const user = await requireUser(ctx);
+    const contracts = await ctx.db
+      .query("maintenanceContracts")
+      .withIndex("by_client", (q) => q.eq("clientId", user._id))
+      .collect();
+    const now = Date.now();
+    const out = [];
+    for (const contract of contracts.sort(
+      (a, b) => b.startDate - a.startDate,
+    )) {
+      // Expiration au fil de l'eau.
+      if (contract.status === "actif" && contract.endDate < now) {
+        contract.status = "expire";
+      }
+      const visits = await ctx.db
+        .query("contractVisits")
+        .withIndex("by_contract", (q) => q.eq("contractId", contract._id))
+        .collect();
+      out.push({
+        contract,
+        visits: visits.sort((a, b) => a.scheduledAt - b.scheduledAt),
+      });
+    }
+    return out;
+  },
+});
+
+/** Tous les contrats (console admin), avec nom du client et visites. */
+export const adminListContracts = query({
+  args: {},
+  handler: async (ctx) => {
+    await requireAdmin(ctx);
+    const contracts = await ctx.db
+      .query("maintenanceContracts")
+      .collect();
+    const now = Date.now();
+    const out = [];
+    for (const contract of contracts.sort(
+      (a, b) => b.startDate - a.startDate,
+    )) {
+      if (contract.status === "actif" && contract.endDate < now) {
+        contract.status = "expire";
+      }
+      const client = await ctx.db.get(contract.clientId);
+      const visits = await ctx.db
+        .query("contractVisits")
+        .withIndex("by_contract", (q) => q.eq("contractId", contract._id))
+        .collect();
+      out.push({
+        contract,
+        clientName: client?.name ?? "Client supprimé",
+        clientPhone: client?.phone,
+        visits: visits.sort((a, b) => a.scheduledAt - b.scheduledAt),
+      });
+    }
+    return out;
+  },
+});
+
+/** Revenus mensuels validés (6 derniers mois) + répartition par service. */
+export const adminRevenueSeries = query({
+  args: {},
+  handler: async (ctx) => {
+    await requireAdmin(ctx);
+    const payments = await ctx.db
+      .query("payments")
+      .filter((q) => q.eq(q.field("status"), "valide"))
+      .collect();
+    const requests = await ctx.db.query("serviceRequests").collect();
+
+    // 6 derniers mois (mois courant inclus).
+    const months: { key: string; label: string; revenue: number; count: number }[] = [];
+    const base = new Date();
+    base.setDate(1);
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date(base.getFullYear(), base.getMonth() - i, 1);
+      months.push({
+        key: `${d.getFullYear()}-${d.getMonth()}`,
+        label: d.toLocaleDateString("fr-FR", { month: "short" }),
+        revenue: 0,
+        count: 0,
+      });
+    }
+    const monthIndex = new Map(months.map((m, i) => [m.key, i]));
+    for (const p of payments) {
+      const d = new Date(p._creationTime);
+      const idx = monthIndex.get(`${d.getFullYear()}-${d.getMonth()}`);
+      if (idx !== undefined) {
+        months[idx].revenue += p.amount;
+        months[idx].count += 1;
+      }
+    }
+
+    // Répartition des demandes par pôle de service.
+    const byService = new Map<string, number>();
+    for (const r of requests) {
+      byService.set(r.serviceKey, (byService.get(r.serviceKey) ?? 0) + 1);
+    }
+    const services = [...byService.entries()]
+      .map(([key, count]) => ({ key, count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 6);
+
+    return { months, services };
   },
 });

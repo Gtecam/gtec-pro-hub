@@ -206,6 +206,58 @@ const schema = defineSchema(
       .index("by_request", ["requestId"])
       .index("by_tech", ["techUserId"]),
 
+    // ===================== V2 : contrats de maintenance =====================
+
+    /**
+     * Contrat de maintenance préventive — visites périodiques planifiées
+     * (ex. : entretien clim 4 fois/an, contrôle électrique semestriel).
+     */
+    maintenanceContracts: defineTable({
+      reference: v.string(), // CTR-0001
+      clientId: v.id("users"),
+      serviceKey: v.string(), // pôle couvert par le contrat
+      title: v.string(),
+      description: v.optional(v.string()),
+      /** Fréquence des visites. */
+      frequency: v.union(
+        v.literal("mensuel"),
+        v.literal("trimestriel"),
+        v.literal("semestriel"),
+        v.literal("annuel"),
+      ),
+      /** Montant annuel ou par visite, en FCFA. */
+      monthlyAmount: v.number(),
+      city: v.string(),
+      address: v.string(),
+      status: v.union(
+        v.literal("actif"),
+        v.literal("suspendu"),
+        v.literal("expire"),
+        v.literal("resilie"),
+      ),
+      startDate: v.number(),
+      endDate: v.number(),
+      /** Dernière / prochaine visite planifiée. */
+      nextVisitAt: v.optional(v.number()),
+    })
+      .index("by_client", ["clientId"])
+      .index("by_status", ["status"]),
+
+    /** Visite de maintenance réalisée ou planifiée dans un contrat. */
+    contractVisits: defineTable({
+      contractId: v.id("maintenanceContracts"),
+      scheduledAt: v.number(),
+      doneAt: v.optional(v.number()),
+      assignedTeamLeaderId: v.optional(v.id("users")),
+      report: v.optional(v.string()),
+      status: v.union(
+        v.literal("planifiee"),
+        v.literal("faite"),
+        v.literal("annulee"),
+      ),
+    }).index("by_contract", ["contractId"])
+      .index("by_leader", ["assignedTeamLeaderId"]),
+
     // ---- Espace technicien (V1.1) ----
 
     /** Profil de candidature technicien — un par utilisateur. */

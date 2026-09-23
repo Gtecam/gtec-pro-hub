@@ -282,3 +282,58 @@ export function payoutFor(
   const amount = Math.round((teamPot * weight) / (totalWeights || 1));
   return { amount, sharePercent: TEAM_SHARE_PERCENT };
 }
+
+// ---------- contrats de maintenance préventive (V2) ----------
+
+export const CONTRACT_FREQUENCIES = [
+  { key: "mensuel", label: "Mensuel", days: 30 },
+  { key: "trimestriel", label: "Trimestriel", days: 90 },
+  { key: "semestriel", label: "Semestriel", days: 180 },
+  { key: "annuel", label: "Annuel", days: 365 },
+] as const;
+
+export type ContractFrequency = (typeof CONTRACT_FREQUENCIES)[number]["key"];
+
+export function contractFrequencyLabel(key: string): string {
+  return CONTRACT_FREQUENCIES.find((f) => f.key === key)?.label ?? key;
+}
+
+export const CONTRACT_STATUS_META: Record<
+  string,
+  { label: string; className: string }
+> = {
+  actif: {
+    label: "Actif",
+    className: "bg-emerald-100 text-emerald-700 ring-emerald-600/20 dark:bg-emerald-950/50 dark:text-emerald-300",
+  },
+  suspendu: {
+    label: "Suspendu",
+    className: "bg-amber-100 text-amber-700 ring-amber-600/20 dark:bg-amber-950/50 dark:text-amber-300",
+  },
+  expire: {
+    label: "Expiré",
+    className: "bg-muted text-muted-foreground ring-border",
+  },
+  resilie: {
+    label: "Résilié",
+    className: "bg-red-100 text-red-700 ring-red-600/20 dark:bg-red-950/50 dark:text-red-300",
+  },
+};
+
+/**
+ * Calcule la date de la prochaine visite périodique :
+ * à partir de la dernière visite faite (ou de la date de début du
+ * contrat), on ajoute l'intervalle de la fréquence jusqu'à dépasser
+ * la date de référence.
+ */
+export function nextVisitAfter(
+  frequency: ContractFrequency,
+  lastVisitAt: number,
+): number {
+  const days = CONTRACT_FREQUENCIES.find((f) => f.key === frequency)?.days ?? 90;
+  const step = days * 24 * 3600 * 1000;
+  const now = Date.now();
+  let next = lastVisitAt + step;
+  while (next < now) next += step;
+  return next;
+}

@@ -3,11 +3,13 @@ import { motion } from "framer-motion";
 import {
   BadgeCheck,
   Banknote,
+  BarChart3,
   CalendarClock,
   CheckCircle2,
   ChevronDown,
   ClipboardCheck,
   Crown,
+  FileSignature,
   FileText,
   ImagePlus,
   Lightbulb,
@@ -61,7 +63,16 @@ import { Textarea } from "@/components/ui/textarea";
 import type { Doc, Id } from "@/convex/_generated/dataModel";
 import { useAuth } from "@/hooks/use-auth";
 import { cn } from "@/lib/utils";
-import { fcfa, formatDateTime, suggestCrew } from "@/lib/gtec";
+import { CITIES, fcfa, formatDate, formatDateTime, suggestCrew, SERVICES, CONTRACT_STATUS_META, contractFrequencyLabel } from "@/lib/gtec";
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  ResponsiveContainer,
+  Tooltip as ReTooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
 
 // ---------- constructeur de devis ----------
 
@@ -759,6 +770,9 @@ export default function AdminConsole() {
 
   const subPayments = useQuery(api.gtec.adminPendingSubscriptionPayments);
   const payouts = useQuery(api.gtec.adminListPayouts);
+  const contracts = useQuery(api.gtec.adminListContracts);
+  const clients = useQuery(api.gtec.adminListClients);
+  const revenue = useQuery(api.gtec.adminRevenueSeries);
 
   const claimAdmin = useMutation(api.gtec.claimAdmin);
   const validatePayment = useMutation(api.gtec.adminValidatePayment);
@@ -770,6 +784,10 @@ export default function AdminConsole() {
   const createTech = useMutation(api.gtec.adminCreateTechnician);
   const reviewTechnician = useMutation(api.gtec.adminReviewTechnician);
   const reviewMaterial = useMutation(api.gtec.adminReviewMaterial);
+  const createContract = useMutation(api.gtec.adminCreateContract);
+  const updateContractStatus = useMutation(api.gtec.adminUpdateContractStatus);
+  const scheduleVisit = useMutation(api.gtec.adminScheduleContractVisit);
+  const assignVisit = useMutation(api.gtec.adminAssignVisit);
 
   const applications = useQuery(api.gtec.adminListApplications);
   const materials = useQuery(api.gtec.listMaterialRequests);
@@ -781,6 +799,15 @@ export default function AdminConsole() {
   const [techPhone, setTechPhone] = useState("");
   const [busy, setBusy] = useState(false);
   const [proofZoom, setProofZoom] = useState<string | null>(null);
+  const [showContractForm, setShowContractForm] = useState(false);
+  const [ctrClient, setCtrClient] = useState("");
+  const [ctrService, setCtrService] = useState("solaire");
+  const [ctrTitle, setCtrTitle] = useState("");
+  const [ctrFrequency, setCtrFrequency] = useState("trimestriel");
+  const [ctrAmount, setCtrAmount] = useState("50000");
+  const [ctrCity, setCtrCity] = useState("Douala");
+  const [ctrAddress, setCtrAddress] = useState("");
+  const [ctrMonths, setCtrMonths] = useState("12");
 
   const pendingSubs = subPayments ?? [];
   const pendingPayouts = (payouts ?? []).filter((p) => p.payout.status === "dû");
@@ -941,6 +968,12 @@ export default function AdminConsole() {
                   {materials?.length}
                 </span>
               )}
+            </TabsTrigger>
+            <TabsTrigger value="contrats">
+              <FileSignature className="mr-1.5 size-4" /> Contrats
+            </TabsTrigger>
+            <TabsTrigger value="analytics">
+              <BarChart3 className="mr-1.5 size-4" /> Analytics
             </TabsTrigger>
           </TabsList>
 
@@ -1184,6 +1217,471 @@ export default function AdminConsole() {
                     </CardContent>
                   </Card>
                 ))}
+              </div>
+            )}
+          </TabsContent>
+
+          {/* Contrats de maintenance */}
+          <TabsContent value="contrats" className="mt-4">
+            <div className="mb-4 flex justify-end">
+              <Button size="sm" onClick={() => setShowContractForm((v) => !v)}>
+                <Plus className="mr-1.5 size-4" /> Nouveau contrat
+              </Button>
+            </div>
+            {showContractForm && (
+              <Card className="card-layered mb-4">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm">Créer un contrat de maintenance</CardTitle>
+                  <CardDescription>
+                    Toutes les visites périodiques sont planifiées automatiquement
+                    selon la fréquence choisie.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="grid gap-3 sm:grid-cols-2">
+                  <div className="flex flex-col gap-1.5">
+                    <Label className="text-xs">Client</Label>
+                    <Select value={ctrClient} onValueChange={setCtrClient}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Choisir un client" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {(clients ?? []).map((c) => (
+                          <SelectItem key={c._id} value={c._id}>
+                            {c.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="flex flex-col gap-1.5">
+                    <Label className="text-xs">Pôle couvert</Label>
+                    <Select value={ctrService} onValueChange={setCtrService}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {SERVICES.map((s) => (
+                          <SelectItem key={s.key} value={s.key}>
+                            {s.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="flex flex-col gap-1.5 sm:col-span-2">
+                    <Label className="text-xs">Objet du contrat</Label>
+                    <Input
+                      value={ctrTitle}
+                      onChange={(e) => setCtrTitle(e.target.value)}
+                      placeholder="Ex. : Entretien préventif climatisation — siège"
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1.5">
+                    <Label className="text-xs">Fréquence</Label>
+                    <Select value={ctrFrequency} onValueChange={setCtrFrequency}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="mensuel">Mensuel</SelectItem>
+                        <SelectItem value="trimestriel">Trimestriel</SelectItem>
+                        <SelectItem value="semestriel">Semestriel</SelectItem>
+                        <SelectItem value="annuel">Annuel</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="flex flex-col gap-1.5">
+                    <Label className="text-xs">Montant par visite (FCFA)</Label>
+                    <Input
+                      type="number"
+                      min={0}
+                      value={ctrAmount}
+                      onChange={(e) => setCtrAmount(e.target.value)}
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1.5">
+                    <Label className="text-xs">Ville</Label>
+                    <Select value={ctrCity} onValueChange={setCtrCity}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {CITIES.map((c) => (
+                          <SelectItem key={c} value={c}>
+                            {c}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="flex flex-col gap-1.5">
+                    <Label className="text-xs">Adresse d'intervention</Label>
+                    <Input
+                      value={ctrAddress}
+                      onChange={(e) => setCtrAddress(e.target.value)}
+                      placeholder="Quartier, rue, repère"
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1.5">
+                    <Label className="text-xs">Durée (mois)</Label>
+                    <Input
+                      type="number"
+                      min={1}
+                      max={36}
+                      value={ctrMonths}
+                      onChange={(e) => setCtrMonths(e.target.value)}
+                    />
+                  </div>
+                  <div className="flex items-end gap-2 sm:col-span-2">
+                    <Button
+                      className="halo-amber"
+                      disabled={
+                        busy ||
+                        !ctrClient ||
+                        !ctrTitle.trim() ||
+                        !ctrAddress.trim() ||
+                        Number(ctrAmount) <= 0
+                      }
+                      onClick={() =>
+                        run(async () => {
+                          await createContract({
+                            clientId: ctrClient as never,
+                            serviceKey: ctrService,
+                            title: ctrTitle.trim(),
+                            frequency: ctrFrequency as
+                              | "mensuel"
+                              | "trimestriel"
+                              | "semestriel"
+                              | "annuel",
+                            monthlyAmount: Number(ctrAmount),
+                            city: ctrCity,
+                            address: ctrAddress.trim(),
+                            months: Number(ctrMonths) || 12,
+                          });
+                          setShowContractForm(false);
+                          setCtrTitle("");
+                          setCtrAddress("");
+                        }, "Contrat créé — visites planifiées")
+                      }
+                    >
+                      <FileSignature className="mr-1.5 size-4" /> Créer le contrat
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+            {contracts === undefined ? (
+              <div className="h-40 animate-pulse rounded-xl bg-muted" />
+            ) : contracts.length === 0 ? (
+              <Card className="card-layered">
+                <CardContent className="py-10 text-center text-sm text-muted-foreground">
+                  Aucun contrat de maintenance. Créez-en un pour un client
+                  entreprise ou particulier.
+                </CardContent>
+              </Card>
+            ) : (
+              <div className="flex flex-col gap-3">
+                {contracts.map(({ contract, clientName, clientPhone, visits }) => {
+                  const meta =
+                    CONTRACT_STATUS_META[contract.status] ??
+                    CONTRACT_STATUS_META.actif;
+                  const nextVisit = visits.find((v) => v.status === "planifiee");
+                  return (
+                    <Card key={contract._id} className="card-layered">
+                      <CardContent className="flex flex-col gap-3 py-4">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div className="min-w-0">
+                            <p className="flex items-center gap-2 text-sm font-semibold">
+                              <FileSignature className="size-4 text-primary" />
+                              {contract.title}
+                            </p>
+                            <p className="truncate text-xs text-muted-foreground">
+                              {contract.reference} · {clientName}
+                              {clientPhone ? ` · ${clientPhone}` : ""} ·{" "}
+                              {contract.city}
+                            </p>
+                          </div>
+                          <span
+                            className={cn(
+                              "rounded-full px-2.5 py-1 text-xs font-medium ring-1 ring-inset",
+                              meta.className,
+                            )}
+                          >
+                            {meta.label}
+                          </span>
+                        </div>
+                        <div className="grid gap-2 text-xs sm:grid-cols-4">
+                          <div className="rounded-lg bg-muted/60 px-3 py-2">
+                            <p className="text-muted-foreground">Pôle</p>
+                            <p className="font-medium">
+                              {SERVICES.find((s) => s.key === contract.serviceKey)?.label ??
+                                contract.serviceKey}
+                            </p>
+                          </div>
+                          <div className="rounded-lg bg-muted/60 px-3 py-2">
+                            <p className="text-muted-foreground">Périodicité</p>
+                            <p className="font-medium">
+                              {contractFrequencyLabel(contract.frequency)} ·{" "}
+                              {fcfa(contract.monthlyAmount)}
+                            </p>
+                          </div>
+                          <div className="rounded-lg bg-muted/60 px-3 py-2">
+                            <p className="text-muted-foreground">Prochaine visite</p>
+                            <p className="font-medium">
+                              {nextVisit ? formatDate(nextVisit.scheduledAt) : "—"}
+                            </p>
+                          </div>
+                          <div className="rounded-lg bg-muted/60 px-3 py-2">
+                            <p className="text-muted-foreground">Fin</p>
+                            <p className="font-medium">{formatDate(contract.endDate)}</p>
+                          </div>
+                        </div>
+                        {visits.length > 0 && (
+                          <div className="flex flex-col gap-1">
+                            {visits
+                              .slice()
+                              .reverse()
+                              .slice(0, 5)
+                              .map((v) => (
+                                <div
+                                  key={v._id}
+                                  className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border/60 px-3 py-1.5 text-xs"
+                                >
+                                  <span className="flex items-center gap-2">
+                                    <CalendarClock
+                                      className={cn(
+                                        "size-3.5",
+                                        v.status === "faite"
+                                          ? "text-primary"
+                                          : v.status === "planifiee"
+                                            ? "text-muted-foreground"
+                                            : "text-destructive",
+                                      )}
+                                    />
+                                    <span className="font-medium">
+                                      {formatDate(v.scheduledAt)}
+                                    </span>
+                                    <span className="text-muted-foreground">
+                                      {v.status === "faite"
+                                        ? "Faite"
+                                        : v.status === "planifiee"
+                                          ? "Planifiée"
+                                          : "Annulée"}
+                                    </span>
+                                  </span>
+                                  {v.status === "faite" && v.report ? (
+                                    <span className="max-w-[55%] truncate text-muted-foreground">
+                                      {v.report}
+                                    </span>
+                                  ) : v.status === "planifiee" ? (
+                                    <div className="flex items-center gap-1.5">
+                                      <Select
+                                        value={v.assignedTeamLeaderId ?? ""}
+                                        onValueChange={(val) =>
+                                          val &&
+                                          run(
+                                            () =>
+                                              assignVisit({
+                                                visitId: v._id as never,
+                                                teamLeaderId: val as never,
+                                              }),
+                                            "Chef d'équipe assigné",
+                                          )
+                                        }
+                                      >
+                                        <SelectTrigger className="h-7 w-40 text-xs">
+                                          <SelectValue placeholder="Assigner chef d'équipe" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                          {techList.map((t) => (
+                                            <SelectItem key={t._id} value={t._id}>
+                                              {t.name}
+                                            </SelectItem>
+                                          ))}
+                                        </SelectContent>
+                                      </Select>
+                                      <Button
+                                        size="sm"
+                                        variant="outline"
+                                        className="h-7 px-2 text-xs"
+                                        disabled={busy}
+                                        onClick={() => {
+                                          const dateStr = window.prompt(
+                                            "Replanifier la visite (AAAA-MM-JJ) :",
+                                            new Date(v.scheduledAt)
+                                              .toISOString()
+                                              .slice(0, 10),
+                                          );
+                                          if (!dateStr) return;
+                                          const ts = new Date(dateStr).getTime();
+                                          if (Number.isNaN(ts)) {
+                                            toast.error("Date invalide");
+                                            return;
+                                          }
+                                          void run(
+                                            () =>
+                                              scheduleVisit({
+                                                contractId: contract._id as never,
+                                                scheduledAt: ts,
+                                              }),
+                                            "Visite ajoutée",
+                                          );
+                                        }}
+                                      >
+                                        + Visite
+                                      </Button>
+                                    </div>
+                                  ) : null}
+                                </div>
+                              ))}
+                          </div>
+                        )}
+                        {contract.status === "actif" && (
+                          <div className="flex justify-end gap-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              disabled={busy}
+                              onClick={() =>
+                                run(
+                                  () =>
+                                    updateContractStatus({
+                                      contractId: contract._id as never,
+                                      status: "suspendu",
+                                    }),
+                                  "Contrat suspendu",
+                                )
+                              }
+                            >
+                              Suspendre
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="text-destructive"
+                              disabled={busy}
+                              onClick={() =>
+                                run(
+                                  () =>
+                                    updateContractStatus({
+                                      contractId: contract._id as never,
+                                      status: "resilie",
+                                    }),
+                                  "Contrat résilié",
+                                )
+                              }
+                            >
+                              Résilier
+                            </Button>
+                          </div>
+                        )}
+                        {contract.status === "suspendu" && (
+                          <div className="flex justify-end">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              disabled={busy}
+                              onClick={() =>
+                                run(
+                                  () =>
+                                    updateContractStatus({
+                                      contractId: contract._id as never,
+                                      status: "actif",
+                                    }),
+                                  "Contrat réactivé",
+                                )
+                              }
+                            >
+                              Réactiver
+                            </Button>
+                          </div>
+                        )}
+                      </CardContent>
+                    </Card>
+                  );
+                })}
+              </div>
+            )}
+          </TabsContent>
+
+          {/* Analytics */}
+          <TabsContent value="analytics" className="mt-4">
+            {revenue === undefined ? (
+              <div className="h-64 animate-pulse rounded-xl bg-muted" />
+            ) : (
+              <div className="flex flex-col gap-4">
+                <Card className="card-layered">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm">
+                      Encaissements validés — 6 derniers mois
+                    </CardTitle>
+                    <CardDescription>
+                      Montants cumulés par mois (tous moyens de paiement).
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="h-64 w-full">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={revenue.months}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="currentColor" opacity={0.15} />
+                          <XAxis dataKey="label" fontSize={12} stroke="currentColor" opacity={0.7} />
+                          <YAxis
+                            fontSize={12}
+                            stroke="currentColor"
+                            opacity={0.7}
+                            tickFormatter={(v: number) => `${Math.round(v / 1000)}k`}
+                          />
+                          <ReTooltip
+                            formatter={(v: number | string) => [fcfa(Number(v)), "Encaissé"]}
+                            contentStyle={{
+                              borderRadius: 12,
+                              border: "1px solid rgba(0,0,0,0.1)",
+                              fontSize: 12,
+                            }}
+                          />
+                          <Bar dataKey="revenue" fill="var(--primary)" radius={[6, 6, 0, 0]} />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </CardContent>
+                </Card>
+                <Card className="card-layered">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm">Services les plus demandés</CardTitle>
+                    <CardDescription>Répartition des demandes par pôle.</CardDescription>
+                  </CardHeader>
+                  <CardContent className="flex flex-col gap-2">
+                    {revenue.services.length === 0 ? (
+                      <p className="py-4 text-center text-sm text-muted-foreground">
+                        Aucune demande enregistrée.
+                      </p>
+                    ) : (
+                      revenue.services.map((s) => {
+                        const total =
+                          revenue.services.reduce((acc, x) => acc + x.count, 0) || 1;
+                        const pct = Math.round((s.count / total) * 100);
+                        return (
+                          <div key={s.key} className="flex flex-col gap-1">
+                            <div className="flex items-center justify-between text-xs">
+                              <span className="font-medium">
+                                {SERVICES.find((x) => x.key === s.key)?.label ?? s.key}
+                              </span>
+                              <span className="text-muted-foreground">
+                                {s.count} demandes · {pct}%
+                              </span>
+                            </div>
+                            <div className="h-2 overflow-hidden rounded-full bg-muted">
+                              <div
+                                className="h-full rounded-full bg-primary transition-all"
+                                style={{ width: `${Math.max(4, pct)}%` }}
+                              />
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </CardContent>
+                </Card>
               </div>
             )}
           </TabsContent>
