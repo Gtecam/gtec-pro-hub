@@ -2,6 +2,7 @@ import { useMutation, useQuery } from "convex/react";
 import { motion } from "framer-motion";
 import {
   BadgeCheck,
+  Banknote,
   CalendarClock,
   CheckCircle2,
   ClipboardCheck,
@@ -263,6 +264,7 @@ export default function TechnicianSpace() {
   const apply = useMutation(api.gtec.submitTechnicianApplication);
   const requestSubPayment = useMutation(api.gtec.requestSubscriptionPayment);
   const requestMaterial = useMutation(api.gtec.requestMaterial);
+  const collectCash = useMutation(api.gtec.technicianCollectCash);
 
   const pendingSubPayment = useQuery(api.gtec.myPendingSubscriptionPayment);
   const myPayouts = useQuery(api.gtec.listMyPayouts);
@@ -294,6 +296,12 @@ export default function TechnicianSpace() {
   const [subPlan, setSubPlan] = useState<"mensuel" | "trimestriel" | "annuel" | null>(null);
   const [subMethod, setSubMethod] = useState<string>("mtn_momo");
   const [subPhone, setSubPhone] = useState("");
+
+  // Encaissement espèces sur mission
+  const [cashFor, setCashFor] = useState<string | null>(null);
+  const [cashProof, setCashProof] = useState<string | null>(null);
+  const [cashPhone, setCashPhone] = useState("");
+  const cashInputRef = useRef<HTMLInputElement | null>(null);
 
   const [materialFor, setMaterialFor] = useState<string | null>(null);
   const [materialLabel, setMaterialLabel] = useState("");
@@ -386,6 +394,39 @@ export default function TechnicianSpace() {
       setMaterialFor(null);
       setMaterialLabel("");
       setMaterialQty(1);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Erreur");
+    }
+  };
+
+  const pickCashProof = (file: File | undefined) => {
+    if (!file) return;
+    if (file.size > 1.2 * 1024 * 1024) {
+      toast.error("Photo trop lourde — maximum 1,2 Mo.");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => setCashProof(String(reader.result));
+    reader.readAsDataURL(file);
+  };
+
+  const handleCollectCash = async () => {
+    if (!cashFor || !cashProof) {
+      toast.error("Joignez la photo du reçu avant d'enregistrer.");
+      return;
+    }
+    try {
+      await collectCash({
+        requestId: cashFor as never,
+        proofPhotoUrl: cashProof,
+        payerPhone: cashPhone.trim() || undefined,
+      });
+      toast.success(
+        "Encaissement enregistré — GTEC validera après vérification",
+      );
+      setCashFor(null);
+      setCashProof(null);
+      setCashPhone("");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Erreur");
     }
@@ -808,6 +849,90 @@ export default function TechnicianSpace() {
 
                             {request.status === "en_intervention" && (
                               <>
+                                {/* Encaissement espèces avec preuve */}
+                                <div className="flex flex-col gap-2 rounded-xl border border-border/70 p-3">
+                                  <p className="flex items-center gap-1.5 text-sm font-semibold">
+                                    <Banknote className="size-4 text-primary" />{" "}
+                                    Paiement du client en espèces
+                                  </p>
+                                  {cashFor === request._id ? (
+                                    <div className="flex flex-col gap-2">
+                                      <input
+                                        ref={cashInputRef}
+                                        type="file"
+                                        accept="image/*"
+                                        className="hidden"
+                                        onChange={(e) => {
+                                          pickCashProof(e.target.files?.[0]);
+                                          e.target.value = "";
+                                        }}
+                                      />
+                                      <div className="flex items-center gap-3">
+                                        {cashProof ? (
+                                          <img
+                                            src={cashProof}
+                                            alt="Reçu"
+                                            className="size-12 rounded-lg object-cover ring-1 ring-border"
+                                          />
+                                        ) : (
+                                          <span className="flex size-12 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+                                            <Banknote className="size-5" />
+                                          </span>
+                                        )}
+                                        <Button
+                                          variant="outline"
+                                          size="sm"
+                                          onClick={() =>
+                                            cashInputRef.current?.click()
+                                          }
+                                        >
+                                          {cashProof
+                                            ? "Remplacer la photo"
+                                            : "Photo du reçu (obligatoire)"}
+                                        </Button>
+                                      </div>
+                                      <Input
+                                        value={cashPhone}
+                                        onChange={(e) =>
+                                          setCashPhone(e.target.value)
+                                        }
+                                        placeholder="Téléphone du client (optionnel)"
+                                        inputMode="tel"
+                                      />
+                                      <div className="flex gap-2">
+                                        <Button
+                                          className="halo-amber flex-1"
+                                          size="sm"
+                                          disabled={!cashProof}
+                                          onClick={handleCollectCash}
+                                        >
+                                          Enregistrer l'encaissement
+                                        </Button>
+                                        <Button
+                                          variant="ghost"
+                                          size="sm"
+                                          onClick={() => {
+                                            setCashFor(null);
+                                            setCashProof(null);
+                                          }}
+                                        >
+                                          Annuler
+                                        </Button>
+                                      </div>
+                                    </div>
+                                  ) : (
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      className="w-fit"
+                                      onClick={() => setCashFor(request._id)}
+                                    >
+                                      <Banknote className="mr-1.5 size-4" /> Le
+                                      client a payé en espèces
+                                    </Button>
+                                  )}
+                                </div>
+
                                 <ReportForm
                                   requestId={request._id}
                                   useReportMutation={useTechnicianReportMutation}

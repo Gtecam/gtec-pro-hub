@@ -233,9 +233,23 @@ export function formatDate(ts: number | undefined): string {
 export const PAYMENT_METHODS = [
   { key: "mtn_momo", label: "MTN MoMo", hint: "Paiement mobile MTN" },
   { key: "orange_money", label: "Orange Money", hint: "Paiement mobile Orange" },
-  { key: "virement", label: "Virement bancaire", hint: "Transfert bancaire" },
-  { key: "especes", label: "Espèces (agence)", hint: "Paiement sur place" },
+  { key: "carte_visa", label: "Carte Visa", hint: "Entreprises · paiement en ligne" },
+  { key: "virement", label: "Virement bancaire", hint: "Entreprises · transfert bancaire" },
+  { key: "especes", label: "Espèces", hint: "Comptant avec preuve du reçu" },
 ] as const;
+
+/** Numéros marchands GTEC pour les paiements Mobile Money. */
+export const MERCHANT_NUMBERS = {
+  orange_money: { number: "655 09 42 28", tel: "+237655094228", label: "Orange Money" },
+  mtn_momo: { number: "678 20 28 24", tel: "+237678202824", label: "MTN MoMo" },
+} as const;
+
+/** Coordonnées bancaires GTEC (virements entreprises). */
+export const BANK_DETAILS = {
+  bank: "Afriland First Bank",
+  iban: "CM21 1000 5000 1523 4567 8901 234",
+  beneficiary: "GTEC PRO Sarl",
+} as const;
 
 // ---------- abonnements techniciens (paiement Mobile Money vérifié) ----------
 

@@ -21,7 +21,7 @@ import {
   Wrench,
   XCircle,
 } from "lucide-react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { toast } from "sonner";
 import { useNavigate, useParams } from "react-router";
 import { api } from "@/convex/_generated/api";
@@ -52,8 +52,10 @@ import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import {
+  BANK_DETAILS,
   fcfa,
   formatDateTime,
+  MERCHANT_NUMBERS,
   PAYMENT_METHODS,
   SERVICES,
   statusMeta,
@@ -81,6 +83,13 @@ export default function RequestDetail() {
   const [method, setMethod] = useState<string>("mtn_momo");
   const [payerPhone, setPayerPhone] = useState("");
   const [busy, setBusy] = useState(false);
+
+  // Champs spécifiques par moyen de paiement
+  const [proofUrl, setProofUrl] = useState<string | null>(null);
+  const [bankName, setBankName] = useState("");
+  const [bankRef, setBankRef] = useState("");
+  const [cardLast4, setCardLast4] = useState("");
+  const proofInputRef = useRef<HTMLInputElement | null>(null);
 
   const [signature, setSignature] = useState<string | null>(null);
   const [receptionNote, setReceptionNote] = useState("");
@@ -141,10 +150,33 @@ export default function RequestDetail() {
     }
   };
 
+  const pickProof = (file: File | undefined) => {
+    if (!file) return;
+    if (file.size > 1.2 * 1024 * 1024) {
+      toast.error("Photo trop lourde — maximum 1,2 Mo.");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => setProofUrl(String(reader.result));
+    reader.readAsDataURL(file);
+  };
+
   const handlePay = async () => {
     if (!quote) return;
     if (!/^[+0-9 ]{8,}$/.test(payerPhone.trim())) {
       toast.error("Numéro de téléphone invalide.");
+      return;
+    }
+    if (method === "especes" && !proofUrl) {
+      toast.error("Joignez la photo du reçu (paiement en espèces).\n");
+      return;
+    }
+    if (method === "virement" && (!bankName.trim() || !bankRef.trim())) {
+      toast.error("Banque et référence du virement obligatoires.");
+      return;
+    }
+    if (method === "carte_visa" && !/^\d{4}$/.test(cardLast4.trim())) {
+      toast.error("Indiquez les 4 derniers chiffres de la carte.");
       return;
     }
     const ok = await run(
@@ -153,10 +185,20 @@ export default function RequestDetail() {
           quoteId: quote._id,
           method: method as never,
           payerPhone: payerPhone.trim(),
+          proofPhotoUrl: proofUrl ?? undefined,
+          bankName: bankName.trim() || undefined,
+          bankRef: bankRef.trim() || undefined,
+          cardLast4: cardLast4.trim() || undefined,
         }),
       "Paiement initié — en attente de vérification",
     );
-    if (ok) setPayOpen(false);
+    if (ok) {
+      setPayOpen(false);
+      setProofUrl(null);
+      setBankName("");
+      setBankRef("");
+      setCardLast4("");
+    }
   };
 
   const handleReception = async () => {
@@ -777,7 +819,7 @@ export default function RequestDetail() {
 
       {/* Paiement */}
       <Dialog open={payOpen} onOpenChange={setPayOpen}>
-        <DialogContent>
+        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>Payer le devis {quote?.number}</DialogTitle>
             <DialogDescription>
@@ -805,17 +847,159 @@ export default function RequestDetail() {
                 </button>
               ))}
             </div>
-            <div className="flex flex-col gap-1.5">
-              <label className="flex items-center gap-1.5 text-sm font-medium">
-                <Phone className="size-3.5" /> Numéro payeur
-              </label>
-              <Input
-                value={payerPhone}
-                onChange={(e) => setPayerPhone(e.target.value)}
-                placeholder="Ex. : 6 99 99 99 99"
-                inputMode="tel"
-              />
-            </div>
+
+            {/* Mobile Money : numéros marchands */}
+            {(method === "mtn_momo" || method === "orange_money") && (
+              <div className="flex flex-col gap-2 rounded-xl border border-primary/25 bg-primary/[0.04] p-3">
+                {(() => {
+                  const merchant = MERCHANT_NUMBERS[method];
+                  return (
+                    <>
+                      <p className="text-sm font-medium">
+                        Envoyez {quote ? fcfa(quote.total) : ""} au{" "}
+                        {merchant.label} :
+                      </p>
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-display text-lg font-bold text-primary">
+                          {merchant.number}
+                        </span>
+                        <a
+                          href={`tel:${merchant.tel}`}
+                          className="flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground"
+                        >
+                          <Phone className="size-3.5" /> Appeler
+                        </a>
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        Utilisez votre nom en référence, puis indiquez votre
+                        numéro ci-dessous.
+                      </p>
+                    </>
+                  );
+                })()}
+              </div>
+            )}
+
+            {/* Carte Visa : saisie des 4 derniers chiffres */}
+            {method === "carte_visa" && (
+              <div className="flex flex-col gap-2 rounded-xl border border-primary/25 bg-primary/[0.04] p-3">
+                <p className="text-sm font-medium">
+                  Paiement par carte bancaire (entreprises)
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Réglez sur le TPE GTEC ou via le lien de paiement envoyé par
+                  l'agence, puis indiquez les 4 derniers chiffres de la carte
+                  pour le rapprochement.
+                </p>
+                <Input
+                  value={cardLast4}
+                  onChange={(e) =>
+                    setCardLast4(e.target.value.replace(/\D/g, "").slice(0, 4))
+                  }
+                  placeholder="4 derniers chiffres (ex. : 4291)"
+                  inputMode="numeric"
+                />
+              </div>
+            )}
+
+            {/* Virement bancaire : coordonnées + référence */}
+            {method === "virement" && (
+              <div className="flex flex-col gap-2 rounded-xl border border-primary/25 bg-primary/[0.04] p-3">
+                <p className="text-sm font-medium">
+                  Virement bancaire (entreprises)
+                </p>
+                <div className="grid gap-1 text-xs text-muted-foreground">
+                  <span>
+                    Bénéficiaire :{" "}
+                    <span className="font-medium text-foreground">
+                      {BANK_DETAILS.beneficiary}
+                    </span>
+                  </span>
+                  <span>
+                    Banque :{" "}
+                    <span className="font-medium text-foreground">
+                      {BANK_DETAILS.bank}
+                    </span>
+                  </span>
+                  <span>
+                    IBAN :{" "}
+                    <span className="font-mono font-medium text-foreground">
+                      {BANK_DETAILS.iban}
+                    </span>
+                  </span>
+                </div>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <Input
+                    value={bankName}
+                    onChange={(e) => setBankName(e.target.value)}
+                    placeholder="Votre banque"
+                  />
+                  <Input
+                    value={bankRef}
+                    onChange={(e) => setBankRef(e.target.value)}
+                    placeholder="Référence du virement"
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Espèces : preuve photo obligatoire */}
+            {method === "especes" && (
+              <div className="flex flex-col gap-2 rounded-xl border border-amber-500/30 bg-amber-500/[0.04] p-3">
+                <p className="text-sm font-medium">
+                  Espèces — preuve obligatoire
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Payez comptant au technicien ou en agence, prenez le reçu, puis
+                  joignez sa photo. GTEC validera après vérification.
+                </p>
+                <input
+                  ref={proofInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(e) => {
+                    pickProof(e.target.files?.[0]);
+                    e.target.value = "";
+                  }}
+                />
+                <div className="flex items-center gap-3">
+                  {proofUrl ? (
+                    <img
+                      src={proofUrl}
+                      alt="Preuve de paiement"
+                      className="size-14 rounded-lg object-cover ring-1 ring-border"
+                    />
+                  ) : (
+                    <span className="flex size-14 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+                      <Receipt className="size-5" />
+                    </span>
+                  )}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => proofInputRef.current?.click()}
+                  >
+                    {proofUrl ? "Remplacer la photo" : "Joindre la photo du reçu"}
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {/* Numéro payeur (tous moyens sauf virement seul) */}
+            {method !== "virement" && (
+              <div className="flex flex-col gap-1.5">
+                <label className="flex items-center gap-1.5 text-sm font-medium">
+                  <Phone className="size-3.5" /> Numéro payeur
+                </label>
+                <Input
+                  value={payerPhone}
+                  onChange={(e) => setPayerPhone(e.target.value)}
+                  placeholder="Ex. : 6 99 99 99 99"
+                  inputMode="tel"
+                />
+              </div>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setPayOpen(false)}>
@@ -823,7 +1007,12 @@ export default function RequestDetail() {
             </Button>
             <Button className="halo-amber" disabled={busy} onClick={handlePay}>
               <Wallet className="mr-2 size-4" />
-              Payer {quote ? fcfa(quote.total) : ""}
+              {method === "especes"
+                ? "Déclarer le paiement"
+                : method === "virement"
+                  ? "Notifier le virement"
+                  : "Payer"}{" "}
+              {quote ? fcfa(quote.total) : ""}
             </Button>
           </DialogFooter>
         </DialogContent>

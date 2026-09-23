@@ -780,6 +780,7 @@ export default function AdminConsole() {
   const [techSpecialty, setTechSpecialty] = useState("");
   const [techPhone, setTechPhone] = useState("");
   const [busy, setBusy] = useState(false);
+  const [proofZoom, setProofZoom] = useState<string | null>(null);
 
   const pendingSubs = subPayments ?? [];
   const pendingPayouts = (payouts ?? []).filter((p) => p.payout.status === "dû");
@@ -1009,7 +1010,32 @@ export default function AdminConsole() {
                           {client?.name ?? "Client"} · {payment.method} ·{" "}
                           {payment.payerPhone}
                         </p>
+                        {(payment.method === "especes" ||
+                          payment.method === "virement" ||
+                          payment.method === "carte_visa") && (
+                          <p className="mt-0.5 text-[11px] text-muted-foreground">
+                            {payment.method === "especes" &&
+                              "Espèces — preuve photo jointe"}
+                            {payment.method === "virement" &&
+                              `Virement ${payment.bankName ?? ""} · réf. ${payment.bankRef ?? "—"}`}
+                            {payment.method === "carte_visa" &&
+                              `Carte •••• ${payment.cardLast4 ?? "—"}`}
+                          </p>
+                        )}
                       </div>
+                      {payment.proofPhotoUrl && (
+                        <button
+                          className="shrink-0"
+                          onClick={() => setProofZoom(payment.proofPhotoUrl ?? null)}
+                          title="Voir la preuve"
+                        >
+                          <img
+                            src={payment.proofPhotoUrl}
+                            alt="Preuve de paiement"
+                            className="size-12 rounded-lg object-cover ring-1 ring-border transition-opacity hover:opacity-80"
+                          />
+                        </button>
+                      )}
                       <div className="flex items-center gap-2">
                         <Button
                           className="halo-amber"
@@ -1435,6 +1461,19 @@ export default function AdminConsole() {
           </TabsContent>
         </Tabs>
       </div>
+
+      {/* Visionneuse de preuve de paiement */}
+      <Dialog open={!!proofZoom} onOpenChange={(o) => !o && setProofZoom(null)}>
+        <DialogContent className="sm:max-w-lg">
+          {proofZoom && (
+            <img
+              src={proofZoom}
+              alt="Preuve de paiement"
+              className="max-h-[70vh] w-full rounded-lg object-contain"
+            />
+          )}
+        </DialogContent>
+      </Dialog>
     </AppShell>
   );
 }

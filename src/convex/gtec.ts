@@ -513,8 +513,16 @@ export const initiatePayment = mutation({
       v.literal("orange_money"),
       v.literal("especes"),
       v.literal("virement"),
+      v.literal("carte_visa"),
     ),
     payerPhone: v.string(),
+    // Cash : preuve photo du reçu du technicien (obligatoire pour espèces)
+    proofPhotoUrl: v.optional(v.string()),
+    // Virement / carte : références bancaires
+    bankName: v.optional(v.string()),
+    bankRef: v.optional(v.string()),
+    cardLast4: v.optional(v.string()),
+    collectedBy: v.optional(v.id("users")),
   },
   handler: async (ctx, args) => {
     const user = await requireUser(ctx);
@@ -523,6 +531,27 @@ export const initiatePayment = mutation({
     if (quote.clientId !== user._id) throw new Error("Action non autorisée.");
     if (quote.status !== "accepte") {
       throw new Error("Acceptez d'abord le devis avant de payer.");
+    }
+    // Cash : une preuve photo est OBLIGATOIRE.
+    if (args.method === "especes" && !args.proofPhotoUrl?.startsWith("data:")) {
+      throw new Error(
+        "Preuve obligatoire pour un paiement en espèces : joignez la photo du reçu.",
+      );
+    }
+    // Virement : banque + référence obligatoires.
+    if (args.method === "virement") {
+      if (!args.bankName?.trim()) {
+        throw new Error("Indiquez la banque du virement.");
+      }
+      if (!args.bankRef?.trim()) {
+        throw new Error("Indiquez la référence du virement.");
+      }
+    }
+    // Carte : 4 derniers chiffres obligatoires.
+    if (args.method === "carte_visa") {
+      if (!args.cardLast4 || !/^\d{4}$/.test(args.cardLast4)) {
+        throw new Error("Indiquez les 4 derniers chiffres de la carte.");
+      }
     }
     const existing = await ctx.db
       .query("payments")
@@ -540,16 +569,92 @@ export const initiatePayment = mutation({
       amount: quote.total,
       currency: quote.currency,
       method: args.method,
-      payerPhone: args.payerPhone,
+      payerPhone: args.payerPhone.trim(),
       status: "en_attente",
       externalRef: `SIM-${Date.now().toString(36).toUpperCase()}`,
+      proofPhotoUrl: args.proofPhotoUrl,
+      bankName: args.bankName?.trim() || undefined,
+      bankRef: args.bankRef?.trim() || undefined,
+      cardLast4: args.cardLast4,
+      collectedBy: args.collectedBy,
+      collectedAt: args.method === "especes" ? Date.now() : undefined,
     });
     await addEvent(
       ctx,
       quote.requestId,
       "paiement",
       "Paiement initié",
-      "En attente de vérification GTEC",
+      args.method === "especes"
+        ? "Espèces avec preuve — en attente de validation GTEC"
+        : "En attente de vérification GTEC",
+    );
+  },
+});
+
+/**
+ * Encaissement cash par un technicien : il enregistre la collecte avec preuve
+ * photo. Crée le paiement en attente de validation par l'admin.
+ */
+export const technicianCollectCash = mutation({
+  args: {
+    requestId: v.id("serviceRequests"),
+    proofPhotoUrl: v.string(),
+    payerPhone: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const user = await requireUser(ctx);
+    const request = await ctx.db.get(args.requestId);
+    if (!request) throw new Error("Demande introuvable.");
+    const assignment = (
+      await ctx.db
+        .query("assignments")
+        .withIndex("by_request", (q) => q.eq("requestId", args.requestId))
+        .collect()
+    ).slice(-1)[0];
+    if (!assignment || !assignment.members.some((m) => m.id === user._id)) {
+      throw new Error("Vous n'êtes pas affecté à cette mission.");
+    }
+    if (!args.proofPhotoUrl.startsWith("data:")) {
+      throw new Error("Photo du reçu obligatoire.");
+    }
+    const quote = (
+      await ctx.db
+        .query("quotes")
+        .withIndex("by_request", (q) => q.eq("requestId", args.requestId))
+        .collect()
+    ).slice(-1)[0];
+    if (!quote || quote.status !== "accepte") {
+      throw new Error("Le devis doit être accepté pour encaisser le paiement.");
+    }
+    const existing = await ctx.db
+      .query("payments")
+      .withIndex("by_request", (q) => q.eq("requestId", args.requestId))
+      .collect();
+    for (const p of existing) {
+      if (p.status === "en_attente") {
+        throw new Error("Un paiement est déjà en cours de vérification.");
+      }
+    }
+    await ctx.db.insert("payments", {
+      quoteId: quote._id,
+      requestId: args.requestId,
+      clientId: request.clientId,
+      amount: quote.total,
+      currency: quote.currency,
+      method: "especes",
+      payerPhone: args.payerPhone?.trim() || "—",
+      status: "en_attente",
+      externalRef: `CASH-${Date.now().toString(36).toUpperCase()}`,
+      proofPhotoUrl: args.proofPhotoUrl,
+      collectedBy: user._id,
+      collectedAt: Date.now(),
+    });
+    await addEvent(
+      ctx,
+      args.requestId,
+      "paiement",
+      "Espèces encaissées par le technicien",
+      "En attente de validation GTEC",
     );
   },
 });

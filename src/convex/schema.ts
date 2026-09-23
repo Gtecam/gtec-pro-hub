@@ -119,6 +119,7 @@ const schema = defineSchema(
         v.literal("orange_money"),
         v.literal("especes"),
         v.literal("virement"),
+        v.literal("carte_visa"),
       ),
       payerPhone: v.string(),
       status: v.union(
@@ -127,6 +128,14 @@ const schema = defineSchema(
         v.literal("echoue"),
       ),
       externalRef: v.optional(v.string()),
+
+      // Preuves & références (cash, virement, carte)
+      proofPhotoUrl: v.optional(v.string()), // reçu/reçu de paiement (data URL)
+      bankName: v.optional(v.string()),
+      bankRef: v.optional(v.string()), // référence transaction bancaire
+      cardLast4: v.optional(v.string()), // 4 derniers chiffres Visa
+      collectedBy: v.optional(v.id("users")), // technicien encaisseur (cash)
+      collectedAt: v.optional(v.number()),
     })
       .index("by_request", ["requestId"])
       .index("by_client", ["clientId"]),
