@@ -167,6 +167,51 @@ const schema = defineSchema(
       detail: v.optional(v.string()),
       at: v.number(),
     }).index("by_request", ["requestId"]),
+
+    // ---- Espace technicien (V1.1) ----
+
+    /** Profil de candidature technicien — un par utilisateur. */
+    technicianProfiles: defineTable({
+      userId: v.id("users"),
+      specialty: v.string(), // ex. "Électricité CFO/CATE"
+      experienceYears: v.number(),
+      zones: v.array(v.string()), // villes d'intervention
+      certifications: v.optional(v.string()),
+      bio: v.optional(v.string()),
+      status: v.union(
+        v.literal("en_attente"), // dossier soumis, en cours de vérification GTEC
+        v.literal("verifie"), // validé par l'admin
+        v.literal("rejete"),
+      ),
+      subscription: v.union(
+        v.literal("aucun"),
+        v.literal("mensuel"),
+        v.literal("trimestriel"),
+        v.literal("annuel"),
+      ),
+      subscriptionUntil: v.optional(v.number()),
+      subscriptionPrice: v.optional(v.number()),
+    })
+      .index("by_user", ["userId"])
+      .index("by_status", ["status"]),
+
+    /** Demande de matériel faite par un technicien pendant l'intervention. */
+    materialRequests: defineTable({
+      requestId: v.id("serviceRequests"),
+      requestedById: v.id("users"),
+      label: v.string(),
+      qty: v.number(),
+      status: v.union(
+        v.literal("demande"),
+        v.literal("approuve"),
+        v.literal("commande"),
+        v.literal("livre"),
+        v.literal("refuse"),
+      ),
+      adminNote: v.optional(v.string()),
+    })
+      .index("by_request", ["requestId"])
+      .index("by_status", ["status"]),
   },
   {
     schemaValidation: false,

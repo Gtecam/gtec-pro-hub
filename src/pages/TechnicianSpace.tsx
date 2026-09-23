@@ -1,0 +1,521 @@
+import { useMutation, useQuery } from "convex/react";
+import { motion } from "framer-motion";
+import {
+  BadgeCheck,
+  CalendarClock,
+  CheckCircle2,
+  ClipboardCheck,
+  Crown,
+  Loader2,
+  MapPin,
+  Package,
+  Send,
+  Sparkles,
+  Truck,
+  UserCheck,
+  Wrench,
+  XCircle,
+} from "lucide-react";
+import { useState } from "react";
+import { toast } from "sonner";
+import { api } from "@/convex/_generated/api";
+import { AppShell } from "@/components/gtec";
+import { ReportForm } from "@/components/ReportForm";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Textarea } from "@/components/ui/textarea";
+import { useAuth } from "@/hooks/use-auth";
+import { cn } from "@/lib/utils";
+import { CITIES, formatDateTime } from "@/lib/gtec";
+
+const PLANS = [
+  { key: "mensuel", label: "Mensuel", price: "5 000 FCFA", hint: "30 jours" },
+  { key: "trimestriel", label: "Trimestriel", price: "12 000 FCFA", hint: "90 jours · 20 % de réduction" },
+  { key: "annuel", label: "Annuel", price: "40 000 FCFA", hint: "365 jours · 33 % de réduction" },
+] as const;
+
+function useTechnicianReportMutation() {
+  return useMutation(api.gtec.technicianSubmitReport);
+}
+
+export default function TechnicianSpace() {
+  const { user } = useAuth();
+  const profile = useQuery(api.gtec.myTechnicianProfile);
+  const missions = useQuery(api.gtec.listMyMissions);
+
+  const apply = useMutation(api.gtec.submitTechnicianApplication);
+  const subscribe = useMutation(api.gtec.setTechnicianSubscription);
+  const requestMaterial = useMutation(api.gtec.requestMaterial);
+
+  const [specialty, setSpecialty] = useState("");
+  const [experience, setExperience] = useState(2);
+  const [zones, setZones] = useState<string[]>(["Douala"]);
+  const [certifications, setCertifications] = useState("");
+  const [bio, setBio] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const [materialFor, setMaterialFor] = useState<string | null>(null);
+  const [materialLabel, setMaterialLabel] = useState("");
+  const [materialQty, setMaterialQty] = useState(1);
+
+  const toggleZone = (city: string) =>
+    setZones((prev) =>
+      prev.includes(city) ? prev.filter((z) => z !== city) : [...prev, city],
+    );
+
+  const submitApplication = async () => {
+    setBusy(true);
+    try {
+      await apply({
+        specialty: specialty.trim(),
+        experienceYears: experience,
+        zones,
+        certifications: certifications.trim() || undefined,
+        bio: bio.trim() || undefined,
+      });
+      toast.success("Candidature envoyée — GTEC va vérifier votre dossier");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Erreur");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleSubscribe = async (plan: "mensuel" | "trimestriel" | "annuel") => {
+    try {
+      await subscribe({ plan });
+      toast.success(`Abonnement ${plan} activé`);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Erreur");
+    }
+  };
+
+  const handleMaterial = async () => {
+    if (!materialFor) return;
+    try {
+      await requestMaterial({
+        requestId: materialFor as never,
+        label: materialLabel.trim(),
+        qty: materialQty,
+      });
+      toast.success("Demande de matériel transmise à GTEC");
+      setMaterialFor(null);
+      setMaterialLabel("");
+      setMaterialQty(1);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Erreur");
+    }
+  };
+
+  const verified = profile?.status === "verifie";
+  const activeMissions = (missions ?? []).filter(
+    (m) => m.assignment.status !== "terminee" && m.request?.status !== "terminee",
+  );
+  const doneMissions = (missions ?? []).filter(
+    (m) => m.assignment.status === "terminee" || m.request?.status === "terminee",
+  );
+
+  return (
+    <AppShell areaLabel="Espace technicien">
+      <div className="flex flex-col gap-6">
+        <div>
+          <p className="text-sm font-medium text-muted-foreground">
+            Espace technicien
+          </p>
+          <h1 className="font-display mt-1 text-3xl font-bold tracking-tight">
+            Bonjour{user?.name ? `, ${user.name.split(" ")[0]}` : ""} 🛠️
+          </h1>
+        </div>
+
+        {profile === undefined ? (
+          <div className="h-64 animate-pulse rounded-xl bg-muted" />
+        ) : profile === null ? (
+          /* ---------- Candidature ---------- */
+          <Card className="card-layered mx-auto w-full max-w-2xl">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 font-display text-xl">
+                <Wrench className="size-5 text-primary" />
+                Rejoindre les équipes GTEC PRO
+              </CardTitle>
+              <CardDescription>
+                Soumettez votre candidature. Après vérification de vos
+                qualifications par GTEC, vous recevrez des missions dans vos
+                zones.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="flex flex-col gap-4">
+              <div className="flex flex-col gap-1.5">
+                <Label className="text-sm">Spécialité</Label>
+                <Input
+                  value={specialty}
+                  onChange={(e) => setSpecialty(e.target.value)}
+                  placeholder="Ex. : Électricité CFO/CATE, Solaire, CCTV…"
+                />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <Label className="text-sm">Années d'expérience</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  max={50}
+                  value={experience}
+                  onChange={(e) => setExperience(Number(e.target.value) || 0)}
+                  className="w-28"
+                />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <Label className="text-sm">Zones d'intervention</Label>
+                <div className="flex flex-wrap gap-2">
+                  {CITIES.map((city) => (
+                    <label
+                      key={city}
+                      className="flex cursor-pointer items-center gap-2 rounded-lg border border-border/70 px-3 py-2 text-sm transition-colors hover:bg-muted/50"
+                    >
+                      <Switch
+                        checked={zones.includes(city)}
+                        onCheckedChange={() => toggleZone(city)}
+                      />
+                      {city}
+                    </label>
+                  ))}
+                </div>
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <Label className="text-sm">Certifications / documents</Label>
+                <Input
+                  value={certifications}
+                  onChange={(e) => setCertifications(e.target.value)}
+                  placeholder="Ex. : CATE 2023, attestation solaire…"
+                />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <Label className="text-sm">Présentation (optionnel)</Label>
+                <Textarea
+                  value={bio}
+                  onChange={(e) => setBio(e.target.value)}
+                  placeholder="Parlez de votre expérience en quelques lignes…"
+                  rows={3}
+                />
+              </div>
+              <Button
+                className="halo-amber"
+                disabled={busy || specialty.trim().length < 3 || zones.length === 0}
+                onClick={submitApplication}
+              >
+                <Send className="mr-2 size-4" />
+                {busy ? "Envoi…" : "Envoyer ma candidature"}
+              </Button>
+            </CardContent>
+          </Card>
+        ) : profile.status === "en_attente" ? (
+          /* ---------- En attente de vérification ---------- */
+          <Card className="card-layered mx-auto w-full max-w-lg">
+            <CardContent className="flex flex-col items-center gap-3 py-12 text-center">
+              <div className="flex size-14 items-center justify-center rounded-2xl bg-amber-500/10 text-amber-600 dark:text-amber-400">
+                <UserCheck className="size-7" />
+              </div>
+              <p className="font-display text-lg font-semibold">
+                Candidature en cours de vérification
+              </p>
+              <p className="max-w-sm text-sm text-muted-foreground">
+                Votre dossier ({profile.specialty}) est en cours d'examen par
+                l'administration GTEC. Vous serez notifié dès validation.
+              </p>
+            </CardContent>
+          </Card>
+        ) : profile.status === "rejete" ? (
+          <Card className="card-layered mx-auto w-full max-w-lg border-destructive/30">
+            <CardContent className="flex flex-col items-center gap-3 py-12 text-center">
+              <XCircle className="size-10 text-destructive" />
+              <p className="font-display text-lg font-semibold">
+                Candidature refusée
+              </p>
+              <p className="max-w-sm text-sm text-muted-foreground">
+                Contactez l'administration GTEC pour plus d'informations.
+              </p>
+            </CardContent>
+          </Card>
+        ) : (
+          /* ---------- Technicien vérifié : missions & abonnement ---------- */
+          <Tabs defaultValue="missions">
+            <TabsList>
+              <TabsTrigger value="missions">
+                <CalendarClock className="mr-1.5 size-4" /> Missions
+                {activeMissions.length > 0 && (
+                  <span className="ml-1.5 rounded-full bg-primary px-1.5 py-0.5 text-[10px] font-bold text-primary-foreground">
+                    {activeMissions.length}
+                  </span>
+                )}
+              </TabsTrigger>
+              <TabsTrigger value="abonnement">
+                <Crown className="mr-1.5 size-4" /> Abonnement
+              </TabsTrigger>
+            </TabsList>
+
+            {/* Missions */}
+            <TabsContent value="missions" className="mt-4">
+              {missions === undefined ? (
+                <div className="h-40 animate-pulse rounded-xl bg-muted" />
+              ) : activeMissions.length === 0 ? (
+                <Card className="card-layered">
+                  <CardContent className="flex flex-col items-center gap-3 py-12 text-center">
+                    <Sparkles className="size-8 text-muted-foreground" />
+                    <p className="font-display text-lg font-semibold">
+                      Aucune mission active
+                    </p>
+                    <p className="max-w-sm text-sm text-muted-foreground">
+                      Vous serez affecté aux missions correspondant à votre
+                      spécialité ({profile.specialty}) et vos zones (
+                      {profile.zones.join(", ")}).
+                    </p>
+                  </CardContent>
+                </Card>
+              ) : (
+                <div className="flex flex-col gap-4">
+                  {activeMissions.map(({ assignment, request }) =>
+                    request ? (
+                      <motion.div
+                        key={assignment._id}
+                        initial={{ opacity: 0, y: 8 }}
+                        animate={{ opacity: 1, y: 0 }}
+                      >
+                        <Card className="card-layered">
+                          <CardHeader className="pb-3">
+                            <div className="flex flex-wrap items-start justify-between gap-3">
+                              <div>
+                                <CardTitle className="text-base">
+                                  {request.title}
+                                </CardTitle>
+                                <CardDescription className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-1">
+                                  <span className="font-mono text-xs">
+                                    {request.reference}
+                                  </span>
+                                  <span className="flex items-center gap-1">
+                                    <MapPin className="size-3.5" />
+                                    {request.address}, {request.city}
+                                  </span>
+                                  <span className="flex items-center gap-1">
+                                    <CalendarClock className="size-3.5" />
+                                    {formatDateTime(assignment.scheduledAt)}
+                                  </span>
+                                </CardDescription>
+                              </div>
+                              <span
+                                className={cn(
+                                  "rounded-full px-2.5 py-1 text-xs font-medium ring-1 ring-inset",
+                                  request.status === "en_intervention"
+                                    ? "bg-sky-500/10 text-sky-600 ring-sky-500/20 dark:text-sky-400"
+                                    : "bg-primary/10 text-primary ring-primary/20",
+                                )}
+                              >
+                                {request.status === "en_intervention"
+                                  ? "En intervention"
+                                  : "Planifiée"}
+                              </span>
+                            </div>
+                          </CardHeader>
+                          <CardContent className="flex flex-col gap-3">
+                            <p className="text-sm text-muted-foreground">
+                              {request.description}
+                            </p>
+
+                            {request.status === "affectee" && (
+                              <p className="flex items-center gap-2 text-sm text-muted-foreground">
+                                <Truck className="size-4" />
+                                Rendez-vous sur place à l'heure prévue —
+                                l'admin démarrera l'intervention.
+                              </p>
+                            )}
+
+                            {request.status === "en_intervention" && (
+                              <>
+                                <ReportForm
+                                  requestId={request._id}
+                                  useReportMutation={useTechnicianReportMutation}
+                                  title="Clôturer la mission — rapport"
+                                />
+                                <div className="flex flex-col gap-2 rounded-xl border border-border/70 p-3">
+                                  <p className="flex items-center gap-1.5 text-sm font-semibold">
+                                    <Package className="size-4 text-primary" />{" "}
+                                    Demander du matériel
+                                  </p>
+                                  {materialFor === request._id ? (
+                                    <div className="flex flex-col gap-2">
+                                      <Input
+                                        value={materialLabel}
+                                        onChange={(e) =>
+                                          setMaterialLabel(e.target.value)
+                                        }
+                                        placeholder="Ex. : Disjoncteur différentiel 40A type A"
+                                      />
+                                      <div className="flex items-center gap-2">
+                                        <Input
+                                          type="number"
+                                          min={1}
+                                          value={materialQty}
+                                          onChange={(e) =>
+                                            setMaterialQty(
+                                              Number(e.target.value) || 1,
+                                            )
+                                          }
+                                          className="w-20"
+                                          aria-label="Quantité"
+                                        />
+                                        <Button
+                                          className="halo-amber flex-1"
+                                          size="sm"
+                                          disabled={materialLabel.trim().length < 3}
+                                          onClick={handleMaterial}
+                                        >
+                                          <Send className="mr-1.5 size-3.5" /> Envoyer
+                                        </Button>
+                                        <Button
+                                          variant="ghost"
+                                          size="sm"
+                                          onClick={() => setMaterialFor(null)}
+                                        >
+                                          Annuler
+                                        </Button>
+                                      </div>
+                                    </div>
+                                  ) : (
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      className="w-fit"
+                                      onClick={() => setMaterialFor(request._id)}
+                                    >
+                                      <Package className="mr-1.5 size-4" /> Faire
+                                      une demande
+                                    </Button>
+                                  )}
+                                </div>
+                              </>
+                            )}
+                          </CardContent>
+                        </Card>
+                      </motion.div>
+                    ) : null,
+                  )}
+                </div>
+              )}
+              {doneMissions.length > 0 && (
+                <div className="mt-6 flex flex-col gap-2">
+                  <h2 className="font-display text-sm font-semibold text-muted-foreground">
+                    Historique ({doneMissions.length})
+                  </h2>
+                  {doneMissions.map(({ assignment, request }) =>
+                    request ? (
+                      <div
+                        key={assignment._id}
+                        className="flex items-center gap-3 rounded-xl border border-border/70 bg-card px-4 py-2.5"
+                      >
+                        <CheckCircle2 className="size-4 shrink-0 text-emerald-500" />
+                        <span className="min-w-0 flex-1 truncate text-sm">
+                          {request.reference} · {request.title}
+                        </span>
+                        <span className="hidden text-xs text-muted-foreground sm:block">
+                          {formatDateTime(assignment.scheduledAt)}
+                        </span>
+                      </div>
+                    ) : null,
+                  )}
+                </div>
+              )}
+            </TabsContent>
+
+            {/* Abonnement */}
+            <TabsContent value="abonnement" className="mt-4">
+              <div className="grid gap-4 lg:grid-cols-[1fr_340px]">
+                <div className="grid gap-4 sm:grid-cols-3">
+                  {PLANS.map((plan) => {
+                    const isCurrent = profile.subscription === plan.key;
+                    return (
+                      <Card
+                        key={plan.key}
+                        className={cn(
+                          "card-layered flex flex-col gap-2 p-5",
+                          isCurrent && "border-primary/40 ring-2 ring-primary/20",
+                        )}
+                      >
+                        <p className="font-display text-lg font-bold">
+                          {plan.label}
+                        </p>
+                        <p className="text-xl font-bold text-primary">
+                          {plan.price}
+                        </p>
+                        <p className="text-xs text-muted-foreground">{plan.hint}</p>
+                        <Button
+                          className="mt-auto"
+                          size="sm"
+                          variant={isCurrent ? "outline" : "default"}
+                          disabled={busy}
+                          onClick={() => handleSubscribe(plan.key)}
+                        >
+                          {isCurrent ? "Renouveler" : "Choisir"}
+                        </Button>
+                      </Card>
+                    );
+                  })}
+                </div>
+                <Card className="card-layered h-fit">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm">Statut du compte</CardTitle>
+                  </CardHeader>
+                  <CardContent className="flex flex-col gap-2.5 text-sm">
+                    <div className="flex items-center justify-between">
+                      <span className="text-muted-foreground">Vérification</span>
+                      <span className="flex items-center gap-1.5 font-medium text-emerald-600 dark:text-emerald-400">
+                        <BadgeCheck className="size-4" /> Validé
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-muted-foreground">Spécialité</span>
+                      <span className="font-medium">{profile.specialty}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-muted-foreground">Abonnement</span>
+                      <span className="font-medium capitalize">
+                        {profile.subscription}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-muted-foreground">Valable jusqu'au</span>
+                      <span className="font-medium">
+                        {profile.subscriptionUntil
+                          ? formatDateTime(profile.subscriptionUntil)
+                          : "—"}
+                      </span>
+                    </div>
+                    {profile.subscription === "aucun" && (
+                      <p className="rounded-lg bg-accent/60 px-3 py-2 text-xs text-accent-foreground">
+                        Activez un abonnement pour recevoir des missions.
+                      </p>
+                    )}
+                  </CardContent>
+                </Card>
+              </div>
+            </TabsContent>
+          </Tabs>
+        )}
+      </div>
+    </AppShell>
+  );
+}

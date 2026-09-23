@@ -355,7 +355,7 @@ export default function Landing() {
             </ul>
             <div className="flex flex-col gap-3 pt-2 sm:flex-row">
               <Button className="halo-amber" asChild>
-                <Link to="/auth">
+                <Link to="/technician">
                   <Wrench className="mr-2 size-4" />
                   Postuler comme technicien
                 </Link>

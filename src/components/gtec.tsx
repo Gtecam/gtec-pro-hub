@@ -1,4 +1,4 @@
-import { Check, Eraser, LogOut, PenLine, ShieldCheck } from "lucide-react";
+import { Check, Eraser, LogOut, PenLine, ShieldCheck, Wrench } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/use-auth";
@@ -187,9 +187,11 @@ export function SignaturePad({
 export function AppShell({
   children,
   adminArea = false,
+  areaLabel,
 }: {
   children: React.ReactNode;
   adminArea?: boolean;
+  areaLabel?: string;
 }) {
   const { user, signOut } = useAuth();
   const navigate = useNavigate();
@@ -213,7 +215,7 @@ export function AppShell({
               GTEC <span className="text-primary">PRO</span>
             </span>
             <span className="hidden rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground sm:inline">
-              {adminArea ? "Administration" : "Espace client"}
+              {areaLabel ?? (adminArea ? "Administration" : "Espace client")}
             </span>
           </button>
           <div className="flex items-center gap-2">
@@ -226,6 +228,12 @@ export function AppShell({
             {!isAdmin && adminArea === false && (
               <Button variant="ghost" size="sm" onClick={() => navigate("/dashboard")}>
                 Tableau de bord
+              </Button>
+            )}
+            {!isAdmin && adminArea === false && (
+              <Button variant="ghost" size="sm" onClick={() => navigate("/technician")}>
+                <Wrench className="mr-1.5 size-4 text-primary" />
+                Espace technicien
               </Button>
             )}
             {isAdmin && adminArea && (

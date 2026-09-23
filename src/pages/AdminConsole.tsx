@@ -10,10 +10,12 @@ import {
   ImagePlus,
   Lightbulb,
   Loader2,
+  Package,
   Plus,
   ShieldCheck,
   Sparkles,
   Trash2,
+  UserCheck,
   UserPlus,
   Users,
   Wallet,
@@ -24,6 +26,7 @@ import { useRef, useState } from "react";
 import { toast } from "sonner";
 import { api } from "@/convex/_generated/api";
 import { AppShell, StatusBadge } from "@/components/gtec";
+import { ReportForm } from "@/components/ReportForm";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -307,188 +310,10 @@ function AssignCrew({
   );
 }
 
-// ---------- rapport d'intervention (admin) ----------
+// ---------- rapport : mutation admin injectée dans le formulaire partagé ----------
 
-function ReportForm({ requestId }: { requestId: string }) {
-  const submitReport = useMutation(api.gtec.adminSubmitReport);
-  const [workDone, setWorkDone] = useState("");
-  const [parts, setParts] = useState<QuoteItem[]>([
-    { label: "", qty: 1, unitPrice: 0 },
-  ]);
-  const [before, setBefore] = useState<string[]>([]);
-  const [after, setAfter] = useState<string[]>([]);
-  const [warranty, setWarranty] = useState(6);
-  const [recommendations, setRecommendations] = useState("");
-  const [busy, setBusy] = useState(false);
-  const beforeRef = useRef<HTMLInputElement>(null);
-  const afterRef = useRef<HTMLInputElement>(null);
-
-  const readImages = (
-    files: FileList | null,
-    setter: (fn: (p: string[]) => string[]) => void,
-  ) => {
-    if (!files) return;
-    Array.from(files)
-      .slice(0, 4)
-      .forEach((file) => {
-        if (!file.type.startsWith("image/") || file.size > 2 * 1024 * 1024) {
-          toast.error(`${file.name} : image de 2 Mo max`);
-          return;
-        }
-        const reader = new FileReader();
-        reader.onload = () =>
-          setter((p) => (p.length < 4 ? [...p, reader.result as string] : p));
-        reader.readAsDataURL(file);
-      });
-  };
-
-  const submit = async () => {
-    if (workDone.trim().length < 10) {
-      toast.error("Décrivez les travaux réalisés (10 caractères min).");
-      return;
-    }
-    setBusy(true);
-    try {
-      await submitReport({
-        requestId: requestId as never,
-        workDone: workDone.trim(),
-        partsUsed: parts
-          .filter((p) => p.label.trim())
-          .map((p) => ({ label: p.label.trim(), qty: p.qty })),
-        beforePhotos: before,
-        afterPhotos: after,
-        warrantyMonths: warranty,
-        recommendations: recommendations.trim() || undefined,
-      });
-      toast.success("Rapport transmis au client");
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Erreur");
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const photoGrid = (
-    photos: string[],
-    addRef: React.RefObject<HTMLInputElement | null>,
-    setter: (fn: (p: string[]) => string[]) => void,
-    label: string,
-  ) => (
-    <div className="flex flex-col gap-1.5">
-      <Label className="text-xs">{label}</Label>
-      <input
-        ref={addRef}
-        type="file"
-        accept="image/*"
-        multiple
-        hidden
-        onChange={(e) => {
-          readImages(e.target.files, setter);
-          e.target.value = "";
-        }}
-      />
-      <div className="flex gap-2">
-        {photos.map((src, i) => (
-          <div key={i} className="group relative size-14 overflow-hidden rounded-lg border">
-            <img src={src} alt={`${label} ${i + 1}`} className="size-full object-cover" />
-            <button
-              className="absolute inset-0 bg-black/60 opacity-0 transition-opacity group-hover:opacity-100"
-              onClick={() => setter((p) => p.filter((_, j) => j !== i))}
-            >
-              <Trash2 className="mx-auto size-3.5 text-white" />
-            </button>
-          </div>
-        ))}
-        {photos.length < 4 && (
-          <button
-            className="flex size-14 items-center justify-center rounded-lg border border-dashed text-muted-foreground hover:border-primary/50 hover:text-primary"
-            onClick={() => addRef.current?.click()}
-          >
-            <ImagePlus className="size-4" />
-          </button>
-        )}
-      </div>
-    </div>
-  );
-
-  return (
-    <div className="flex flex-col gap-3 rounded-xl border border-primary/25 bg-primary/[0.04] p-4">
-      <p className="flex items-center gap-1.5 text-sm font-semibold">
-        <ClipboardCheck className="size-4 text-primary" /> Rapport d'intervention
-      </p>
-      <Textarea
-        value={workDone}
-        onChange={(e) => setWorkDone(e.target.value)}
-        placeholder="Travaux réalisés (remplacement du disjoncteur 25A, reprise de la ligne cuisine…)"
-        rows={3}
-      />
-      {parts.map((part, idx) => (
-        <div key={idx} className="flex items-center gap-2">
-          <Input
-            value={part.label}
-            onChange={(e) =>
-              setParts((p) => p.map((it, i) => (i === idx ? { ...it, label: e.target.value } : it)))
-            }
-            placeholder="Matériel utilisé (optionnel)"
-            className="flex-1"
-          />
-          <Input
-            type="number"
-            min={1}
-            value={part.qty}
-            onChange={(e) =>
-              setParts((p) =>
-                p.map((it, i) => (i === idx ? { ...it, qty: Number(e.target.value) || 1 } : it)),
-              )
-            }
-            className="w-16"
-            aria-label="Quantité"
-          />
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => setParts((p) => p.filter((_, i) => i !== idx))}
-            disabled={parts.length === 1}
-          >
-            <Trash2 className="size-4" />
-          </Button>
-        </div>
-      ))}
-      <Button
-        variant="ghost"
-        size="sm"
-        className="w-fit"
-        onClick={() => setParts((p) => [...p, { label: "", qty: 1, unitPrice: 0 }])}
-      >
-        <Plus className="mr-1 size-3.5" /> Matériel
-      </Button>
-      <div className="grid gap-4 sm:grid-cols-2">
-        {photoGrid(before, beforeRef, (fn) => setBefore(fn), "Photos avant")}
-        {photoGrid(after, afterRef, (fn) => setAfter(fn), "Photos après")}
-      </div>
-      <div className="flex items-center gap-3">
-        <Label className="text-xs">Garantie (mois)</Label>
-        <Input
-          type="number"
-          min={0}
-          max={60}
-          value={warranty}
-          onChange={(e) => setWarranty(Number(e.target.value) || 0)}
-          className="w-20"
-        />
-      </div>
-      <Textarea
-        value={recommendations}
-        onChange={(e) => setRecommendations(e.target.value)}
-        placeholder="Recommandations (optionnel)"
-        rows={2}
-      />
-      <Button className="halo-amber" disabled={busy} onClick={submit}>
-        <ClipboardCheck className="mr-2 size-4" />
-        {busy ? "Envoi…" : "Transmettre le rapport au client"}
-      </Button>
-    </div>
-  );
+function useAdminReportMutation() {
+  return useMutation(api.gtec.adminSubmitReport);
 }
 
 // ---------- panneau admin d'une demande ----------
@@ -550,7 +375,13 @@ function AdminRequestRow({
       </Button>,
     );
   if (request.status === "en_intervention")
-    actions.push(<ReportForm key="r" requestId={request._id} />);
+    actions.push(
+      <ReportForm
+        key="r"
+        requestId={request._id}
+        useReportMutation={useAdminReportMutation}
+      />,
+    );
   if (request.status === "rapport_emis")
     actions.push(
       <p key="w" className="text-sm text-muted-foreground">
@@ -653,8 +484,16 @@ export default function AdminConsole() {
 
   const claimAdmin = useMutation(api.gtec.claimAdmin);
   const validatePayment = useMutation(api.gtec.adminValidatePayment);
+  const rejectPayment = useMutation(api.gtec.adminRejectPayment);
   const seedTechs = useMutation(api.gtec.adminSeedTechnicians);
   const createTech = useMutation(api.gtec.adminCreateTechnician);
+  const reviewTechnician = useMutation(api.gtec.adminReviewTechnician);
+  const reviewMaterial = useMutation(api.gtec.adminReviewMaterial);
+
+  const applications = useQuery(api.gtec.adminListApplications);
+  const materials = useQuery(api.gtec.listMaterialRequests);
+  const pendingApps =
+    applications?.filter((a) => a.profile.status === "en_attente") ?? [];
 
   const [techName, setTechName] = useState("");
   const [techSpecialty, setTechSpecialty] = useState("");
@@ -784,6 +623,22 @@ export default function AdminConsole() {
             <TabsTrigger value="techniciens">
               <Users className="mr-1.5 size-4" /> Techniciens
             </TabsTrigger>
+            <TabsTrigger value="verification">
+              <UserCheck className="mr-1.5 size-4" /> Vérification
+              {pendingApps.length > 0 && (
+                <span className="ml-1.5 rounded-full bg-primary px-1.5 py-0.5 text-[10px] font-bold text-primary-foreground">
+                  {pendingApps.length}
+                </span>
+              )}
+            </TabsTrigger>
+            <TabsTrigger value="materiel">
+              <Package className="mr-1.5 size-4" /> Matériel
+              {(materials?.length ?? 0) > 0 && (
+                <span className="ml-1.5 rounded-full bg-primary px-1.5 py-0.5 text-[10px] font-bold text-primary-foreground">
+                  {materials?.length}
+                </span>
+              )}
+            </TabsTrigger>
           </TabsList>
 
           {/* Missions */}
@@ -853,20 +708,202 @@ export default function AdminConsole() {
                           {payment.payerPhone}
                         </p>
                       </div>
-                      <Button
-                        className="halo-amber"
-                        size="sm"
-                        disabled={busy}
-                        onClick={() =>
-                          run(
-                            () => validatePayment({ paymentId: payment._id as never }),
-                            "Paiement validé",
-                          )
-                        }
+                      <div className="flex items-center gap-2">
+                        <Button
+                          className="halo-amber"
+                          size="sm"
+                          disabled={busy}
+                          onClick={() =>
+                            run(
+                              () => validatePayment({ paymentId: payment._id as never }),
+                              "Paiement validé",
+                            )
+                          }
+                        >
+                          <CheckCircle2 className="mr-1.5 size-4" />
+                          Valider
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="text-destructive"
+                          disabled={busy}
+                          onClick={() =>
+                            run(
+                              () =>
+                                rejectPayment({
+                                  paymentId: payment._id as never,
+                                  reason: "Paiement non retrouvé / non abouti",
+                                }),
+                              "Paiement marqué échoué",
+                            )
+                          }
+                        >
+                          <XCircle className="mr-1.5 size-4" />
+                          Échec
+                        </Button>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            )}
+          </TabsContent>
+
+          {/* Vérification des candidatures */}
+          <TabsContent value="verification" className="mt-4">
+            {applications === undefined ? (
+              <div className="h-40 animate-pulse rounded-xl bg-muted" />
+            ) : applications.length === 0 ? (
+              <Card className="card-layered">
+                <CardContent className="py-10 text-center text-sm text-muted-foreground">
+                  Aucune candidature technicien pour le moment.
+                </CardContent>
+              </Card>
+            ) : (
+              <div className="flex flex-col gap-2">
+                {applications.map(({ profile, user }) => (
+                  <div
+                    key={profile._id}
+                    className="flex flex-wrap items-center gap-3 rounded-xl border border-border/70 bg-card px-4 py-3"
+                  >
+                    <span className="flex size-9 items-center justify-center rounded-full bg-primary/15 text-sm font-semibold text-primary">
+                      {user?.name?.[0] ?? "?"}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium">
+                        {user?.name ?? "Candidat"}
+                        <span className="ml-2 text-xs font-normal text-muted-foreground">
+                          {profile.specialty} · {profile.experienceYears} an(s)
+                        </span>
+                      </p>
+                      <p className="truncate text-xs text-muted-foreground">
+                        Zones : {profile.zones.join(", ")}
+                        {profile.certifications ? ` · ${profile.certifications}` : ""}
+                      </p>
+                    </div>
+                    {profile.status === "en_attente" ? (
+                      <div className="flex items-center gap-2">
+                        <Button
+                          className="halo-amber"
+                          size="sm"
+                          disabled={busy}
+                          onClick={() =>
+                            run(
+                              () =>
+                                reviewTechnician({
+                                  profileId: profile._id as never,
+                                  decision: "verifie",
+                                }),
+                              "Technicien vérifié — il reçoit maintenant des missions",
+                            )
+                          }
+                        >
+                          <CheckCircle2 className="mr-1.5 size-4" /> Valider
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="text-destructive"
+                          disabled={busy}
+                          onClick={() =>
+                            run(
+                              () =>
+                                reviewTechnician({
+                                  profileId: profile._id as never,
+                                  decision: "rejete",
+                                }),
+                              "Candidature refusée",
+                            )
+                          }
+                        >
+                          <XCircle className="mr-1.5 size-4" /> Refuser
+                        </Button>
+                      </div>
+                    ) : (
+                      <span
+                        className={cn(
+                          "rounded-full px-2.5 py-1 text-xs font-medium ring-1 ring-inset",
+                          profile.status === "verifie"
+                            ? "bg-emerald-500/10 text-emerald-600 ring-emerald-500/20 dark:text-emerald-400"
+                            : "bg-destructive/10 text-destructive ring-destructive/20",
+                        )}
                       >
-                        <CheckCircle2 className="mr-1.5 size-4" />
-                        Valider
-                      </Button>
+                        {profile.status === "verifie" ? "Vérifié" : "Refusé"}
+                      </span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </TabsContent>
+
+          {/* Demandes de matériel */}
+          <TabsContent value="materiel" className="mt-4">
+            {materials === undefined ? (
+              <div className="h-40 animate-pulse rounded-xl bg-muted" />
+            ) : materials.length === 0 ? (
+              <Card className="card-layered">
+                <CardContent className="py-10 text-center text-sm text-muted-foreground">
+                  Aucune demande de matériel en attente.
+                </CardContent>
+              </Card>
+            ) : (
+              <div className="flex flex-col gap-2">
+                {materials.map(({ material, request, requester }) => (
+                  <Card key={material._id} className="card-layered">
+                    <CardContent className="flex flex-wrap items-center gap-4 py-4">
+                      <span className="flex size-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                        <Package className="size-5" />
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-semibold">
+                          {material.label} × {material.qty}
+                          <span className="ml-2 text-xs font-normal text-muted-foreground">
+                            {request?.reference}
+                          </span>
+                        </p>
+                        <p className="truncate text-xs text-muted-foreground">
+                          Demandé par {requester?.name ?? "technicien"}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          className="halo-amber"
+                          size="sm"
+                          disabled={busy}
+                          onClick={() =>
+                            run(
+                              () =>
+                                reviewMaterial({
+                                  materialId: material._id as never,
+                                  decision: "commande",
+                                }),
+                              "Matériel commandé",
+                            )
+                          }
+                        >
+                          <CheckCircle2 className="mr-1.5 size-4" /> Commander
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="text-destructive"
+                          disabled={busy}
+                          onClick={() =>
+                            run(
+                              () =>
+                                reviewMaterial({
+                                  materialId: material._id as never,
+                                  decision: "refuse",
+                                }),
+                              "Demande refusée",
+                            )
+                          }
+                        >
+                          <XCircle className="mr-1.5 size-4" /> Refuser
+                        </Button>
+                      </div>
                     </CardContent>
                   </Card>
                 ))}

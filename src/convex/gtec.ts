@@ -476,6 +476,12 @@ export const adminValidatePayment = mutation({
     if (payment.status !== "en_attente") {
       throw new Error("Ce paiement a déjà été traité.");
     }
+    const request = await ctx.db.get(payment.requestId);
+    if (!request || request.status !== "devis_accepte") {
+      throw new Error(
+        "La demande n'est plus en attente de paiement (déjà payée ou annulée).",
+      );
+    }
     await ctx.db.patch(args.paymentId, { status: "valide" });
     await ctx.db.patch(payment.requestId, { status: "paye" });
     await addEvent(
@@ -484,6 +490,26 @@ export const adminValidatePayment = mutation({
       "paiement",
       "Paiement validé",
       `${payment.amount.toLocaleString("fr-FR")} FCFA · ${payment.payerPhone}`,
+    );
+  },
+});
+
+export const adminRejectPayment = mutation({
+  args: { paymentId: v.id("payments"), reason: v.string() },
+  handler: async (ctx, args) => {
+    await requireAdmin(ctx);
+    const payment = await ctx.db.get(args.paymentId);
+    if (!payment) throw new Error("Paiement introuvable.");
+    if (payment.status !== "en_attente") {
+      throw new Error("Ce paiement a déjà été traité.");
+    }
+    await ctx.db.patch(args.paymentId, { status: "echoue" });
+    await addEvent(
+      ctx,
+      payment.requestId,
+      "paiement",
+      "Paiement non abouti",
+      args.reason || "Vérification négative",
     );
   },
 });
@@ -605,6 +631,311 @@ export const adminSubmitReport = mutation({
       "rapport",
       "Rapport d'intervention transmis",
       `Garantie ${args.warrantyMonths} mois`,
+    );
+  },
+});
+
+// ---------- espace technicien ----------
+
+export const myTechnicianProfile = query({
+  args: {},
+  handler: async (ctx) => {
+    const user = await requireUser(ctx);
+    const profile = (
+      await ctx.db
+        .query("technicianProfiles")
+        .withIndex("by_user", (q) => q.eq("userId", user._id))
+        .collect()
+    )[0];
+    return profile ?? null;
+  },
+});
+
+/** Candidature technicien. */
+export const submitTechnicianApplication = mutation({
+  args: {
+    specialty: v.string(),
+    experienceYears: v.number(),
+    zones: v.array(v.string()),
+    certifications: v.optional(v.string()),
+    bio: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const user = await requireUser(ctx);
+    if (!user.name) {
+      throw new Error("Complétez votre nom avant de postuler.");
+    }
+    if (args.specialty.trim().length < 3) {
+      throw new Error("Indiquez votre spécialité.");
+    }
+    if (args.zones.length === 0) {
+      throw new Error("Choisissez au moins une zone d'intervention.");
+    }
+    const existing = (
+      await ctx.db
+        .query("technicianProfiles")
+        .withIndex("by_user", (q) => q.eq("userId", user._id))
+        .collect()
+    )[0];
+    if (existing) {
+      if (existing.status === "rejete") {
+        throw new Error(
+          "Votre candidature a été refusée. Contactez l'administration GTEC.",
+        )
+      }
+      throw new Error("Vous avez déjà une candidature en cours.");
+    }
+    await ctx.db.insert("technicianProfiles", {
+      userId: user._id,
+      specialty: args.specialty.trim(),
+      experienceYears: Math.max(0, args.experienceYears),
+      zones: args.zones,
+      certifications: args.certifications?.trim() || undefined,
+      bio: args.bio?.trim() || undefined,
+      status: "en_attente",
+      subscription: "aucun",
+    });
+  },
+});
+
+/** Vérification admin d'une candidature. */
+export const adminReviewTechnician = mutation({
+  args: {
+    profileId: v.id("technicianProfiles"),
+    decision: v.union(v.literal("verifie"), v.literal("rejete")),
+  },
+  handler: async (ctx, args) => {
+    await requireAdmin(ctx);
+    const profile = await ctx.db.get(args.profileId);
+    if (!profile) throw new Error("Candidature introuvable.");
+    if (profile.status !== "en_attente") {
+      throw new Error("Cette candidature a déjà été traitée.");
+    }
+    await ctx.db.patch(args.profileId, { status: args.decision });
+    // Un technicien vérifié devient visible pour l'affectation :
+    // rôle "member" + spécialité portée par le champ city (moteur d'affectation V1).
+    if (args.decision === "verifie") {
+      await ctx.db.patch(profile.userId, {
+        role: "member",
+        city: profile.specialty,
+      });
+    }
+  },
+});
+
+const SUBSCRIPTION_PRICES: Record<string, number> = {
+  mensuel: 5000,
+  trimestriel: 12000,
+  annuel: 40000,
+};
+
+/** Choix / renouvellement d'abonnement par le technicien. */
+export const setTechnicianSubscription = mutation({
+  args: {
+    plan: v.union(
+      v.literal("mensuel"),
+      v.literal("trimestriel"),
+      v.literal("annuel"),
+    ),
+  },
+  handler: async (ctx, args) => {
+    const user = await requireUser(ctx);
+    const profile = (
+      await ctx.db
+        .query("technicianProfiles")
+        .withIndex("by_user", (q) => q.eq("userId", user._id))
+        .collect()
+    )[0];
+    if (!profile) throw new Error("Aucun profil technicien.");
+    if (profile.status !== "verifie") {
+      throw new Error("Votre profil doit d'abord être vérifié par GTEC.");
+    }
+    const now = Date.now();
+    const days =
+      args.plan === "mensuel" ? 30 : args.plan === "trimestriel" ? 90 : 365;
+    const from =
+      profile.subscriptionUntil && profile.subscriptionUntil > now
+        ? profile.subscriptionUntil
+        : now;
+    await ctx.db.patch(profile._id, {
+      subscription: args.plan,
+      subscriptionUntil: from + days * 24 * 3600 * 1000,
+      subscriptionPrice: SUBSCRIPTION_PRICES[args.plan],
+    });
+  },
+});
+
+/** Missions du technicien connecté (affectations où il apparaît). */
+export const listMyMissions = query({
+  args: {},
+  handler: async (ctx) => {
+    const user = await requireUser(ctx);
+    const assignments = await ctx.db.query("assignments").collect();
+    const mine = assignments.filter((a) =>
+      a.members.some((m) => m.id === user._id),
+    );
+    return await Promise.all(
+      mine.map(async (a) => {
+        const request = await ctx.db.get(a.requestId);
+        return { assignment: a, request };
+      }),
+    );
+  },
+});
+
+/** Rapport soumis par un technicien membre de l'équipe (mission en cours). */
+export const technicianSubmitReport = mutation({
+  args: {
+    requestId: v.id("serviceRequests"),
+    workDone: v.string(),
+    partsUsed: v.array(v.object({ label: v.string(), qty: v.number() })),
+    beforePhotos: v.array(v.string()),
+    afterPhotos: v.array(v.string()),
+    warrantyMonths: v.number(),
+    recommendations: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const user = await requireUser(ctx);
+    const request = await ctx.db.get(args.requestId);
+    if (!request || request.status !== "en_intervention") {
+      throw new Error("Aucune intervention en cours pour cette mission.");
+    }
+    const assignment = (
+      await ctx.db
+        .query("assignments")
+        .withIndex("by_request", (q) => q.eq("requestId", args.requestId))
+        .collect()
+    ).slice(-1)[0];
+    if (!assignment) throw new Error("Affectation introuvable.");
+    if (!assignment.members.some((m) => m.id === user._id)) {
+      throw new Error("Vous n'êtes pas affecté à cette mission.");
+    }
+    const report = (
+      await ctx.db
+        .query("interventionReports")
+        .withIndex("by_request", (q) => q.eq("requestId", args.requestId))
+        .collect()
+    ).slice(-1)[0];
+    if (report) {
+      // Le rapport existe déjà : mise à jour (brouillon repris).
+      await ctx.db.patch(report._id, {
+        workDone: args.workDone,
+        partsUsed: args.partsUsed,
+        beforePhotos: args.beforePhotos,
+        afterPhotos: args.afterPhotos,
+        warrantyMonths: args.warrantyMonths,
+        recommendations: args.recommendations,
+        status: "transmis",
+      });
+    } else {
+      await ctx.db.insert("interventionReports", {
+        requestId: args.requestId,
+        assignmentId: assignment._id,
+        workDone: args.workDone,
+        partsUsed: args.partsUsed,
+        beforePhotos: args.beforePhotos,
+        afterPhotos: args.afterPhotos,
+        warrantyMonths: args.warrantyMonths,
+        recommendations: args.recommendations,
+        status: "transmis",
+      });
+    }
+    await ctx.db.patch(assignment._id, { status: "terminee" });
+    await ctx.db.patch(args.requestId, { status: "rapport_emis" });
+    await addEvent(
+      ctx,
+      args.requestId,
+      "rapport",
+      "Rapport d'intervention transmis",
+      `Garantie ${args.warrantyMonths} mois`,
+    );
+  },
+});
+
+/** Demande de matériel par un technicien de l'équipe. */
+export const requestMaterial = mutation({
+  args: {
+    requestId: v.id("serviceRequests"),
+    label: v.string(),
+    qty: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const user = await requireUser(ctx);
+    const assignment = (
+      await ctx.db
+        .query("assignments")
+        .withIndex("by_request", (q) => q.eq("requestId", args.requestId))
+        .collect()
+    ).slice(-1)[0];
+    if (!assignment || !assignment.members.some((m) => m.id === user._id)) {
+      throw new Error("Vous n'êtes pas affecté à cette mission.");
+    }
+    if (args.label.trim().length < 3) {
+      throw new Error("Décrivez le matériel demandé.");
+    }
+    await ctx.db.insert("materialRequests", {
+      requestId: args.requestId,
+      requestedById: user._id,
+      label: args.label.trim(),
+      qty: Math.max(1, args.qty),
+      status: "demande",
+    });
+  },
+});
+
+export const listMaterialRequests = query({
+  args: {},
+  handler: async (ctx) => {
+    await requireAdmin(ctx);
+    const all = await ctx.db
+      .query("materialRequests")
+      .withIndex("by_status", (q) => q.eq("status", "demande"))
+      .collect();
+    return await Promise.all(
+      all.map(async (m) => {
+        const request = await ctx.db.get(m.requestId);
+        const requester = await ctx.db.get(m.requestedById);
+        return { material: m, request, requester };
+      }),
+    );
+  },
+});
+
+export const adminReviewMaterial = mutation({
+  args: {
+    materialId: v.id("materialRequests"),
+    decision: v.union(
+      v.literal("approuve"),
+      v.literal("refuse"),
+      v.literal("commande"),
+      v.literal("livre"),
+    ),
+    note: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    await requireAdmin(ctx);
+    const material = await ctx.db.get(args.materialId);
+    if (!material) throw new Error("Demande de matériel introuvable.");
+    if (material.status === "livre" || material.status === "refuse") {
+      throw new Error("Cette demande est déjà clôturée.");
+    }
+    await ctx.db.patch(args.materialId, {
+      status: args.decision,
+      adminNote: args.note,
+    });
+  },
+});
+
+export const adminListApplications = query({
+  args: {},
+  handler: async (ctx) => {
+    await requireAdmin(ctx);
+    const profiles = await ctx.db.query("technicianProfiles").collect();
+    return await Promise.all(
+      profiles.map(async (p) => {
+        const user = await ctx.db.get(p.userId);
+        return { profile: p, user };
+      }),
     );
   },
 });

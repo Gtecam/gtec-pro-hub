@@ -15,6 +15,7 @@ const AuthPage = lazy(() => import("./pages/Auth.tsx"));
 const Dashboard = lazy(() => import("./pages/Dashboard.tsx"));
 const NewRequest = lazy(() => import("./pages/NewRequest.tsx"));
 const RequestDetail = lazy(() => import("./pages/RequestDetail.tsx"));
+const TechnicianSpace = lazy(() => import("./pages/TechnicianSpace.tsx"));
 const NotFound = lazy(() => import("./pages/NotFound.tsx"));
 
 // Simple loading fallback for route transitions
@@ -147,6 +148,14 @@ createRoot(document.getElementById("root")!).render(
                 element={
                   <RequireAuth>
                     <RequestDetail />
+                  </RequireAuth>
+                }
+              />
+              <Route
+                path="/technician"
+                element={
+                  <RequireAuth>
+                    <TechnicianSpace />
                   </RequireAuth>
                 }
               />
