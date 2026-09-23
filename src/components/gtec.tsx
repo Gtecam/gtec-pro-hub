@@ -218,7 +218,7 @@ export function AppShell({
           </button>
           <div className="flex items-center gap-2">
             {isAdmin && !adminArea && (
-              <Button variant="ghost" size="sm" onClick={() => navigate("/admin")}>
+              <Button variant="ghost" size="sm" onClick={() => navigate("/dashboard")}>
                 <ShieldCheck className="mr-1.5 size-4 text-primary" />
                 Console admin
               </Button>

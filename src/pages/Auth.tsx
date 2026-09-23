@@ -66,7 +66,7 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
       setError(
         error instanceof Error
           ? error.message
-          : "Failed to send verification code. Please try again.",
+          : "Échec de l'envoi du code. Réessayez.",
       );
       setIsLoading(false);
     }
@@ -86,7 +86,7 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
     } catch (error) {
       console.error("OTP verification error:", error);
 
-      setError("The verification code you entered is incorrect.");
+      setError("Le code de vérification est incorrect.");
       setIsLoading(false);
 
       setOtp("");
@@ -104,7 +104,9 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
     } catch (error) {
       console.error("Guest login error:", error);
       console.error("Error details:", JSON.stringify(error, null, 2));
-      setError(`Failed to sign in as guest: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      setError(
+        `Connexion invité impossible : ${error instanceof Error ? error.message : "erreur inconnue"}`,
+      );
       setIsLoading(false);
     }
   };
@@ -130,9 +132,9 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
                       onClick={() => navigate("/")}
                     />
                   </div>
-                <CardTitle className="text-xl">Get Started</CardTitle>
+                <CardTitle className="text-xl">Bienvenue sur GTEC PRO</CardTitle>
                 <CardDescription>
-                  Enter your email to log in or sign up
+                  Entrez votre email pour vous connecter ou créer votre compte
                 </CardDescription>
               </CardHeader>
               <form onSubmit={handleEmailSubmit}>
@@ -164,7 +166,7 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
                     </Button>
                   </div>
                   {error && (
-                    <p className="mt-2 text-sm text-red-500">{error}</p>
+                    <p className="mt-2 text-sm text-destructive">{error}</p>
                   )}
                   
                   <div className="mt-4">
@@ -174,7 +176,7 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
                       </div>
                       <div className="relative flex justify-center text-xs uppercase">
                         <span className="bg-background px-2 text-muted-foreground">
-                          Or
+                          Ou
                         </span>
                       </div>
                     </div>
@@ -187,7 +189,7 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
                       disabled={isLoading}
                     >
                       <UserX className="mr-2 h-4 w-4" />
-                      Continue as Guest
+                      Continuer en mode invité
                     </Button>
                   </div>
                 </CardContent>
@@ -196,9 +198,9 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
           ) : (
             <>
               <CardHeader className="text-center mt-4">
-                <CardTitle>Check your email</CardTitle>
+                <CardTitle>Vérifiez votre boîte mail</CardTitle>
                 <CardDescription>
-                  We've sent a code to {step.email}
+                  Un code à 6 chiffres a été envoyé à {step.email}
                 </CardDescription>
               </CardHeader>
               <form onSubmit={handleOtpSubmit}>
@@ -230,19 +232,19 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
                     </InputOTP>
                   </div>
                   {error && (
-                    <p className="mt-2 text-sm text-red-500 text-center">
+                    <p className="mt-2 text-sm text-destructive text-center">
                       {error}
                     </p>
                   )}
                   <p className="text-sm text-muted-foreground text-center mt-4">
-                    Didn't receive a code?{" "}
+                    Code non reçu ?{" "}
                     <Button
                       variant="link"
                       className="p-0 h-auto"
-                      onClick={() => setStep("signIn")}
-                    >
-                      Try again
-                    </Button>
+                    onClick={() => setStep("signIn")}
+                  >
+                    Renvoyer
+                  </Button>
                   </p>
                 </CardContent>
                 <CardFooter className="flex-col gap-2">
@@ -254,11 +256,11 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
                     {isLoading ? (
                       <>
                         <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        Verifying...
+                        Vérification…
                       </>
                     ) : (
                       <>
-                        Verify code
+                        Valider le code
                         <ArrowRight className="ml-2 h-4 w-4" />
                       </>
                     )}
@@ -270,7 +272,7 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
                     disabled={isLoading}
                     className="w-full"
                   >
-                    Use different email
+                    Utiliser un autre email
                   </Button>
                 </CardFooter>
               </form>
@@ -278,15 +280,7 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
           )}
 
           <div className="py-4 px-6 text-xs text-center text-muted-foreground bg-muted border-t rounded-b-lg">
-            Secured by{" "}
-            <a
-              href="https://freebuff.com"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="underline hover:text-primary transition-colors"
-            >
-              freebuff.com
-            </a>
+            Connexion sécurisée — GTEC PRO Cameroun
           </div>
         </Card>
         </div>
