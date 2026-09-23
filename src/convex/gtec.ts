@@ -60,6 +60,31 @@ function quoteTotals(items: { qty: number; unitPrice: number }[]) {
 
 // ---------- profils ----------
 
+/**
+ * Type d'espace choisi à l'inscription : "client" ou "technicien".
+ * Irreversible côté client — l'admin peut toujours créer des comptes dédiés.
+ */
+export const setAccountType = mutation({
+  args: {
+    accountType: v.union(v.literal("client"), v.literal("technicien")),
+    name: v.optional(v.string()),
+    phone: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const user = await requireUser(ctx);
+    // L'admin conserve son rôle ; les autres comptes verrouillent leur espace.
+    if (user.role === "admin") return;
+    if (user.accountType && user.accountType !== args.accountType) {
+      throw new Error("Le type d'espace de ce compte est déjà défini.");
+    }
+    await ctx.db.patch(user._id, {
+      accountType: args.accountType,
+      ...(args.name?.trim() ? { name: args.name.trim() } : {}),
+      ...(args.phone?.trim() ? { phone: args.phone.trim() } : {}),
+    });
+  },
+});
+
 export const updateClientProfile = mutation({
   args: {
     name: v.string(),

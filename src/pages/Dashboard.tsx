@@ -1,12 +1,15 @@
 import { useAuth } from "@/hooks/use-auth";
 import { Loader2 } from "lucide-react";
 import { useSearchParams } from "react-router";
+import { Navigate } from "react-router";
 import AdminConsole from "@/pages/AdminConsole";
 import ClientDashboard from "@/pages/ClientDashboard";
 
 /**
- * Tableau de bord : bascule automatique selon le rôle du compte.
- * Un admin peut consulter l'expérience client via /dashboard?view=client.
+ * Tableau de bord : bascule selon le type d'espace du compte.
+ * - Admin → console GTEC (l'admin peut consulter l'expérience client via ?view=client)
+ * - Technicien → renvoyé vers /technician (son espace dédié)
+ * - Client → expérience client
  */
 export default function Dashboard() {
   const { user, isLoading } = useAuth();
@@ -21,6 +24,11 @@ export default function Dashboard() {
   }
 
   const clientView = searchParams.get("view") === "client";
+
+  if (user.role !== "admin" && user.accountType === "technicien") {
+    // Un compte technicien ne peut pas entrer dans l'espace client.
+    return <Navigate to="/technician" replace />;
+  }
 
   return user.role === "admin" && !clientView ? (
     <AdminConsole />

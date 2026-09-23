@@ -196,11 +196,86 @@ export function AppShell({
   const { user, signOut } = useAuth();
   const navigate = useNavigate();
   const isAdmin = user?.role === "admin";
+  const isTech = user?.accountType === "technicien";
 
   const handleSignOut = async () => {
     await signOut();
     navigate("/");
   };
+
+  // Navigation cloisonnée : chaque espace ne montre que ses propres liens.
+  const links: React.ReactNode[] = [];
+  if (isAdmin) {
+    if (adminArea) {
+      links.push(
+        <Button
+          key="client"
+          variant="ghost"
+          size="sm"
+          onClick={() => navigate("/dashboard?view=client")}
+        >
+          Vue client
+        </Button>,
+        <Button
+          key="console"
+          variant="outline"
+          size="sm"
+          onClick={() => navigate("/dashboard")}
+        >
+          <ShieldCheck className="mr-1.5 size-4 text-primary" /> Console admin
+        </Button>,
+      );
+    } else {
+      links.push(
+        <Button
+          key="console"
+          variant="ghost"
+          size="sm"
+          onClick={() => navigate("/dashboard")}
+        >
+          <ShieldCheck className="mr-1.5 size-4 text-primary" /> Console admin
+        </Button>,
+      );
+    }
+  } else if (isTech) {
+    // Espace technicien : aucune porte vers l'espace client.
+    if (areaLabel !== "Espace technicien") {
+      links.push(
+        <Button
+          key="tech"
+          variant="ghost"
+          size="sm"
+          onClick={() => navigate("/technician")}
+        >
+          <Wrench className="mr-1.5 size-4 text-primary" /> Espace technicien
+        </Button>,
+      );
+    }
+  } else {
+    // Espace client : aucune porte vers l'espace technicien.
+    if (areaLabel !== "Espace client") {
+      links.push(
+        <Button
+          key="home"
+          variant="ghost"
+          size="sm"
+          onClick={() => navigate("/dashboard")}
+        >
+          Tableau de bord
+        </Button>,
+      );
+    }
+  }
+
+  const badge =
+    areaLabel ??
+    (adminArea
+      ? "Administration"
+      : isTech
+        ? "Espace technicien"
+        : isAdmin
+          ? "Administration"
+          : "Espace client");
 
   return (
     <div className="min-h-screen bg-background">
@@ -215,36 +290,11 @@ export function AppShell({
               GTEC <span className="text-primary">PRO</span>
             </span>
             <span className="hidden rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground sm:inline">
-              {areaLabel ?? (adminArea ? "Administration" : "Espace client")}
+              {badge}
             </span>
           </button>
           <div className="flex items-center gap-2">
-            {isAdmin && !adminArea && (
-              <Button variant="ghost" size="sm" onClick={() => navigate("/dashboard")}>
-                <ShieldCheck className="mr-1.5 size-4 text-primary" />
-                Console admin
-              </Button>
-            )}
-            {!isAdmin && adminArea === false && (
-              <Button variant="ghost" size="sm" onClick={() => navigate("/dashboard")}>
-                Tableau de bord
-              </Button>
-            )}
-            {!isAdmin && adminArea === false && (
-              <Button variant="ghost" size="sm" onClick={() => navigate("/technician")}>
-                <Wrench className="mr-1.5 size-4 text-primary" />
-                Espace technicien
-              </Button>
-            )}
-            {isAdmin && adminArea && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => navigate("/dashboard?view=client")}
-              >
-                Espace client
-              </Button>
-            )}
+            {links}
             <span className="hidden max-w-40 truncate text-sm text-muted-foreground md:block">
               {user?.name || user?.email || "Compte"}
             </span>

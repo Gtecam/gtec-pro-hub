@@ -32,6 +32,8 @@ const schema = defineSchema(
       role: v.optional(roleValidator), // role of the user. do not remove
 
       // GTEC PRO
+      /** Espace choisi à l'inscription : "client" (défaut) ou "technicien". */
+      accountType: v.optional(v.union(v.literal("client"), v.literal("technicien"))),
       phone: v.optional(v.string()),
       city: v.optional(v.string()),
 

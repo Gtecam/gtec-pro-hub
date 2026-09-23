@@ -52,6 +52,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useAuth } from "@/hooks/use-auth";
 import { cn } from "@/lib/utils";
 import { CITIES, fcfa, formatDateTime, PAYMENT_METHODS } from "@/lib/gtec";
+import { Navigate } from "react-router";
 
 const PLANS = [
   { key: "mensuel", label: "Mensuel", price: "5 000 FCFA", hint: "30 jours" },
@@ -397,6 +398,11 @@ export default function TechnicianSpace() {
   const doneMissions = (missions ?? []).filter(
     (m) => m.assignment.status === "terminee" || m.request?.status === "terminee",
   );
+
+  // Cloisonnement : seuls les comptes techniciens (et l'admin) entrent ici.
+  if (user && user.accountType === "client") {
+    return <Navigate to="/dashboard" replace />;
+  }
 
   return (
     <AppShell areaLabel="Espace technicien">
