@@ -76,6 +76,67 @@ export const updateClientProfile = mutation({
   },
 });
 
+/**
+ * Identité complète du client — prénom, nom, pièce d'identité, contacts,
+ * adresse détaillée, type de client (particulier/entreprise) et photo de CNI.
+ */
+export const updateClientIdentity = mutation({
+  args: {
+    firstName: v.string(),
+    lastName: v.string(),
+    nationalId: v.string(),
+    gender: v.optional(v.string()),
+    birthDate: v.optional(v.string()),
+    phone: v.string(),
+    altPhone: v.optional(v.string()),
+    city: v.string(),
+    address: v.string(),
+    quarter: v.optional(v.string()),
+    customerType: v.string(), // particulier | entreprise
+    companyName: v.optional(v.string()),
+    taxId: v.optional(v.string()),
+    idDocumentUrl: v.optional(v.string()), // data URL
+  },
+  handler: async (ctx, args) => {
+    const user = await requireUser(ctx);
+    if (args.firstName.trim().length < 2) {
+      throw new Error("Indiquez votre prénom.");
+    }
+    if (args.lastName.trim().length < 2) {
+      throw new Error("Indiquez votre nom.");
+    }
+    if (args.nationalId.trim().length < 6) {
+      throw new Error("Numéro CNI / passeport invalide.");
+    }
+    if (args.phone.trim().length < 6) {
+      throw new Error("Numéro de téléphone invalide.");
+    }
+    if (!args.address.trim()) {
+      throw new Error("Indiquez votre adresse.");
+    }
+    if (args.customerType === "entreprise" && !args.companyName?.trim()) {
+      throw new Error("Indiquez la raison sociale de l'entreprise.");
+    }
+    await ctx.db.patch(user._id, {
+      name: `${args.firstName.trim()} ${args.lastName.trim()}`.trim(),
+      firstName: args.firstName.trim(),
+      lastName: args.lastName.trim(),
+      nationalId: args.nationalId.trim(),
+      gender: args.gender || undefined,
+      birthDate: args.birthDate || undefined,
+      phone: args.phone.trim(),
+      altPhone: args.altPhone?.trim() || undefined,
+      city: args.city,
+      address: args.address.trim(),
+      quarter: args.quarter?.trim() || undefined,
+      customerType: args.customerType,
+      companyName: args.companyName?.trim() || undefined,
+      taxId: args.taxId?.trim() || undefined,
+      idDocumentUrl: args.idDocumentUrl || user.idDocumentUrl,
+    });
+  },
+});
+
 // ---------- admin : bootstrap & techniciens ----------
 
 export const adminExists = query({
@@ -652,25 +713,93 @@ export const myTechnicianProfile = query({
   },
 });
 
-/** Candidature technicien. */
+/**
+ * Candidature technicien complète : identité, profession, parcours académique
+ * et documents justificatifs OBLIGATOIRES (CNI + diplôme/certificat).
+ */
 export const submitTechnicianApplication = mutation({
   args: {
+    // Identité
+    firstName: v.string(),
+    lastName: v.string(),
+    nationalId: v.string(),
+    gender: v.optional(v.string()),
+    birthDate: v.optional(v.string()),
+    phone: v.string(),
+    altPhone: v.optional(v.string()),
+    city: v.string(),
+    address: v.optional(v.string()),
+    // Profession
     specialty: v.string(),
+    profession: v.optional(v.string()),
     experienceYears: v.number(),
+    currentEmployer: v.optional(v.string()),
+    references: v.optional(v.string()),
     zones: v.array(v.string()),
-    certifications: v.optional(v.string()),
     bio: v.optional(v.string()),
+    // Parcours académique
+    highestDegree: v.string(),
+    fieldOfStudy: v.optional(v.string()),
+    school: v.optional(v.string()),
+    graduationYear: v.optional(v.number()),
+    // Documents (obligatoires)
+    documents: v.array(
+      v.object({
+        kind: v.string(),
+        label: v.string(),
+        url: v.string(),
+      }),
+    ),
   },
   handler: async (ctx, args) => {
     const user = await requireUser(ctx);
-    if (!user.name) {
-      throw new Error("Complétez votre nom avant de postuler.");
+    // Identité
+    if (args.firstName.trim().length < 2) {
+      throw new Error("Indiquez votre prénom.");
     }
+    if (args.lastName.trim().length < 2) {
+      throw new Error("Indiquez votre nom.");
+    }
+    if (args.nationalId.trim().length < 6) {
+      throw new Error("Numéro CNI / passeport invalide.");
+    }
+    if (args.phone.trim().length < 6) {
+      throw new Error("Numéro de téléphone invalide.");
+    }
+    if (!args.city.trim()) {
+      throw new Error("Indiquez votre ville de résidence.");
+    }
+    // Profession
     if (args.specialty.trim().length < 3) {
       throw new Error("Indiquez votre spécialité.");
     }
     if (args.zones.length === 0) {
       throw new Error("Choisissez au moins une zone d'intervention.");
+    }
+    // Parcours académique
+    if (!args.highestDegree.trim()) {
+      throw new Error("Indiquez votre dernier diplôme obtenu.");
+    }
+    // Documents obligatoires : au moins une pièce d'identité + un justificatif
+    // de compétence (diplôme, attestation ou certificat).
+    const hasId = args.documents.some((d) => d.kind === "cni");
+    const hasProof = args.documents.some((d) =>
+      ["diploma", "certificate", "attestation"].includes(d.kind),
+    );
+    if (!hasId) {
+      throw new Error(
+        "Pièce d'identité obligatoire : joignez une photo de votre CNI ou passeport.",
+      );
+    }
+    if (!hasProof) {
+      throw new Error(
+        "Justificatif obligatoire : joignez au moins un diplôme, certificat ou attestation d'expérience.",
+      );
+    }
+    for (const d of args.documents) {
+      if (!d.url.startsWith("data:")) {
+        throw new Error("Document invalide.");
+      }
     }
     const existing = (
       await ctx.db
@@ -682,19 +811,40 @@ export const submitTechnicianApplication = mutation({
       if (existing.status === "rejete") {
         throw new Error(
           "Votre candidature a été refusée. Contactez l'administration GTEC.",
-        )
+        );
       }
       throw new Error("Vous avez déjà une candidature en cours.");
     }
     await ctx.db.insert("technicianProfiles", {
       userId: user._id,
+      firstName: args.firstName.trim(),
+      lastName: args.lastName.trim(),
+      nationalId: args.nationalId.trim(),
+      gender: args.gender || undefined,
+      birthDate: args.birthDate || undefined,
+      phone: args.phone.trim(),
+      altPhone: args.altPhone?.trim() || undefined,
+      city: args.city.trim(),
+      address: args.address?.trim() || undefined,
       specialty: args.specialty.trim(),
+      profession: args.profession?.trim() || undefined,
       experienceYears: Math.max(0, args.experienceYears),
+      currentEmployer: args.currentEmployer?.trim() || undefined,
+      references: args.references?.trim() || undefined,
       zones: args.zones,
-      certifications: args.certifications?.trim() || undefined,
       bio: args.bio?.trim() || undefined,
+      highestDegree: args.highestDegree.trim(),
+      fieldOfStudy: args.fieldOfStudy?.trim() || undefined,
+      school: args.school?.trim() || undefined,
+      graduationYear: args.graduationYear || undefined,
+      documents: args.documents,
       status: "en_attente",
       subscription: "aucun",
+    });
+    // Le nom du compte est mis à jour à partir de l'identité déclarée.
+    await ctx.db.patch(user._id, {
+      name: `${args.firstName.trim()} ${args.lastName.trim()}`.trim(),
+      phone: args.phone.trim(),
     });
   },
 });
@@ -901,6 +1051,7 @@ export const adminReviewTechnician = mutation({
   args: {
     profileId: v.id("technicianProfiles"),
     decision: v.union(v.literal("verifie"), v.literal("rejete")),
+    note: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     await requireAdmin(ctx);
@@ -909,7 +1060,10 @@ export const adminReviewTechnician = mutation({
     if (profile.status !== "en_attente") {
       throw new Error("Cette candidature a déjà été traitée.");
     }
-    await ctx.db.patch(args.profileId, { status: args.decision });
+    await ctx.db.patch(args.profileId, {
+      status: args.decision,
+      reviewNote: args.note,
+    });
     // Un technicien vérifié devient visible pour l'affectation :
     // rôle "member" + spécialité portée par le champ city (moteur d'affectation V1).
     if (args.decision === "verifie") {

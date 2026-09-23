@@ -4,6 +4,7 @@ import {
   ArrowRight,
   CalendarClock,
   FileText,
+  IdCard,
   MapPin,
   Plus,
   Receipt,
@@ -12,7 +13,7 @@ import {
   Wallet,
   X,
 } from "lucide-react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { toast } from "sonner";
 import { useNavigate } from "react-router";
 import { api } from "@/convex/_generated/api";
@@ -33,9 +34,19 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { useAuth } from "@/hooks/use-auth";
-import { fcfa, SERVICES, statusMeta } from "@/lib/gtec";
+import { cn } from "@/lib/utils";
+import { CITIES, fcfa, SERVICES, statusMeta } from "@/lib/gtec";
 
 function serviceIcon(key: string) {
   return SERVICES.find((s) => s.key === key)?.icon ?? Sparkles;
@@ -50,8 +61,104 @@ export default function ClientDashboard() {
   const navigate = useNavigate();
   const requests = useQuery(api.gtec.listMyRequests);
   const cancelRequest = useMutation(api.gtec.cancelRequest);
+  const updateIdentity = useMutation(api.gtec.updateClientIdentity);
+
   const [cancelTarget, setCancelTarget] = useState<string | null>(null);
   const [cancelReason, setCancelReason] = useState("");
+
+  // Identité client — formulaire prérempli depuis le profil existant.
+  const u = user as
+    | (NonNullable<typeof user> & {
+        firstName?: string;
+        lastName?: string;
+        nationalId?: string;
+        gender?: string;
+        birthDate?: string;
+        altPhone?: string;
+        address?: string;
+        quarter?: string;
+        customerType?: string;
+        companyName?: string;
+        taxId?: string;
+        idDocumentUrl?: string;
+      })
+    | undefined;
+  const identityComplete = !!(u?.firstName && u?.lastName && u?.nationalId);
+  const [showIdentity, setShowIdentity] = useState(false);
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
+  const [nationalId, setNationalId] = useState("");
+  const [gender, setGender] = useState("");
+  const [birthDate, setBirthDate] = useState("");
+  const [phone, setPhone] = useState("");
+  const [altPhone, setAltPhone] = useState("");
+  const [city, setCity] = useState("");
+  const [address, setAddress] = useState("");
+  const [quarter, setQuarter] = useState("");
+  const [customerType, setCustomerType] = useState("particulier");
+  const [companyName, setCompanyName] = useState("");
+  const [taxId, setTaxId] = useState("");
+  const [idDocUrl, setIdDocUrl] = useState<string | null>(null);
+  const [busyId, setBusyId] = useState(false);
+  const idInputRef = useRef<HTMLInputElement | null>(null);
+
+  const openIdentity = () => {
+    setFirstName(u?.firstName ?? u?.name?.split(" ")[0] ?? "");
+    setLastName(u?.lastName ?? u?.name?.split(" ").slice(1).join(" ") ?? "");
+    setNationalId(u?.nationalId ?? "");
+    setGender(u?.gender ?? "");
+    setBirthDate(u?.birthDate ?? "");
+    setPhone(u?.phone ?? "");
+    setAltPhone(u?.altPhone ?? "");
+    setCity(u?.city ?? "");
+    setAddress(u?.address ?? "");
+    setQuarter(u?.quarter ?? "");
+    setCustomerType(u?.customerType ?? "particulier");
+    setCompanyName(u?.companyName ?? "");
+    setTaxId(u?.taxId ?? "");
+    setIdDocUrl(u?.idDocumentUrl ?? null);
+    setShowIdentity(true);
+  };
+
+  const pickIdDoc = () => {
+    const file = idInputRef.current?.files?.[0];
+    if (!file) return;
+    if (file.size > 1.2 * 1024 * 1024) {
+      toast.error("Photo trop lourde — maximum 1,2 Mo.");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => setIdDocUrl(String(reader.result));
+    reader.readAsDataURL(file);
+  };
+
+  const saveIdentity = async () => {
+    setBusyId(true);
+    try {
+      await updateIdentity({
+        firstName: firstName.trim(),
+        lastName: lastName.trim(),
+        nationalId: nationalId.trim(),
+        gender: gender || undefined,
+        birthDate: birthDate || undefined,
+        phone: phone.trim(),
+        altPhone: altPhone.trim() || undefined,
+        city: city,
+        address: address.trim(),
+        quarter: quarter.trim() || undefined,
+        customerType,
+        companyName: companyName.trim() || undefined,
+        taxId: taxId.trim() || undefined,
+        idDocumentUrl: idDocUrl ?? undefined,
+      });
+      toast.success("Identité enregistrée");
+      setShowIdentity(false);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Erreur");
+    } finally {
+      setBusyId(false);
+    }
+  };
 
   const handleCancel = async () => {
     if (!cancelTarget) return;
@@ -97,6 +204,42 @@ export default function ClientDashboard() {
             Nouvelle demande
           </Button>
         </div>
+
+        {/* Identité client */}
+        <Card
+          className={cn(
+            "card-layered",
+            !identityComplete && "border-amber-500/40 bg-amber-500/[0.04]",
+          )}
+        >
+          <CardContent className="flex flex-wrap items-center gap-4 py-4">
+            <span
+              className={cn(
+                "flex size-10 items-center justify-center rounded-xl",
+                identityComplete
+                  ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+                  : "bg-amber-500/10 text-amber-600 dark:text-amber-400",
+              )}
+            >
+              <IdCard className="size-5" />
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-semibold">
+                {identityComplete
+                  ? `Identité vérifiée — ${u?.firstName} ${u?.lastName}`
+                  : "Complétez votre identité"}
+              </p>
+              <p className="truncate text-xs text-muted-foreground">
+                {identityComplete
+                  ? `${u?.nationalId ? `CNI ${u.nationalId} · ` : ""}${u?.phone ?? ""}${u?.address ? ` · ${u.address}, ${u.city}` : ""}`
+                  : "Prénom, nom, pièce d'identité et adresse permettent d'accélérer vos interventions et la facturation."}
+              </p>
+            </div>
+            <Button variant={identityComplete ? "outline" : "default"} size="sm" onClick={openIdentity}>
+              {identityComplete ? "Modifier" : "Renseigner mon identité"}
+            </Button>
+          </CardContent>
+        </Card>
 
         {/* Parcours garanti V1 */}
         <Card className="card-layered border-primary/15 bg-gradient-to-br from-primary/[0.04] to-transparent">
@@ -247,6 +390,195 @@ export default function ClientDashboard() {
             </Button>
             <Button variant="destructive" onClick={handleCancel}>
               <X className="mr-2 size-4" /> Annuler la demande
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Identité */}
+      <Dialog open={showIdentity} onOpenChange={setShowIdentity}>
+        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-xl">
+          <DialogHeader>
+            <DialogTitle>Mon identité</DialogTitle>
+            <DialogDescription>
+              Ces informations accélèrent le traitement de vos demandes et la
+              facturation. Elles restent confidentielles.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-col gap-3">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="flex flex-col gap-1.5">
+                <Label className="text-sm">Prénom *</Label>
+                <Input value={firstName} onChange={(e) => setFirstName(e.target.value)} />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <Label className="text-sm">Nom *</Label>
+                <Input value={lastName} onChange={(e) => setLastName(e.target.value)} />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <Label className="text-sm">CNI / Passeport *</Label>
+                <Input
+                  value={nationalId}
+                  onChange={(e) => setNationalId(e.target.value)}
+                  placeholder="Numéro de la pièce"
+                />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <Label className="text-sm">Date de naissance</Label>
+                <Input
+                  type="date"
+                  value={birthDate}
+                  onChange={(e) => setBirthDate(e.target.value)}
+                />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <Label className="text-sm">Sexe</Label>
+                <Select value={gender} onValueChange={setGender}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Choisir" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="homme">Homme</SelectItem>
+                    <SelectItem value="femme">Femme</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <Label className="text-sm">Téléphone *</Label>
+                <Input
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                  placeholder="6 XX XX XX XX"
+                  inputMode="tel"
+                />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <Label className="text-sm">Téléphone secondaire</Label>
+                <Input
+                  value={altPhone}
+                  onChange={(e) => setAltPhone(e.target.value)}
+                  inputMode="tel"
+                />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <Label className="text-sm">Ville *</Label>
+                <Select value={city} onValueChange={setCity}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Choisir" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {CITIES.map((c) => (
+                      <SelectItem key={c} value={c}>
+                        {c}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <Label className="text-sm">Quartier</Label>
+                <Input
+                  value={quarter}
+                  onChange={(e) => setQuarter(e.target.value)}
+                  placeholder="Ex. : Bonapriso"
+                />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <Label className="text-sm">Adresse</Label>
+                <Input
+                  value={address}
+                  onChange={(e) => setAddress(e.target.value)}
+                  placeholder="Rue, immeuble, repère…"
+                />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <Label className="text-sm">Type de client *</Label>
+                <Select value={customerType} onValueChange={setCustomerType}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="particulier">Particulier</SelectItem>
+                    <SelectItem value="entreprise">Entreprise</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              {customerType === "entreprise" && (
+                <>
+                  <div className="flex flex-col gap-1.5">
+                    <Label className="text-sm">Raison sociale *</Label>
+                    <Input
+                      value={companyName}
+                      onChange={(e) => setCompanyName(e.target.value)}
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1.5">
+                    <Label className="text-sm">N° contribuable (NUI)</Label>
+                    <Input value={taxId} onChange={(e) => setTaxId(e.target.value)} />
+                  </div>
+                </>
+              )}
+            </div>
+
+            {/* Photo de la pièce d'identité */}
+            <div className="flex flex-col gap-2 rounded-xl border border-border/70 p-3">
+              <Label className="text-sm">Photo de la pièce d'identité</Label>
+              <input
+                ref={idInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={pickIdDoc}
+              />
+              <div className="flex items-center gap-3">
+                {idDocUrl ? (
+                  <img
+                    src={idDocUrl}
+                    alt="Pièce d'identité"
+                    className="size-14 rounded-lg object-cover ring-1 ring-border"
+                  />
+                ) : (
+                  <span className="flex size-14 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+                    <IdCard className="size-5" />
+                  </span>
+                )}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => idInputRef.current?.click()}
+                >
+                  {idDocUrl ? "Remplacer la photo" : "Joindre une photo"}
+                </Button>
+                {idDocUrl && (
+                  <Button variant="ghost" size="sm" onClick={() => setIdDocUrl(null)}>
+                    Retirer
+                  </Button>
+                )}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Optionnelle mais recommandée (max 1,2 Mo) — utilisée uniquement
+                par l'administration GTEC.
+              </p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowIdentity(false)}>
+              Annuler
+            </Button>
+            <Button
+              className="halo-amber"
+              disabled={
+                busyId ||
+                firstName.trim().length < 2 ||
+                lastName.trim().length < 2 ||
+                nationalId.trim().length < 6 ||
+                phone.trim().length < 6 ||
+                !city ||
+                !address.trim()
+              }
+              onClick={saveIdentity}
+            >
+              {busyId ? "Enregistrement…" : "Enregistrer mon identité"}
             </Button>
           </DialogFooter>
         </DialogContent>

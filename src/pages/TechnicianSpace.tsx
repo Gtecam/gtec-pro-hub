@@ -6,18 +6,25 @@ import {
   CheckCircle2,
   ClipboardCheck,
   Crown,
+  FileBadge,
+  FileUp,
+  GraduationCap,
+  HardHat,
   Loader2,
   MapPin,
   Package,
+  Plus,
   Send,
   Sparkles,
+  Trash2,
   Truck,
   UserCheck,
+  UserRound,
   Wallet,
   Wrench,
   XCircle,
 } from "lucide-react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { toast } from "sonner";
 import { api } from "@/convex/_generated/api";
 import { AppShell } from "@/components/gtec";
@@ -61,6 +68,192 @@ const PAYOUT_STATUS_STYLES: Record<string, string> = {
   "payé": "bg-emerald-500/10 text-emerald-600 ring-emerald-500/20 dark:text-emerald-400",
 };
 
+// ---------- documents justificatifs (candidature technicien) ----------
+
+type DocumentItem = { kind: string; label: string; url: string };
+
+const DOC_KINDS = [
+  { value: "cni", label: "Pièce d'identité (CNI / passeport)" },
+  { value: "diploma", label: "Diplôme" },
+  { value: "certificate", label: "Certificat / licence" },
+  { value: "attestation", label: "Attestation d'expérience / travail" },
+  { value: "other", label: "Autre justificatif" },
+] as const;
+
+const MAX_DOC_SIZE = 1.2 * 1024 * 1024; // 1,2 Mo par document (data URL)
+
+function docKindLabel(kind: string): string {
+  return DOC_KINDS.find((k) => k.value === kind)?.label ?? kind;
+}
+
+/** Téléversement de documents justificatifs — CNI + diplôme obligatoires. */
+function DocumentsUploader({
+  documents,
+  onChange,
+  requiredKinds = ["cni", "diploma"],
+  disabled,
+}: {
+  documents: DocumentItem[];
+  onChange: (docs: DocumentItem[]) => void;
+  requiredKinds?: string[];
+  disabled?: boolean;
+}) {
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const pendingIndexRef = useRef<number | null>(null);
+  const [kind, setKind] = useState<string>("cni");
+  const [customLabel, setCustomLabel] = useState("");
+  const [reading, setReading] = useState(false);
+
+  const missing = requiredKinds.filter(
+    (k) => !documents.some((d) => d.kind === k),
+  );
+
+  const readFile = (file: File): Promise<string> =>
+    new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result));
+      reader.onerror = () => reject(new Error("read"));
+      reader.readAsDataURL(file);
+    });
+
+  const handlePick = async (file: File | undefined, index: number) => {
+    if (!file || index < 0) return;
+    if (file.size > MAX_DOC_SIZE) {
+      toast.error(
+        `Document trop lourd (${Math.round(file.size / 1024)} Ko) — maximum ${Math.round(MAX_DOC_SIZE / 1024)} Ko.`,
+      );
+      return;
+    }
+    setReading(true);
+    try {
+      const url = await readFile(file);
+      onChange(documents.map((d, j) => (j === index ? { ...d, url } : d)));
+      toast.success("Document joint");
+    } catch {
+      toast.error("Lecture du fichier impossible.");
+    } finally {
+      setReading(false);
+    }
+  };
+
+  const addSlot = () => {
+    const label =
+      kind === "other" && customLabel.trim()
+        ? customLabel.trim()
+        : docKindLabel(kind);
+    onChange([...documents, { kind, label, url: "" }]);
+    setCustomLabel("");
+  };
+
+  return (
+    <div className="flex flex-col gap-3">
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*,application/pdf"
+        className="hidden"
+        onChange={(e) => {
+          const index = pendingIndexRef.current;
+          void handlePick(e.target.files?.[0], index ?? -1);
+          e.target.value = "";
+        }}
+      />
+
+      {documents.map((doc, i) => (
+        <div
+          key={i}
+          className={cn(
+            "flex flex-wrap items-center gap-2 rounded-xl border border-border/70 px-3 py-2",
+            !doc.url && "border-dashed",
+          )}
+        >
+          <span
+            className={cn(
+              "flex size-8 shrink-0 items-center justify-center rounded-lg",
+              doc.url
+                ? "bg-primary/10 text-primary"
+                : "bg-muted text-muted-foreground",
+            )}
+          >
+            <FileUp className="size-4" />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-sm font-medium">{doc.label}</span>
+            <span className="block truncate text-xs text-muted-foreground">
+              {doc.url ? "Fichier joint ✓" : "Fichier en attente"}
+            </span>
+          </span>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={disabled || reading}
+            onClick={() => {
+              pendingIndexRef.current = i;
+              fileInputRef.current?.click();
+            }}
+          >
+            {doc.url ? "Remplacer" : "Choisir un fichier"}
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            disabled={disabled}
+            onClick={() => onChange(documents.filter((_, j) => j !== i))}
+            aria-label="Retirer le document"
+          >
+            <Trash2 className="size-4" />
+          </Button>
+        </div>
+      ))}
+
+      <div className="flex flex-wrap items-center gap-2">
+        <select
+          value={kind}
+          onChange={(e) => setKind(e.target.value)}
+          className="h-9 rounded-lg border border-border bg-background px-3 text-sm"
+          disabled={disabled}
+        >
+          {DOC_KINDS.filter(
+            (k) =>
+              k.value !== "cni" || !documents.some((d) => d.kind === "cni"),
+          ).map((k) => (
+            <option key={k.value} value={k.value}>
+              {k.label}
+            </option>
+          ))}
+        </select>
+        {kind === "other" && (
+          <Input
+            className="w-48"
+            value={customLabel}
+            onChange={(e) => setCustomLabel(e.target.value)}
+            placeholder="Nom du document"
+            disabled={disabled}
+          />
+        )}
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          disabled={disabled}
+          onClick={addSlot}
+        >
+          <Plus className="mr-1.5 size-4" /> Ajouter
+        </Button>
+      </div>
+
+      {missing.length > 0 && (
+        <p className="rounded-lg bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-400">
+          Documents obligatoires manquants :{" "}
+          {missing.map((k) => docKindLabel(k)).join(", ")}.
+        </p>
+      )}
+    </div>
+  );
+}
+
 export default function TechnicianSpace() {
   const { user } = useAuth();
   const profile = useQuery(api.gtec.myTechnicianProfile);
@@ -73,11 +266,27 @@ export default function TechnicianSpace() {
   const pendingSubPayment = useQuery(api.gtec.myPendingSubscriptionPayment);
   const myPayouts = useQuery(api.gtec.listMyPayouts);
 
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
+  const [nationalId, setNationalId] = useState("");
+  const [gender, setGender] = useState("");
+  const [birthDate, setBirthDate] = useState("");
+  const [phone, setPhone] = useState("");
+  const [altPhone, setAltPhone] = useState("");
+  const [residenceCity, setResidenceCity] = useState("");
+  const [address, setAddress] = useState("");
   const [specialty, setSpecialty] = useState("");
+  const [profession, setProfession] = useState("");
   const [experience, setExperience] = useState(2);
+  const [currentEmployer, setCurrentEmployer] = useState("");
+  const [references, setReferences] = useState("");
   const [zones, setZones] = useState<string[]>(["Douala"]);
-  const [certifications, setCertifications] = useState("");
   const [bio, setBio] = useState("");
+  const [highestDegree, setHighestDegree] = useState("");
+  const [fieldOfStudy, setFieldOfStudy] = useState("");
+  const [school, setSchool] = useState("");
+  const [graduationYear, setGraduationYear] = useState<number | "">("");
+  const [documents, setDocuments] = useState<DocumentItem[]>([]);
   const [busy, setBusy] = useState(false);
 
   // Paiement d'abonnement
@@ -95,14 +304,45 @@ export default function TechnicianSpace() {
     );
 
   const submitApplication = async () => {
+    if (!documents.some((d) => d.kind === "cni" && d.url)) {
+      toast.error("Joignez la photo de votre CNI ou passeport (obligatoire).");
+      return;
+    }
+    if (
+      !documents.some(
+        (d) =>
+          ["diploma", "certificate", "attestation"].includes(d.kind) && d.url,
+      )
+    ) {
+      toast.error(
+        "Joignez au moins un diplôme, certificat ou attestation (obligatoire).",
+      );
+      return;
+    }
     setBusy(true);
     try {
       await apply({
+        firstName: firstName.trim(),
+        lastName: lastName.trim(),
+        nationalId: nationalId.trim(),
+        gender: gender || undefined,
+        birthDate: birthDate || undefined,
+        phone: phone.trim(),
+        altPhone: altPhone.trim() || undefined,
+        city: residenceCity,
+        address: address.trim() || undefined,
         specialty: specialty.trim(),
+        profession: profession.trim() || undefined,
         experienceYears: experience,
+        currentEmployer: currentEmployer.trim() || undefined,
+        references: references.trim() || undefined,
         zones,
-        certifications: certifications.trim() || undefined,
         bio: bio.trim() || undefined,
+        highestDegree: highestDegree.trim(),
+        fieldOfStudy: fieldOfStudy.trim() || undefined,
+        school: school.trim() || undefined,
+        graduationYear: graduationYear || undefined,
+        documents,
       });
       toast.success("Candidature envoyée — GTEC va vérifier votre dossier");
     } catch (e) {
@@ -174,82 +414,269 @@ export default function TechnicianSpace() {
           <div className="h-64 animate-pulse rounded-xl bg-muted" />
         ) : profile === null ? (
           /* ---------- Candidature ---------- */
-          <Card className="card-layered mx-auto w-full max-w-2xl">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 font-display text-xl">
-                <Wrench className="size-5 text-primary" />
-                Rejoindre les équipes GTEC PRO
-              </CardTitle>
-              <CardDescription>
-                Soumettez votre candidature. Après vérification de vos
-                qualifications par GTEC, vous recevrez des missions dans vos
-                zones.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="flex flex-col gap-4">
-              <div className="flex flex-col gap-1.5">
-                <Label className="text-sm">Spécialité</Label>
-                <Input
-                  value={specialty}
-                  onChange={(e) => setSpecialty(e.target.value)}
-                  placeholder="Ex. : Électricité CFO/CATE, Solaire, CCTV…"
-                />
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <Label className="text-sm">Années d'expérience</Label>
-                <Input
-                  type="number"
-                  min={0}
-                  max={50}
-                  value={experience}
-                  onChange={(e) => setExperience(Number(e.target.value) || 0)}
-                  className="w-28"
-                />
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <Label className="text-sm">Zones d'intervention</Label>
-                <div className="flex flex-wrap gap-2">
-                  {CITIES.map((city) => (
-                    <label
-                      key={city}
-                      className="flex cursor-pointer items-center gap-2 rounded-lg border border-border/70 px-3 py-2 text-sm transition-colors hover:bg-muted/50"
-                    >
-                      <Switch
-                        checked={zones.includes(city)}
-                        onCheckedChange={() => toggleZone(city)}
+          <div className="mx-auto flex w-full max-w-3xl flex-col gap-4">
+            <Card className="card-layered">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 font-display text-xl">
+                  <Wrench className="size-5 text-primary" />
+                  Rejoindre les équipes GTEC PRO
+                </CardTitle>
+                <CardDescription>
+                  Votre dossier doit être complet : identité, profession,
+                  parcours académique et documents justificatifs obligatoires.
+                  Après vérification par GTEC, vous recevrez des missions dans
+                  vos zones.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="flex flex-col gap-6">
+                {/* Identité */}
+                <section className="flex flex-col gap-3">
+                  <p className="flex items-center gap-1.5 text-sm font-semibold">
+                    <UserRound className="size-4 text-primary" /> Identité
+                  </p>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div className="flex flex-col gap-1.5">
+                      <Label className="text-sm">Prénom *</Label>
+                      <Input value={firstName} onChange={(e) => setFirstName(e.target.value)} />
+                    </div>
+                    <div className="flex flex-col gap-1.5">
+                      <Label className="text-sm">Nom *</Label>
+                      <Input value={lastName} onChange={(e) => setLastName(e.target.value)} />
+                    </div>
+                    <div className="flex flex-col gap-1.5">
+                      <Label className="text-sm">CNI / Passeport *</Label>
+                      <Input
+                        value={nationalId}
+                        onChange={(e) => setNationalId(e.target.value)}
+                        placeholder="Numéro de la pièce"
                       />
-                      {city}
-                    </label>
-                  ))}
-                </div>
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <Label className="text-sm">Certifications / documents</Label>
-                <Input
-                  value={certifications}
-                  onChange={(e) => setCertifications(e.target.value)}
-                  placeholder="Ex. : CATE 2023, attestation solaire…"
-                />
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <Label className="text-sm">Présentation (optionnel)</Label>
-                <Textarea
-                  value={bio}
-                  onChange={(e) => setBio(e.target.value)}
-                  placeholder="Parlez de votre expérience en quelques lignes…"
-                  rows={3}
-                />
-              </div>
-              <Button
-                className="halo-amber"
-                disabled={busy || specialty.trim().length < 3 || zones.length === 0}
-                onClick={submitApplication}
-              >
-                <Send className="mr-2 size-4" />
-                {busy ? "Envoi…" : "Envoyer ma candidature"}
-              </Button>
+                    </div>
+                    <div className="flex flex-col gap-1.5">
+                      <Label className="text-sm">Téléphone *</Label>
+                      <Input
+                        value={phone}
+                        onChange={(e) => setPhone(e.target.value)}
+                        placeholder="6 XX XX XX XX"
+                        inputMode="tel"
+                      />
+                    </div>
+                    <div className="flex flex-col gap-1.5">
+                      <Label className="text-sm">Téléphone secondaire</Label>
+                      <Input
+                        value={altPhone}
+                        onChange={(e) => setAltPhone(e.target.value)}
+                        inputMode="tel"
+                      />
+                    </div>
+                    <div className="flex flex-col gap-1.5">
+                      <Label className="text-sm">Date de naissance</Label>
+                      <Input
+                        type="date"
+                        value={birthDate}
+                        onChange={(e) => setBirthDate(e.target.value)}
+                      />
+                    </div>
+                    <div className="flex flex-col gap-1.5">
+                      <Label className="text-sm">Sexe</Label>
+                      <Select value={gender} onValueChange={setGender}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Choisir" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="homme">Homme</SelectItem>
+                          <SelectItem value="femme">Femme</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="flex flex-col gap-1.5">
+                      <Label className="text-sm">Ville de résidence *</Label>
+                      <Select value={residenceCity} onValueChange={setResidenceCity}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Choisir" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {CITIES.map((c) => (
+                            <SelectItem key={c} value={c}>
+                              {c}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="flex flex-col gap-1.5 sm:col-span-2">
+                      <Label className="text-sm">Quartier / adresse</Label>
+                      <Input
+                        value={address}
+                        onChange={(e) => setAddress(e.target.value)}
+                        placeholder="Ex. : Bonapriso, rue Njo-Njo"
+                      />
+                    </div>
+                  </div>
+                </section>
+
+                {/* Profession */}
+                <section className="flex flex-col gap-3">
+                  <p className="flex items-center gap-1.5 text-sm font-semibold">
+                    <HardHat className="size-4 text-primary" /> Profession
+                  </p>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div className="flex flex-col gap-1.5">
+                      <Label className="text-sm">Spécialité *</Label>
+                      <Input
+                        value={specialty}
+                        onChange={(e) => setSpecialty(e.target.value)}
+                        placeholder="Ex. : Électricité CFO/CATE, Solaire, CCTV…"
+                      />
+                    </div>
+                    <div className="flex flex-col gap-1.5">
+                      <Label className="text-sm">Métier exact</Label>
+                      <Input
+                        value={profession}
+                        onChange={(e) => setProfession(e.target.value)}
+                        placeholder="Ex. : Électricien bâtiment"
+                      />
+                    </div>
+                    <div className="flex flex-col gap-1.5">
+                      <Label className="text-sm">Années d'expérience *</Label>
+                      <Input
+                        type="number"
+                        min={0}
+                        max={50}
+                        value={experience}
+                        onChange={(e) => setExperience(Number(e.target.value) || 0)}
+                        className="w-28"
+                      />
+                    </div>
+                    <div className="flex flex-col gap-1.5">
+                      <Label className="text-sm">Employeur actuel</Label>
+                      <Input
+                        value={currentEmployer}
+                        onChange={(e) => setCurrentEmployer(e.target.value)}
+                        placeholder="Ex. : Entreprise XYZ (optionnel)"
+                      />
+                    </div>
+                    <div className="flex flex-col gap-1.5 sm:col-span-2">
+                      <Label className="text-sm">Références chantiers / clients</Label>
+                      <Input
+                        value={references}
+                        onChange={(e) => setReferences(e.target.value)}
+                        placeholder="Ex. : Immeuble X (Douala), résidence Y (Buea)…"
+                      />
+                    </div>
+                    <div className="flex flex-col gap-1.5 sm:col-span-2">
+                      <Label className="text-sm">Zones d'intervention *</Label>
+                      <div className="flex flex-wrap gap-2">
+                        {CITIES.map((city) => (
+                          <label
+                            key={city}
+                            className="flex cursor-pointer items-center gap-2 rounded-lg border border-border/70 px-3 py-2 text-sm transition-colors hover:bg-muted/50"
+                          >
+                            <Switch
+                              checked={zones.includes(city)}
+                              onCheckedChange={() => toggleZone(city)}
+                            />
+                            {city}
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="flex flex-col gap-1.5 sm:col-span-2">
+                      <Label className="text-sm">Présentation (optionnel)</Label>
+                      <Textarea
+                        value={bio}
+                        onChange={(e) => setBio(e.target.value)}
+                        placeholder="Parlez de votre expérience en quelques lignes…"
+                        rows={2}
+                      />
+                    </div>
+                  </div>
+                </section>
+
+                {/* Parcours académique */}
+                <section className="flex flex-col gap-3">
+                  <p className="flex items-center gap-1.5 text-sm font-semibold">
+                    <GraduationCap className="size-4 text-primary" /> Parcours académique
+                  </p>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div className="flex flex-col gap-1.5">
+                      <Label className="text-sm">Dernier diplôme *</Label>
+                      <Input
+                        value={highestDegree}
+                        onChange={(e) => setHighestDegree(e.target.value)}
+                        placeholder="Ex. : CAP, BT, BTS, Licence, Ingénieur…"
+                      />
+                    </div>
+                    <div className="flex flex-col gap-1.5">
+                      <Label className="text-sm">Spécialité du diplôme</Label>
+                      <Input
+                        value={fieldOfStudy}
+                        onChange={(e) => setFieldOfStudy(e.target.value)}
+                        placeholder="Ex. : Électrotechnique"
+                      />
+                    </div>
+                    <div className="flex flex-col gap-1.5">
+                      <Label className="text-sm">Établissement</Label>
+                      <Input
+                        value={school}
+                        onChange={(e) => setSchool(e.target.value)}
+                        placeholder="Ex. : Lycée technique de Douala"
+                      />
+                    </div>
+                    <div className="flex flex-col gap-1.5">
+                      <Label className="text-sm">Année d'obtention</Label>
+                      <Input
+                        type="number"
+                        min={1970}
+                        max={2030}
+                        value={graduationYear}
+                        onChange={(e) =>
+                          setGraduationYear(
+                            e.target.value ? Number(e.target.value) : "",
+                          )
+                        }
+                        className="w-28"
+                      />
+                    </div>
+                  </div>
+                </section>
+
+                {/* Documents obligatoires */}
+                <section className="flex flex-col gap-3">
+                  <p className="flex items-center gap-1.5 text-sm font-semibold">
+                    <FileBadge className="size-4 text-primary" /> Documents justificatifs *
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    Obligatoire : pièce d'identité ET au moins un diplôme ou
+                    certificat/attestation d'expérience. Formats acceptés : PDF,
+                    images (max 1,2 Mo par fichier).
+                  </p>
+                  <DocumentsUploader
+                    documents={documents}
+                    onChange={setDocuments}
+                    requiredKinds={["cni", "diploma"]}
+                    disabled={busy}
+                  />
+                </section>
+
+                <Button
+                  className="halo-amber"
+                  disabled={
+                    busy ||
+                    specialty.trim().length < 3 ||
+                    zones.length === 0 ||
+                    !documents.some((d) => d.kind === "cni") ||
+                    !documents.some((d) =>
+                      ["diploma", "certificate", "attestation"].includes(d.kind),
+                    )
+                  }
+                  onClick={submitApplication}
+                >
+                  <Send className="mr-2 size-4" />
+                  {busy ? "Envoi…" : "Envoyer ma candidature"}
+                </Button>
             </CardContent>
           </Card>
+          </div>
         ) : profile.status === "en_attente" ? (
           /* ---------- En attente de vérification ---------- */
           <Card className="card-layered mx-auto w-full max-w-lg">

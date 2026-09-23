@@ -58,7 +58,7 @@ import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
-import type { Id } from "@/convex/_generated/dataModel";
+import type { Doc, Id } from "@/convex/_generated/dataModel";
 import { useAuth } from "@/hooks/use-auth";
 import { cn } from "@/lib/utils";
 import { fcfa, formatDateTime, suggestCrew } from "@/lib/gtec";
@@ -338,6 +338,257 @@ function AssignCrew({
 
 function useAdminReportMutation() {
   return useMutation(api.gtec.adminSubmitReport);
+}
+
+// ---------- dossier complet d'un candidat technicien ----------
+
+const DOC_KIND_LABELS: Record<string, string> = {
+  cni: "Pièce d'identité",
+  diploma: "Diplôme",
+  certificate: "Certificat",
+  attestation: "Attestation",
+  other: "Document",
+};
+
+function ApplicationRow({
+  profile,
+  user,
+  busy,
+  onReview,
+}: {
+  profile: Doc<"technicianProfiles">;
+  user: Doc<"users"> | null;
+  busy: boolean;
+  onReview: (decision: "verifie" | "rejete", note: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [note, setNote] = useState("");
+  const [zoomDoc, setZoomDoc] = useState<string | null>(null);
+
+  const identityFields: [string, string][] = [
+    ["Nom complet", `${profile.firstName} ${profile.lastName}`],
+    ["CNI / Passeport", profile.nationalId],
+    ["Téléphone", profile.phone],
+    ...(profile.altPhone ? ([["Tél. secondaire", profile.altPhone]] as [string, string][]) : []),
+    ["Ville", profile.city],
+    ...(profile.address ? ([["Adresse", profile.address]] as [string, string][]) : []),
+    ...(profile.gender ? ([["Sexe", profile.gender]] as [string, string][]) : []),
+    ...(profile.birthDate ? ([["Naissance", profile.birthDate]] as [string, string][]) : []),
+  ];
+
+  return (
+    <div className="overflow-hidden rounded-xl border border-border/70 bg-card">
+      <button
+        className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/40"
+        onClick={() => setOpen((o) => !o)}
+      >
+        <ChevronDown
+          className={cn(
+            "size-4 shrink-0 text-muted-foreground transition-transform",
+            open && "rotate-180",
+          )}
+        />
+        <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-primary/15 text-sm font-semibold text-primary">
+          {user?.name?.[0] ?? "?"}
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-sm font-medium">
+            {profile.firstName} {profile.lastName}
+            <span className="ml-2 text-xs font-normal text-muted-foreground">
+              {profile.specialty} · {profile.experienceYears} an(s)
+            </span>
+          </span>
+          <span className="block truncate text-xs text-muted-foreground">
+            {profile.city} · {profile.zones.join(", ")} ·{" "}
+            {profile.documents.length} document(s)
+          </span>
+        </span>
+        {profile.status !== "en_attente" && (
+          <span
+            className={cn(
+              "shrink-0 rounded-full px-2.5 py-1 text-xs font-medium ring-1 ring-inset",
+              profile.status === "verifie"
+                ? "bg-emerald-500/10 text-emerald-600 ring-emerald-500/20 dark:text-emerald-400"
+                : "bg-destructive/10 text-destructive ring-destructive/20",
+            )}
+          >
+            {profile.status === "verifie" ? "Vérifié" : "Refusé"}
+          </span>
+        )}
+      </button>
+
+      {open && (
+        <div className="flex flex-col gap-4 border-t border-border/60 px-4 py-4">
+          {/* Identité */}
+          <section>
+            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              Identité
+            </p>
+            <div className="grid gap-1.5 text-sm sm:grid-cols-2">
+              {identityFields.map(([label, value]) => (
+                <p key={label}>
+                  <span className="text-muted-foreground">{label} : </span>
+                  <span className="capitalize">{value}</span>
+                </p>
+              ))}
+            </div>
+          </section>
+
+          {/* Profession */}
+          <section>
+            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              Profession
+            </p>
+            <div className="grid gap-1.5 text-sm sm:grid-cols-2">
+              <p>
+                <span className="text-muted-foreground">Spécialité : </span>
+                {profile.specialty}
+              </p>
+              {profile.profession && (
+                <p>
+                  <span className="text-muted-foreground">Métier : </span>
+                  {profile.profession}
+                </p>
+              )}
+              <p>
+                <span className="text-muted-foreground">Expérience : </span>
+                {profile.experienceYears} an(s)
+              </p>
+              {profile.currentEmployer && (
+                <p>
+                  <span className="text-muted-foreground">Employeur : </span>
+                  {profile.currentEmployer}
+                </p>
+              )}
+              {profile.references && (
+                <p className="sm:col-span-2">
+                  <span className="text-muted-foreground">Références : </span>
+                  {profile.references}
+                </p>
+              )}
+            </div>
+          </section>
+
+          {/* Parcours académique */}
+          <section>
+            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              Parcours académique
+            </p>
+            <div className="grid gap-1.5 text-sm sm:grid-cols-2">
+              <p>
+                <span className="text-muted-foreground">Dernier diplôme : </span>
+                {profile.highestDegree}
+              </p>
+              {profile.fieldOfStudy && (
+                <p>
+                  <span className="text-muted-foreground">Filière : </span>
+                  {profile.fieldOfStudy}
+                </p>
+              )}
+              {profile.school && (
+                <p>
+                  <span className="text-muted-foreground">Établissement : </span>
+                  {profile.school}
+                </p>
+              )}
+              {profile.graduationYear && (
+                <p>
+                  <span className="text-muted-foreground">Année : </span>
+                  {profile.graduationYear}
+                </p>
+              )}
+            </div>
+          </section>
+
+          {/* Documents justificatifs */}
+          <section>
+            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              Documents justificatifs ({profile.documents.length})
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {profile.documents.map((d, i) => (
+                <button
+                  key={i}
+                  className="flex items-center gap-2 rounded-lg border border-border/70 px-3 py-2 text-sm transition-colors hover:bg-muted/50"
+                  onClick={() => setZoomDoc(d.url)}
+                >
+                  <FileText className="size-4 text-primary" />
+                  <span className="max-w-48 truncate">
+                    {DOC_KIND_LABELS[d.kind] ?? d.label}
+                    {d.kind === "other" && d.label ? ` · ${d.label}` : ""}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </section>
+
+          {profile.bio && (
+            <p className="rounded-lg bg-muted/50 px-3 py-2 text-sm text-muted-foreground">
+              {profile.bio}
+            </p>
+          )}
+
+          {/* Décision */}
+          {profile.status === "en_attente" ? (
+            <div className="flex flex-col gap-2 border-t border-border/60 pt-3">
+              <Input
+                value={note}
+                onChange={(e) => setNote(e.target.value)}
+                placeholder="Motif (requis en cas de refus) — ex. : diplôme illisible"
+              />
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  className="halo-amber"
+                  size="sm"
+                  disabled={busy}
+                  onClick={() => onReview("verifie", "")}
+                >
+                  <CheckCircle2 className="mr-1.5 size-4" /> Valider le dossier
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="text-destructive"
+                  disabled={busy || note.trim().length < 5}
+                  onClick={() => onReview("rejete", note.trim())}
+                >
+                  <XCircle className="mr-1.5 size-4" /> Refuser (motif requis)
+                </Button>
+              </div>
+            </div>
+          ) : (
+            profile.reviewNote && (
+              <p className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                Motif du refus : {profile.reviewNote}
+              </p>
+            )
+          )}
+        </div>
+      )}
+
+      {/* Visionneuse de document */}
+      <Dialog open={!!zoomDoc} onOpenChange={(o) => !o && setZoomDoc(null)}>
+        <DialogContent className="max-h-[85vh] overflow-auto sm:max-w-2xl">
+          {zoomDoc?.startsWith("data:image/") ? (
+            <img src={zoomDoc} alt="Document" className="w-full rounded-lg" />
+          ) : (
+            <object
+              data={zoomDoc ?? ""}
+              type="application/pdf"
+              className="h-[70vh] w-full rounded-lg"
+            >
+              <p className="p-4 text-sm text-muted-foreground">
+                Aperçu PDF indisponible —{" "}
+                <a href={zoomDoc ?? "#"} target="_blank" rel="noreferrer" className="text-primary underline">
+                  ouvrir dans un onglet
+                </a>
+              </p>
+            </object>
+          )}
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
 }
 
 // ---------- panneau admin d'une demande ----------
@@ -814,76 +1065,25 @@ export default function AdminConsole() {
             ) : (
               <div className="flex flex-col gap-2">
                 {applications.map(({ profile, user }) => (
-                  <div
+                  <ApplicationRow
                     key={profile._id}
-                    className="flex flex-wrap items-center gap-3 rounded-xl border border-border/70 bg-card px-4 py-3"
-                  >
-                    <span className="flex size-9 items-center justify-center rounded-full bg-primary/15 text-sm font-semibold text-primary">
-                      {user?.name?.[0] ?? "?"}
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-medium">
-                        {user?.name ?? "Candidat"}
-                        <span className="ml-2 text-xs font-normal text-muted-foreground">
-                          {profile.specialty} · {profile.experienceYears} an(s)
-                        </span>
-                      </p>
-                      <p className="truncate text-xs text-muted-foreground">
-                        Zones : {profile.zones.join(", ")}
-                        {profile.certifications ? ` · ${profile.certifications}` : ""}
-                      </p>
-                    </div>
-                    {profile.status === "en_attente" ? (
-                      <div className="flex items-center gap-2">
-                        <Button
-                          className="halo-amber"
-                          size="sm"
-                          disabled={busy}
-                          onClick={() =>
-                            run(
-                              () =>
-                                reviewTechnician({
-                                  profileId: profile._id as never,
-                                  decision: "verifie",
-                                }),
-                              "Technicien vérifié — il reçoit maintenant des missions",
-                            )
-                          }
-                        >
-                          <CheckCircle2 className="mr-1.5 size-4" /> Valider
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="text-destructive"
-                          disabled={busy}
-                          onClick={() =>
-                            run(
-                              () =>
-                                reviewTechnician({
-                                  profileId: profile._id as never,
-                                  decision: "rejete",
-                                }),
-                              "Candidature refusée",
-                            )
-                          }
-                        >
-                          <XCircle className="mr-1.5 size-4" /> Refuser
-                        </Button>
-                      </div>
-                    ) : (
-                      <span
-                        className={cn(
-                          "rounded-full px-2.5 py-1 text-xs font-medium ring-1 ring-inset",
-                          profile.status === "verifie"
-                            ? "bg-emerald-500/10 text-emerald-600 ring-emerald-500/20 dark:text-emerald-400"
-                            : "bg-destructive/10 text-destructive ring-destructive/20",
-                        )}
-                      >
-                        {profile.status === "verifie" ? "Vérifié" : "Refusé"}
-                      </span>
-                    )}
-                  </div>
+                    profile={profile}
+                    user={user}
+                    busy={busy}
+                    onReview={(decision, note) =>
+                      run(
+                        () =>
+                          reviewTechnician({
+                            profileId: profile._id as never,
+                            decision,
+                            note: note || undefined,
+                          }),
+                        decision === "verifie"
+                          ? "Technicien vérifié — il reçoit maintenant des missions"
+                          : "Candidature refusée",
+                      )
+                    }
+                  />
                 ))}
               </div>
             )}

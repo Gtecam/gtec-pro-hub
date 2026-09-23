@@ -34,6 +34,20 @@ const schema = defineSchema(
       // GTEC PRO
       phone: v.optional(v.string()),
       city: v.optional(v.string()),
+
+      // Identité complète du client (profil client)
+      firstName: v.optional(v.string()),
+      lastName: v.optional(v.string()),
+      nationalId: v.optional(v.string()), // CNI / passeport
+      gender: v.optional(v.string()),
+      birthDate: v.optional(v.string()), // YYYY-MM-DD
+      altPhone: v.optional(v.string()),
+      address: v.optional(v.string()),
+      quarter: v.optional(v.string()), // quartier
+      customerType: v.optional(v.string()), // particulier | entreprise
+      companyName: v.optional(v.string()),
+      taxId: v.optional(v.string()), // NUI / contribuable
+      idDocumentUrl: v.optional(v.string()), // photo CNI (data URL)
     }).index("email", ["email"]), // index for the email. do not remove or modify
 
     // ---- GTEC PRO V1 : one end-to-end client journey ----
@@ -173,16 +187,48 @@ const schema = defineSchema(
     /** Profil de candidature technicien — un par utilisateur. */
     technicianProfiles: defineTable({
       userId: v.id("users"),
+
+      // Identité
+      firstName: v.string(),
+      lastName: v.string(),
+      nationalId: v.string(), // CNI / passeport
+      gender: v.optional(v.string()),
+      birthDate: v.optional(v.string()), // YYYY-MM-DD
+      phone: v.string(),
+      altPhone: v.optional(v.string()),
+      city: v.string(), // ville de résidence
+      address: v.optional(v.string()),
+
+      // Profession
       specialty: v.string(), // ex. "Électricité CFO/CATE"
+      profession: v.optional(v.string()), // métier exact
       experienceYears: v.number(),
+      currentEmployer: v.optional(v.string()),
+      references: v.optional(v.string()), // chantiers / clients de référence
       zones: v.array(v.string()), // villes d'intervention
-      certifications: v.optional(v.string()),
       bio: v.optional(v.string()),
+
+      // Parcours académique
+      highestDegree: v.string(), // ex. CAP, BT, Licence, BTS, Ingénieur
+      fieldOfStudy: v.optional(v.string()),
+      school: v.optional(v.string()),
+      graduationYear: v.optional(v.number()),
+
+      // Documents obligatoires (data URLs)
+      documents: v.array(
+        v.object({
+          kind: v.string(), // cni | diploma | certificate | other
+          label: v.string(),
+          url: v.string(),
+        }),
+      ),
+
       status: v.union(
         v.literal("en_attente"), // dossier soumis, en cours de vérification GTEC
         v.literal("verifie"), // validé par l'admin
         v.literal("rejete"),
       ),
+      reviewNote: v.optional(v.string()), // motif admin en cas de rejet
       subscription: v.union(
         v.literal("aucun"),
         v.literal("mensuel"),
