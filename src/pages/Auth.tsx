@@ -231,7 +231,13 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
                 </button>
               </CardContent>
               <div className="py-4 px-6 text-xs text-center text-muted-foreground bg-muted border-t rounded-b-lg">
-                Connexion sécurisée — GTEC PRO Cameroun
+                Connexion sécurisée — GTEC PRO Cameroun ·{" "}
+                <a
+                  href="tel:+237655094228"
+                  className="font-medium text-foreground transition-colors hover:text-primary"
+                >
+                  Support 655 09 42 28
+                </a>
               </div>
             </Card>
           ) : (
@@ -421,9 +427,14 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
               )}
 
               <div className="py-4 px-6 text-xs text-center text-muted-foreground bg-muted border-t rounded-b-lg">
-                {space === "technicien"
-                  ? "Espace technicien — GTEC PRO Cameroun"
-                  : "Espace client — GTEC PRO Cameroun"}
+                {space === "technicien" ? "Espace technicien" : "Espace client"}{" "}
+                — GTEC PRO Cameroun ·{" "}
+                <a
+                  href="tel:+237655094228"
+                  className="font-medium text-foreground transition-colors hover:text-primary"
+                >
+                  Support 655 09 42 28
+                </a>
               </div>
             </Card>
           )}

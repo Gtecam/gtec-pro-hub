@@ -361,9 +361,9 @@ export default function Landing() {
                 </Link>
               </Button>
               <Button variant="outline" asChild>
-                <a href="tel:+237600000000">
+                <a href="tel:+237655094228">
                   <Phone className="mr-2 size-4" />
-                  Parler à GTEC
+                  Parler à GTEC — 655 09 42 28
                 </a>
               </Button>
             </div>
@@ -468,7 +468,16 @@ export default function Landing() {
             </span>
           </div>
           <p>© {new Date().getFullYear()} GTEC PRO — Cameroun. Tous droits réservés.</p>
-          <p className="text-xs">V1 · Électricité, solaire, CCTV, climatisation</p>
+          <p className="text-xs">
+            Support client :{" "}
+            <a
+              href="tel:+237655094228"
+              className="font-medium text-foreground transition-colors hover:text-primary"
+            >
+              655 09 42 28
+            </a>{" "}
+            · Électricité, solaire, CCTV, climatisation
+          </p>
         </div>
       </footer>
     </div>

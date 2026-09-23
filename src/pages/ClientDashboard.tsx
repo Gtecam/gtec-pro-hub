@@ -6,6 +6,7 @@ import {
   FileText,
   IdCard,
   MapPin,
+  Phone,
   Plus,
   Receipt,
   ShieldCheck,
@@ -198,6 +199,13 @@ export default function ClientDashboard() {
               Demande, devis, paiement, équipe, rapport et facture : suivez
               chaque intervention au même endroit.
             </p>
+            <a
+              href="tel:+237655094228"
+              className="mt-2 inline-flex items-center gap-1.5 text-sm font-medium text-primary transition-opacity hover:opacity-80"
+            >
+              <Phone className="size-3.5" />
+              Support GTEC : 655 09 42 28
+            </a>
           </div>
           <Button size="lg" className="halo-amber" onClick={() => navigate("/dashboard/new")}>
             <Plus className="mr-2 size-4" />
