@@ -1618,6 +1618,38 @@ export const myTechnicianReviews = query({
   },
 });
 
+/**
+ * Derniers avis clients (public, pour la vitrine). Retourne prénom + initiale
+ * du nom du client, la note et le commentaire.
+ */
+export const listPublicReviews = query({
+  args: {},
+  handler: async (ctx) => {
+    const all = await ctx.db.query("reviews").collect();
+    const sorted = all.sort((a, b) => b.at - a.at).slice(0, 6);
+    return await Promise.all(
+      sorted.map(async (r) => {
+        const client = await ctx.db.get(r.clientId);
+        const request = await ctx.db.get(r.requestId);
+        const name = client?.name ?? "Client";
+        const parts = name.trim().split(/\s+/);
+        const displayName =
+          parts.length > 1
+            ? `${parts[0]} ${parts[parts.length - 1][0].toUpperCase()}.`
+            : name;
+        return {
+          rating: r.rating,
+          comment: r.comment ?? null,
+          displayName,
+          city: request?.city ?? "",
+          serviceKey: request?.serviceKey ?? "",
+          at: r.at,
+        };
+      }),
+    );
+  },
+});
+
 /** Moyenne + nombre d'avis d'un technicien (pour les badges). */
 export const technicianRating = query({
   args: { techUserId: v.id("users") },

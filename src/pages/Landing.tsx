@@ -11,11 +11,14 @@ import {
   ShieldCheck,
   Smartphone,
   Sparkles,
+  Star,
   Users,
   Wallet,
   Wrench,
   Zap,
 } from "lucide-react";
+import { useQuery } from "convex/react";
+import { api } from "@/convex/_generated/api";
 import { Link } from "react-router";
 import logo from "@/assets/logo.svg";
 import { Button } from "@/components/ui/button";
@@ -83,6 +86,64 @@ function SectionHeading({
       </h2>
       {sub && <p className="text-pretty text-muted-foreground">{sub}</p>}
     </Reveal>
+  );
+}
+
+// ---------- témoignages (avis réels de la base) ----------
+
+function TestimonialsSection() {
+  const reviews = useQuery(api.gtec.listPublicReviews);
+  if (reviews === undefined || reviews.length === 0) return null;
+  const serviceLabel = (key: string) =>
+    SERVICES.find((s) => s.key === key)?.label ?? "";
+  return (
+    <section className="mx-auto max-w-6xl px-4 py-20 sm:px-6">
+      <SectionHeading
+        kicker="Ils nous font confiance"
+        title="Ce que disent nos clients"
+        sub="Des avis laissés après des interventions réellement réceptionnées sur la plateforme."
+      />
+      <div className="mt-12 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        {reviews.map((r, i) => (
+          <Reveal key={i} delay={i * 0.05}>
+            <Card className="card-layered flex h-full flex-col gap-3 p-6">
+              <div className="flex items-center gap-1">
+                {[1, 2, 3, 4, 5].map((s) => (
+                  <Star
+                    key={s}
+                    className={
+                      s <= r.rating
+                        ? "size-4 fill-amber-400 text-amber-400"
+                        : "size-4 text-muted-foreground/30"
+                    }
+                  />
+                ))}
+              </div>
+              {r.comment ? (
+                <p className="text-pretty text-sm leading-6">
+                  « {r.comment} »
+                </p>
+              ) : (
+                <p className="text-sm italic text-muted-foreground">
+                  Intervention notée {r.rating}/5
+                </p>
+              )}
+              <div className="mt-auto flex items-center gap-2.5 pt-1">
+                <span className="flex size-8 items-center justify-center rounded-full bg-primary/15 text-xs font-semibold text-primary">
+                  {r.displayName[0]}
+                </span>
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium">{r.displayName}</p>
+                  <p className="truncate text-xs text-muted-foreground">
+                    {[r.city, serviceLabel(r.serviceKey)].filter(Boolean).join(" · ")}
+                  </p>
+                </div>
+              </div>
+            </Card>
+          </Reveal>
+        ))}
+      </div>
+    </section>
   );
 }
 
@@ -406,6 +467,9 @@ export default function Landing() {
           </Reveal>
         </div>
       </section>
+
+      {/* ---------- Témoignages clients (avis réels) ---------- */}
+      <TestimonialsSection />
 
       {/* ---------- Couverture ---------- */}
       <section id="couverture" className="border-y border-border/60 bg-muted/30">
