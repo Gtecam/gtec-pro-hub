@@ -229,7 +229,11 @@ export function AppShell({
               </Button>
             )}
             {isAdmin && adminArea && (
-              <Button variant="ghost" size="sm" onClick={() => navigate("/dashboard")}>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => navigate("/dashboard?view=client")}
+              >
                 Espace client
               </Button>
             )}

@@ -164,7 +164,7 @@ export default function RequestDetail() {
       toast.error("Signez le PV de réception pour continuer.");
       return;
     }
-    await run(
+    const ok = await run(
       () =>
         clientReception({
           requestId: request._id,
@@ -173,6 +173,10 @@ export default function RequestDetail() {
         }),
       "Réception confirmée — facture émise",
     );
+    if (ok) {
+      setSignature(null);
+      setReceptionNote("");
+    }
   };
 
   const handleCancel = async () => {
@@ -407,15 +411,21 @@ export default function RequestDetail() {
                         </CardDescription>
                       </div>
                     </div>
-                    <StatusBadge
-                      status={
-                        payment.status === "valide"
-                          ? "terminee"
-                          : payment.status === "echoue"
-                            ? "annulee"
-                            : "nouvelle"
-                      }
-                    />
+                    <span
+                      className={cn(
+                        "rounded-full px-2.5 py-1 text-xs font-medium ring-1 ring-inset",
+                        payment.status === "valide" &&
+                          "bg-emerald-500/10 text-emerald-600 ring-emerald-500/20 dark:text-emerald-400",
+                        payment.status === "en_attente" &&
+                          "bg-primary/10 text-primary ring-primary/20",
+                        payment.status === "echoue" &&
+                          "bg-destructive/10 text-destructive ring-destructive/20",
+                      )}
+                    >
+                      {payment.status === "valide" && "Validé"}
+                      {payment.status === "en_attente" && "En attente"}
+                      {payment.status === "echoue" && "Échoué"}
+                    </span>
                   </div>
                 </CardHeader>
                 <CardContent className="flex flex-wrap items-center justify-between gap-3">
@@ -526,9 +536,16 @@ export default function RequestDetail() {
                         </CardDescription>
                       </div>
                     </div>
-                    <StatusBadge
-                      status={report.status === "receptionne" ? "terminee" : "devis_emis"}
-                    />
+                    <span
+                      className={cn(
+                        "rounded-full px-2.5 py-1 text-xs font-medium ring-1 ring-inset",
+                        report.status === "receptionne"
+                          ? "bg-emerald-500/10 text-emerald-600 ring-emerald-500/20 dark:text-emerald-400"
+                          : "bg-primary/10 text-primary ring-primary/20",
+                      )}
+                    >
+                      {report.status === "receptionne" ? "Réceptionné" : "À réceptionner"}
+                    </span>
                   </div>
                 </CardHeader>
                 <CardContent className="flex flex-col gap-4">
