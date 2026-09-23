@@ -2,6 +2,7 @@ import { getAuthUserId } from "@convex-dev/auth/server";
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
+import { payoutFor } from "../lib/gtec";
 
 // ---------- helpers ----------
 
@@ -698,6 +699,203 @@ export const submitTechnicianApplication = mutation({
   },
 });
 
+const SUBSCRIPTION_PRICES: Record<string, number> = {
+  mensuel: 5000,
+  trimestriel: 12000,
+  annuel: 40000,
+};
+
+/**
+ * Abonnement actif ? (non expiré). Un technicien sans abonnement actif
+ * n'apparaît pas dans les suggestions d'affectation.
+ */
+function subscriptionActive(profile: Doc<"technicianProfiles"> | null): boolean {
+  return (
+    !!profile &&
+    profile.subscription !== "aucun" &&
+    !!profile.subscriptionUntil &&
+    profile.subscriptionUntil > Date.now()
+  );
+}
+
+/** Choix / renouvellement d'abonnement : crée un paiement à vérifier. */
+export const requestSubscriptionPayment = mutation({
+  args: {
+    plan: v.union(
+      v.literal("mensuel"),
+      v.literal("trimestriel"),
+      v.literal("annuel"),
+    ),
+    method: v.union(
+      v.literal("mtn_momo"),
+      v.literal("orange_money"),
+      v.literal("especes"),
+      v.literal("virement"),
+    ),
+    payerPhone: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const user = await requireUser(ctx);
+    const profile = (
+      await ctx.db
+        .query("technicianProfiles")
+        .withIndex("by_user", (q) => q.eq("userId", user._id))
+        .collect()
+    )[0];
+    if (!profile) throw new Error("Aucun profil technicien.");
+    if (profile.status !== "verifie") {
+      throw new Error("Votre profil doit d'abord être vérifié par GTEC.");
+    }
+    if (!args.payerPhone.trim()) {
+      throw new Error("Indiquez le numéro payeur.");
+    }
+    // Un seul paiement d'abonnement en attente à la fois.
+    const pending = await ctx.db
+      .query("subscriptionPayments")
+      .withIndex("by_profile", (q) => q.eq("profileId", profile._id))
+      .collect();
+    if (pending.some((p) => p.status === "en_attente")) {
+      throw new Error("Un paiement d'abonnement est déjà en cours de vérification.");
+    }
+    const amount = SUBSCRIPTION_PRICES[args.plan];
+    await ctx.db.insert("subscriptionPayments", {
+      profileId: profile._id,
+      techUserId: user._id,
+      plan: args.plan,
+      amount,
+      currency: "FCFA",
+      method: args.method,
+      payerPhone: args.payerPhone.trim(),
+      status: "en_attente",
+      externalRef: `SIM-${Date.now().toString(36).toUpperCase()}`,
+    });
+  },
+});
+
+/** Abonnement en attente du technicien connecté. */
+export const myPendingSubscriptionPayment = query({
+  args: {},
+  handler: async (ctx) => {
+    const user = await requireUser(ctx);
+    const profile = (
+      await ctx.db
+        .query("technicianProfiles")
+        .withIndex("by_user", (q) => q.eq("userId", user._id))
+        .collect()
+    )[0];
+    if (!profile) return null;
+    const all = await ctx.db
+      .query("subscriptionPayments")
+      .withIndex("by_profile", (q) => q.eq("profileId", profile._id))
+      .collect();
+    return all.filter((p) => p.status === "en_attente").slice(-1)[0] ?? null;
+  },
+});
+
+/** File admin des paiements d'abonnement à vérifier. */
+export const adminPendingSubscriptionPayments = query({
+  args: {},
+  handler: async (ctx) => {
+    await requireAdmin(ctx);
+    const all = await ctx.db
+      .query("subscriptionPayments")
+      .filter((q) => q.eq(q.field("status"), "en_attente"))
+      .collect();
+    return await Promise.all(
+      all.map(async (p) => {
+        const tech = await ctx.db.get(p.techUserId);
+        return { payment: p, tech };
+      }),
+    );
+  },
+});
+
+/** Valider un paiement d'abonnement → activation + cumul de durée. */
+export const adminValidateSubscriptionPayment = mutation({
+  args: { paymentId: v.id("subscriptionPayments") },
+  handler: async (ctx, args) => {
+    await requireAdmin(ctx);
+    const payment = await ctx.db.get(args.paymentId);
+    if (!payment) throw new Error("Paiement introuvable.");
+    if (payment.status !== "en_attente") {
+      throw new Error("Ce paiement a déjà été traité.");
+    }
+    const profile = await ctx.db.get(payment.profileId);
+    if (!profile) throw new Error("Profil technicien introuvable.");
+    const now = Date.now();
+    const days =
+      payment.plan === "mensuel" ? 30 : payment.plan === "trimestriel" ? 90 : 365;
+    // Cumul de durée si renouvellement anticipé.
+    const from =
+      profile.subscriptionUntil && profile.subscriptionUntil > now
+        ? profile.subscriptionUntil
+        : now;
+    await ctx.db.patch(payment._id, { status: "valide" });
+    await ctx.db.patch(profile._id, {
+      subscription: payment.plan,
+      subscriptionUntil: from + days * 24 * 3600 * 1000,
+      subscriptionPrice: payment.amount,
+    });
+    // Rôle "member" au cas où la vérification l'aurait mis à jour sans abonnement.
+    if (profile.status === "verifie") {
+      await ctx.db.patch(profile.userId, { role: "member" });
+    }
+  },
+});
+
+/** Refuser un paiement d'abonnement (MoMo non abouti…). */
+export const adminRejectSubscriptionPayment = mutation({
+  args: { paymentId: v.id("subscriptionPayments"), reason: v.string() },
+  handler: async (ctx, args) => {
+    await requireAdmin(ctx);
+    const payment = await ctx.db.get(args.paymentId);
+    if (!payment) throw new Error("Paiement introuvable.");
+    if (payment.status !== "en_attente") {
+      throw new Error("Ce paiement a déjà été traité.");
+    }
+    await ctx.db.patch(args.paymentId, { status: "echoue" });
+    void args.reason;
+  },
+});
+
+/**
+ * Techniciens affectables : vérifiés ET abonnement actif. Utilisé par le
+ * moteur d'affectation — remplace la liste brute des "member".
+ */
+export const adminListAssignableTechnicians = query({
+  args: {},
+  handler: async (ctx) => {
+    await requireAdmin(ctx);
+    const members = await ctx.db
+      .query("users")
+      .filter((q) => q.eq(q.field("role"), "member"))
+      .collect();
+    return await Promise.all(
+      members.map(async (t) => {
+        const profile = (
+          await ctx.db
+            .query("technicianProfiles")
+            .withIndex("by_user", (q) => q.eq("userId", t._id))
+            .collect()
+        )[0];
+        const active = subscriptionActive(profile);
+        return {
+          _id: t._id,
+          name: t.name,
+          city: t.city,
+          phone: t.phone,
+          // Techniciens "legacy" créés avant les profils : affectables par défaut.
+          subscription: profile?.subscription ?? ("aucun" as const),
+          subscriptionUntil: profile?.subscriptionUntil,
+          active: profile ? active : true,
+          verified: profile?.status === "verifie" || !profile,
+        };
+      },
+      ),
+    );
+  },
+});
+
 /** Vérification admin d'une candidature. */
 export const adminReviewTechnician = mutation({
   args: {
@@ -720,48 +918,6 @@ export const adminReviewTechnician = mutation({
         city: profile.specialty,
       });
     }
-  },
-});
-
-const SUBSCRIPTION_PRICES: Record<string, number> = {
-  mensuel: 5000,
-  trimestriel: 12000,
-  annuel: 40000,
-};
-
-/** Choix / renouvellement d'abonnement par le technicien. */
-export const setTechnicianSubscription = mutation({
-  args: {
-    plan: v.union(
-      v.literal("mensuel"),
-      v.literal("trimestriel"),
-      v.literal("annuel"),
-    ),
-  },
-  handler: async (ctx, args) => {
-    const user = await requireUser(ctx);
-    const profile = (
-      await ctx.db
-        .query("technicianProfiles")
-        .withIndex("by_user", (q) => q.eq("userId", user._id))
-        .collect()
-    )[0];
-    if (!profile) throw new Error("Aucun profil technicien.");
-    if (profile.status !== "verifie") {
-      throw new Error("Votre profil doit d'abord être vérifié par GTEC.");
-    }
-    const now = Date.now();
-    const days =
-      args.plan === "mensuel" ? 30 : args.plan === "trimestriel" ? 90 : 365;
-    const from =
-      profile.subscriptionUntil && profile.subscriptionUntil > now
-        ? profile.subscriptionUntil
-        : now;
-    await ctx.db.patch(profile._id, {
-      subscription: args.plan,
-      subscriptionUntil: from + days * 24 * 3600 * 1000,
-      subscriptionPrice: SUBSCRIPTION_PRICES[args.plan],
-    });
   },
 });
 
@@ -975,6 +1131,12 @@ export const clientReception = mutation({
         .withIndex("by_request", (q) => q.eq("requestId", args.requestId))
         .collect()
     ).slice(-1)[0];
+    const assignment = (
+      await ctx.db
+        .query("assignments")
+        .withIndex("by_request", (q) => q.eq("requestId", args.requestId))
+        .collect()
+    ).slice(-1)[0];
     const number = await nextRef(ctx, "invoices", "FAC");
     await ctx.db.insert("invoices", {
       requestId: args.requestId,
@@ -988,6 +1150,92 @@ export const clientReception = mutation({
     await ctx.db.patch(args.requestId, { status: "terminee" });
     await addEvent(ctx, args.requestId, "reception", "PV de réception signé");
     await addEvent(ctx, args.requestId, "facture", `Facture ${number} émise`);
+
+    // Rémunérations de l'équipe — calculées une seule fois, à la réception.
+    if (quote && assignment) {
+      const existingPayouts = await ctx.db
+        .query("payouts")
+        .withIndex("by_request", (q) => q.eq("requestId", args.requestId))
+        .collect();
+      if (existingPayouts.length === 0) {
+        for (const m of assignment.members) {
+          const { amount, sharePercent } = payoutFor(
+            quote.total,
+            m.role,
+            assignment.members.length,
+          );
+          await ctx.db.insert("payouts", {
+            techUserId: m.id,
+            requestId: args.requestId,
+            amount,
+            sharePercent,
+            role: m.role,
+            status: "dû",
+          });
+        }
+        await addEvent(
+          ctx,
+          args.requestId,
+          "reception",
+          `Rémunérations de l'équipe calculées (${assignment.members.length})`,
+        );
+      }
+    }
+  },
+});
+
+// ---------- rémunérations (paiement techniciens) ----------
+
+/** Rémunérations du technicien connecté. */
+export const listMyPayouts = query({
+  args: {},
+  handler: async (ctx) => {
+    const user = await requireUser(ctx);
+    const all = await ctx.db.query("payouts").collect();
+    const mine = all.filter((p) => p.techUserId === user._id);
+    return await Promise.all(
+      mine.map(async (p) => {
+        const request = await ctx.db.get(p.requestId);
+        return { payout: p, request };
+      }),
+    );
+  },
+});
+
+/** Toutes les rémunérations, pour la console admin. */
+export const adminListPayouts = query({
+  args: {},
+  handler: async (ctx) => {
+    await requireAdmin(ctx);
+    const all = await ctx.db.query("payouts").collect();
+    return await Promise.all(
+      all.map(async (p) => {
+        const tech = await ctx.db.get(p.techUserId);
+        const request = await ctx.db.get(p.requestId);
+        return { payout: p, tech, request };
+      }),
+    );
+  },
+});
+
+/** Marquer une rémunération comme payée (virement / MoMo GTEC). */
+export const adminMarkPayoutPaid = mutation({
+  args: {
+    payoutId: v.id("payouts"),
+    method: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    await requireAdmin(ctx);
+    const payout = await ctx.db.get(args.payoutId);
+    if (!payout) throw new Error("Rémunération introuvable.");
+    if (payout.status === "payé") {
+      throw new Error("Cette rémunération a déjà été payée.");
+    }
+    await ctx.db.patch(args.payoutId, {
+      status: "payé",
+      paidAt: Date.now(),
+      method: args.method,
+    });
   },
 });
 

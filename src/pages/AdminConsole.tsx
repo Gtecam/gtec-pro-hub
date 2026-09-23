@@ -2,10 +2,12 @@ import { useMutation, useQuery } from "convex/react";
 import { motion } from "framer-motion";
 import {
   BadgeCheck,
+  Banknote,
   CalendarClock,
   CheckCircle2,
   ChevronDown,
   ClipboardCheck,
+  Crown,
   FileText,
   ImagePlus,
   Lightbulb,
@@ -172,12 +174,21 @@ function AssignCrew({
   techs,
 }: {
   request: { _id: string; serviceKey: string };
-  techs: { _id: Id<"users">; name: string; city?: string }[];
+  techs: {
+    _id: Id<"users">;
+    name: string;
+    city?: string;
+    active?: boolean;
+    subscription?: string;
+  }[];
 }) {
   const assignCrew = useMutation(api.gtec.adminAssignCrew);
+  // La suggestion automatique n'utilise que les techniciens à abonnement actif.
   const suggestion = suggestCrew(
     request.serviceKey,
-    techs.map((t) => ({ id: t._id, name: t.name, specialty: t.city })),
+    techs
+      .filter((t) => t.active !== false)
+      .map((t) => ({ id: t._id, name: t.name, specialty: t.city })),
   );
   const [leaderId, setLeaderId] = useState<Id<"users"> | null>(
     (suggestion.leaderId as Id<"users">) ?? null,
@@ -273,7 +284,14 @@ function AssignCrew({
                       onCheckedChange={() => toggleMember(t._id)}
                     />
                     <span className="min-w-0">
-                      <span className="block truncate font-medium">{t.name}</span>
+                      <span className="block truncate font-medium">
+                        {t.name}
+                        {t.active === false && (
+                          <span className="ml-1.5 text-[10px] font-semibold uppercase text-amber-600 dark:text-amber-400">
+                            · abonnement expiré
+                          </span>
+                        )}
+                      </span>
                       {t.city && (
                         <span className="block truncate text-xs text-muted-foreground">
                           {t.city}
@@ -294,6 +312,12 @@ function AssignCrew({
               onChange={(e) => setWhen(e.target.value)}
             />
           </div>
+          {techs.some((t) => t.active === false) && (
+            <p className="text-xs text-muted-foreground">
+              Les techniciens à abonnement expiré sont exclus de la suggestion et
+              affichés avec une mention.
+            </p>
+          )}
           <Textarea
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
@@ -479,12 +503,18 @@ export default function AdminConsole() {
   const stats = useQuery(api.gtec.adminStats);
   const requests = useQuery(api.gtec.adminListRequests);
   const payments = useQuery(api.gtec.adminPendingPayments);
-  const techs = useQuery(api.gtec.adminListTechnicians);
+  const techs = useQuery(api.gtec.adminListAssignableTechnicians);
   const adminExists = useQuery(api.gtec.adminExists);
+
+  const subPayments = useQuery(api.gtec.adminPendingSubscriptionPayments);
+  const payouts = useQuery(api.gtec.adminListPayouts);
 
   const claimAdmin = useMutation(api.gtec.claimAdmin);
   const validatePayment = useMutation(api.gtec.adminValidatePayment);
   const rejectPayment = useMutation(api.gtec.adminRejectPayment);
+  const validateSubPayment = useMutation(api.gtec.adminValidateSubscriptionPayment);
+  const rejectSubPayment = useMutation(api.gtec.adminRejectSubscriptionPayment);
+  const markPayoutPaid = useMutation(api.gtec.adminMarkPayoutPaid);
   const seedTechs = useMutation(api.gtec.adminSeedTechnicians);
   const createTech = useMutation(api.gtec.adminCreateTechnician);
   const reviewTechnician = useMutation(api.gtec.adminReviewTechnician);
@@ -500,10 +530,15 @@ export default function AdminConsole() {
   const [techPhone, setTechPhone] = useState("");
   const [busy, setBusy] = useState(false);
 
+  const pendingSubs = subPayments ?? [];
+  const pendingPayouts = (payouts ?? []).filter((p) => p.payout.status === "dû");
+
   const techList = (techs ?? []).map((t) => ({
     _id: t._id,
     name: t.name ?? "Technicien",
     city: t.city,
+    active: t.active,
+    subscription: t.subscription,
   }));
 
   const run = async (fn: () => Promise<unknown>, ok: string) => {
@@ -617,6 +652,22 @@ export default function AdminConsole() {
               {(payments?.length ?? 0) > 0 && (
                 <span className="ml-1.5 rounded-full bg-primary px-1.5 py-0.5 text-[10px] font-bold text-primary-foreground">
                   {payments?.length}
+                </span>
+              )}
+            </TabsTrigger>
+            <TabsTrigger value="abonnements">
+              <Crown className="mr-1.5 size-4" /> Abonnements
+              {pendingSubs.length > 0 && (
+                <span className="ml-1.5 rounded-full bg-primary px-1.5 py-0.5 text-[10px] font-bold text-primary-foreground">
+                  {pendingSubs.length}
+                </span>
+              )}
+            </TabsTrigger>
+            <TabsTrigger value="remunerations">
+              <Banknote className="mr-1.5 size-4" /> Rémunérations
+              {pendingPayouts.length > 0 && (
+                <span className="ml-1.5 rounded-full bg-primary px-1.5 py-0.5 text-[10px] font-bold text-primary-foreground">
+                  {pendingPayouts.length}
                 </span>
               )}
             </TabsTrigger>
@@ -911,6 +962,172 @@ export default function AdminConsole() {
             )}
           </TabsContent>
 
+          {/* Abonnements techniciens */}
+          <TabsContent value="abonnements" className="mt-4">
+            {subPayments === undefined ? (
+              <div className="h-40 animate-pulse rounded-xl bg-muted" />
+            ) : pendingSubs.length === 0 ? (
+              <Card className="card-layered">
+                <CardContent className="py-10 text-center text-sm text-muted-foreground">
+                  Aucun paiement d'abonnement en attente de vérification.
+                </CardContent>
+              </Card>
+            ) : (
+              <div className="flex flex-col gap-2">
+                {pendingSubs.map(({ payment, tech }) => (
+                  <Card key={payment._id} className="card-layered">
+                    <CardContent className="flex flex-wrap items-center gap-4 py-4">
+                      <span className="flex size-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                        <Crown className="size-5" />
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-semibold">
+                          {fcfa(payment.amount)} · abonnement {payment.plan}
+                        </p>
+                        <p className="truncate text-xs text-muted-foreground">
+                          {tech?.name ?? "Technicien"} · {payment.method} ·{" "}
+                          {payment.payerPhone}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          className="halo-amber"
+                          size="sm"
+                          disabled={busy}
+                          onClick={() =>
+                            run(
+                              () =>
+                                validateSubPayment({
+                                  paymentId: payment._id as never,
+                                }),
+                              "Abonnement activé",
+                            )
+                          }
+                        >
+                          <CheckCircle2 className="mr-1.5 size-4" /> Valider
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="text-destructive"
+                          disabled={busy}
+                          onClick={() =>
+                            run(
+                              () =>
+                                rejectSubPayment({
+                                  paymentId: payment._id as never,
+                                  reason: "Paiement non retrouvé",
+                                }),
+                              "Paiement marqué échoué",
+                            )
+                          }
+                        >
+                          <XCircle className="mr-1.5 size-4" /> Échec
+                        </Button>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            )}
+          </TabsContent>
+
+          {/* Rémunérations techniciens */}
+          <TabsContent value="remunerations" className="mt-4">
+            {payouts === undefined ? (
+              <div className="h-40 animate-pulse rounded-xl bg-muted" />
+            ) : payouts.length === 0 ? (
+              <Card className="card-layered">
+                <CardContent className="py-10 text-center text-sm text-muted-foreground">
+                  Aucune rémunération — elles sont générées quand un client signe
+                  le PV de réception.
+                </CardContent>
+              </Card>
+            ) : (
+              <div className="flex flex-col gap-4">
+                <div className="grid gap-3 sm:grid-cols-3">
+                  {[
+                    {
+                      label: "Total équipe",
+                      value: fcfa(
+                        payouts.reduce((s, p) => s + p.payout.amount, 0),
+                      ),
+                    },
+                    {
+                      label: "À payer",
+                      value: fcfa(
+                        pendingPayouts.reduce((s, p) => s + p.payout.amount, 0),
+                      ),
+                    },
+                    {
+                      label: "Déjà payé",
+                      value: fcfa(
+                        payouts
+                          .filter((p) => p.payout.status === "payé")
+                          .reduce((s, p) => s + p.payout.amount, 0),
+                      ),
+                    },
+                  ].map(({ label, value }) => (
+                    <Card key={label} className="card-layered">
+                      <CardContent className="px-4 py-3.5">
+                        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                          {label}
+                        </p>
+                        <p className="font-display mt-1 text-lg font-bold">{value}</p>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+                <div className="flex flex-col gap-2">
+                  {payouts.map(({ payout, tech, request }) => (
+                    <div
+                      key={payout._id}
+                      className="flex flex-wrap items-center gap-3 rounded-xl border border-border/70 bg-card px-4 py-3"
+                    >
+                      <span className="flex size-9 items-center justify-center rounded-full bg-primary/15 text-sm font-semibold text-primary">
+                        {tech?.name?.[0] ?? "?"}
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-medium">
+                          {tech?.name ?? "Technicien"} · {fcfa(payout.amount)}
+                          <span className="ml-2 text-xs font-normal text-muted-foreground">
+                            {payout.role} · {request?.reference ?? ""}
+                          </span>
+                        </p>
+                        <p className="truncate text-xs text-muted-foreground">
+                          {request?.title ?? ""}
+                        </p>
+                      </div>
+                      {payout.status === "dû" ? (
+                        <Button
+                          className="halo-amber"
+                          size="sm"
+                          disabled={busy}
+                          onClick={() =>
+                            run(
+                              () =>
+                                markPayoutPaid({
+                                  payoutId: payout._id as never,
+                                  method: "Mobile Money",
+                                }),
+                              "Rémunération marquée payée",
+                            )
+                          }
+                        >
+                          <Banknote className="mr-1.5 size-4" /> Marquer payée
+                        </Button>
+                      ) : (
+                        <span className="rounded-full bg-emerald-500/10 px-2.5 py-1 text-xs font-medium text-emerald-600 ring-1 ring-inset ring-emerald-500/20 dark:text-emerald-400">
+                          Payée
+                        </span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </TabsContent>
+
           {/* Techniciens */}
           <TabsContent value="techniciens" className="mt-4">
             <div className="grid gap-4 lg:grid-cols-[1fr_320px]">
@@ -943,9 +1160,15 @@ export default function AdminConsole() {
                           {t.phone ? ` · ${t.phone}` : ""}
                         </p>
                       </div>
-                      <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-600 ring-1 ring-inset ring-emerald-500/20 dark:text-emerald-400">
-                        Disponible
-                      </span>
+                      {t.active === false ? (
+                        <span className="rounded-full bg-amber-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-600 ring-1 ring-inset ring-amber-500/20 dark:text-amber-400">
+                          Abonnement expiré
+                        </span>
+                      ) : (
+                        <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-600 ring-1 ring-inset ring-emerald-500/20 dark:text-emerald-400">
+                          Disponible
+                        </span>
+                      )}
                     </div>
                   ))
                 )}

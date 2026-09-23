@@ -13,6 +13,7 @@ import {
   Sparkles,
   Truck,
   UserCheck,
+  Wallet,
   Wrench,
   XCircle,
 } from "lucide-react";
@@ -43,7 +44,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { useAuth } from "@/hooks/use-auth";
 import { cn } from "@/lib/utils";
-import { CITIES, formatDateTime } from "@/lib/gtec";
+import { CITIES, fcfa, formatDateTime, PAYMENT_METHODS } from "@/lib/gtec";
 
 const PLANS = [
   { key: "mensuel", label: "Mensuel", price: "5 000 FCFA", hint: "30 jours" },
@@ -55,14 +56,22 @@ function useTechnicianReportMutation() {
   return useMutation(api.gtec.technicianSubmitReport);
 }
 
+const PAYOUT_STATUS_STYLES: Record<string, string> = {
+  "dû": "bg-amber-500/10 text-amber-600 ring-amber-500/20 dark:text-amber-400",
+  "payé": "bg-emerald-500/10 text-emerald-600 ring-emerald-500/20 dark:text-emerald-400",
+};
+
 export default function TechnicianSpace() {
   const { user } = useAuth();
   const profile = useQuery(api.gtec.myTechnicianProfile);
   const missions = useQuery(api.gtec.listMyMissions);
 
   const apply = useMutation(api.gtec.submitTechnicianApplication);
-  const subscribe = useMutation(api.gtec.setTechnicianSubscription);
+  const requestSubPayment = useMutation(api.gtec.requestSubscriptionPayment);
   const requestMaterial = useMutation(api.gtec.requestMaterial);
+
+  const pendingSubPayment = useQuery(api.gtec.myPendingSubscriptionPayment);
+  const myPayouts = useQuery(api.gtec.listMyPayouts);
 
   const [specialty, setSpecialty] = useState("");
   const [experience, setExperience] = useState(2);
@@ -70,6 +79,11 @@ export default function TechnicianSpace() {
   const [certifications, setCertifications] = useState("");
   const [bio, setBio] = useState("");
   const [busy, setBusy] = useState(false);
+
+  // Paiement d'abonnement
+  const [subPlan, setSubPlan] = useState<"mensuel" | "trimestriel" | "annuel" | null>(null);
+  const [subMethod, setSubMethod] = useState<string>("mtn_momo");
+  const [subPhone, setSubPhone] = useState("");
 
   const [materialFor, setMaterialFor] = useState<string | null>(null);
   const [materialLabel, setMaterialLabel] = useState("");
@@ -98,12 +112,24 @@ export default function TechnicianSpace() {
     }
   };
 
-  const handleSubscribe = async (plan: "mensuel" | "trimestriel" | "annuel") => {
+  const handleSubscribe = async () => {
+    if (!subPlan) return;
+    setBusy(true);
     try {
-      await subscribe({ plan });
-      toast.success(`Abonnement ${plan} activé`);
+      await requestSubPayment({
+        plan: subPlan,
+        method: subMethod as "mtn_momo" | "orange_money" | "especes" | "virement",
+        payerPhone: subPhone.trim(),
+      });
+      toast.success(
+        "Paiement envoyé — GTEC vérifie et activera votre abonnement",
+      );
+      setSubPlan(null);
+      setSubPhone("");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Erreur");
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -266,6 +292,9 @@ export default function TechnicianSpace() {
               </TabsTrigger>
               <TabsTrigger value="abonnement">
                 <Crown className="mr-1.5 size-4" /> Abonnement
+              </TabsTrigger>
+              <TabsTrigger value="gains">
+                <Wallet className="mr-1.5 size-4" /> Gains
               </TabsTrigger>
             </TabsList>
 
@@ -444,36 +473,106 @@ export default function TechnicianSpace() {
             {/* Abonnement */}
             <TabsContent value="abonnement" className="mt-4">
               <div className="grid gap-4 lg:grid-cols-[1fr_340px]">
-                <div className="grid gap-4 sm:grid-cols-3">
-                  {PLANS.map((plan) => {
-                    const isCurrent = profile.subscription === plan.key;
-                    return (
-                      <Card
-                        key={plan.key}
-                        className={cn(
-                          "card-layered flex flex-col gap-2 p-5",
-                          isCurrent && "border-primary/40 ring-2 ring-primary/20",
-                        )}
-                      >
-                        <p className="font-display text-lg font-bold">
-                          {plan.label}
+                <div className="flex flex-col gap-4">
+                  {pendingSubPayment && (
+                    <Card className="card-layered border-amber-500/30 bg-amber-500/[0.04]">
+                      <CardContent className="flex items-center gap-3 py-4">
+                        <Loader2 className="size-5 shrink-0 animate-spin text-amber-600 dark:text-amber-400" />
+                        <p className="text-sm">
+                          Paiement {pendingSubPayment.plan} de {fcfa(pendingSubPayment.amount)} —
+                          <span className="text-muted-foreground">
+                            {" "}en cours de vérification par GTEC.
+                          </span>
                         </p>
-                        <p className="text-xl font-bold text-primary">
-                          {plan.price}
-                        </p>
-                        <p className="text-xs text-muted-foreground">{plan.hint}</p>
-                        <Button
-                          className="mt-auto"
-                          size="sm"
-                          variant={isCurrent ? "outline" : "default"}
-                          disabled={busy}
-                          onClick={() => handleSubscribe(plan.key)}
+                      </CardContent>
+                    </Card>
+                  )}
+                  <div className="grid gap-4 sm:grid-cols-3">
+                    {PLANS.map((plan) => {
+                      const isCurrent = profile.subscription === plan.key;
+                      return (
+                        <Card
+                          key={plan.key}
+                          className={cn(
+                            "card-layered flex flex-col gap-2 p-5",
+                            isCurrent && "border-primary/40 ring-2 ring-primary/20",
+                          )}
                         >
-                          {isCurrent ? "Renouveler" : "Choisir"}
-                        </Button>
-                      </Card>
-                    );
-                  })}
+                          <p className="font-display text-lg font-bold">
+                            {plan.label}
+                          </p>
+                          <p className="text-xl font-bold text-primary">
+                            {plan.price}
+                          </p>
+                          <p className="text-xs text-muted-foreground">{plan.hint}</p>
+                          <Button
+                            className="mt-auto"
+                            size="sm"
+                            variant={isCurrent ? "outline" : "default"}
+                            disabled={busy || !!pendingSubPayment}
+                            onClick={() => setSubPlan(plan.key)}
+                          >
+                            {isCurrent ? "Renouveler" : "Choisir"}
+                          </Button>
+                        </Card>
+                      );
+                    })}
+                  </div>
+                  {subPlan && (
+                    <Card className="card-layered">
+                      <CardHeader className="pb-2">
+                        <CardTitle className="text-sm">
+                          Payer l'abonnement {subPlan}
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent className="flex flex-col gap-3">
+                        <div className="flex flex-col gap-1.5">
+                          <Label className="text-xs">Moyen de paiement</Label>
+                          <Select
+                            value={subMethod}
+                            onValueChange={(v) => setSubMethod(v)}
+                          >
+                            <SelectTrigger>
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {PAYMENT_METHODS.map((m) => (
+                                <SelectItem key={m.key} value={m.key}>
+                                  {m.label}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="flex flex-col gap-1.5">
+                          <Label className="text-xs">Numéro payeur</Label>
+                          <Input
+                            value={subPhone}
+                            onChange={(e) => setSubPhone(e.target.value)}
+                            placeholder="6 XX XX XX XX"
+                            inputMode="tel"
+                          />
+                        </div>
+                        <div className="flex gap-2">
+                          <Button
+                            className="halo-amber flex-1"
+                            size="sm"
+                            disabled={busy || subPhone.trim().length < 6}
+                            onClick={handleSubscribe}
+                          >
+                            {busy ? "Envoi…" : "Envoyer le paiement"}
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setSubPlan(null)}
+                          >
+                            Annuler
+                          </Button>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  )}
                 </div>
                 <Card className="card-layered h-fit">
                   <CardHeader className="pb-2">
@@ -512,6 +611,95 @@ export default function TechnicianSpace() {
                   </CardContent>
                 </Card>
               </div>
+            </TabsContent>
+
+            {/* Gains */}
+            <TabsContent value="gains" className="mt-4">
+              {myPayouts === undefined ? (
+                <div className="h-40 animate-pulse rounded-xl bg-muted" />
+              ) : myPayouts.length === 0 ? (
+                <Card className="card-layered">
+                  <CardContent className="flex flex-col items-center gap-3 py-12 text-center">
+                    <Wallet className="size-8 text-muted-foreground" />
+                    <p className="font-display text-lg font-semibold">
+                      Aucun gain pour le moment
+                    </p>
+                    <p className="max-w-sm text-sm text-muted-foreground">
+                      Vos rémunérations apparaissent ici dès qu'un client signe le
+                      PV d'une de vos missions terminées.
+                    </p>
+                  </CardContent>
+                </Card>
+              ) : (
+                <div className="flex flex-col gap-4">
+                  <div className="grid gap-3 sm:grid-cols-3">
+                    {[
+                      {
+                        label: "Total gagné",
+                        value: fcfa(
+                          myPayouts.reduce((s, p) => s + p.payout.amount, 0),
+                        ),
+                      },
+                      {
+                        label: "En attente de paiement",
+                        value: fcfa(
+                          myPayouts
+                            .filter((p) => p.payout.status === "dû")
+                            .reduce((s, p) => s + p.payout.amount, 0),
+                        ),
+                      },
+                      {
+                        label: "Déjà payé",
+                        value: fcfa(
+                          myPayouts
+                            .filter((p) => p.payout.status === "payé")
+                            .reduce((s, p) => s + p.payout.amount, 0),
+                        ),
+                      },
+                    ].map(({ label, value }) => (
+                      <Card key={label} className="card-layered">
+                        <CardContent className="px-4 py-3.5">
+                          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                            {label}
+                          </p>
+                          <p className="font-display mt-1 text-lg font-bold">
+                            {value}
+                          </p>
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                  <div className="flex flex-col gap-2">
+                    {myPayouts.map(({ payout, request }) => (
+                      <div
+                        key={payout._id}
+                        className="flex flex-wrap items-center gap-3 rounded-xl border border-border/70 bg-card px-4 py-3"
+                      >
+                        <span className="flex size-9 items-center justify-center rounded-full bg-primary/15 text-primary">
+                          <Wallet className="size-4" />
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-medium">
+                            {fcfa(payout.amount)} · {request?.reference ?? "—"}
+                          </p>
+                          <p className="truncate text-xs text-muted-foreground">
+                            {payout.role} · {request?.title ?? ""}
+                          </p>
+                        </div>
+                        <span
+                          className={cn(
+                            "rounded-full px-2.5 py-1 text-xs font-medium ring-1 ring-inset",
+                            PAYOUT_STATUS_STYLES[payout.status] ??
+                              "bg-muted text-muted-foreground ring-border",
+                          )}
+                        >
+                          {payout.status === "dû" ? "À payer" : "Payé"}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </TabsContent>
           </Tabs>
         )}

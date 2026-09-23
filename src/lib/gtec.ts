@@ -236,3 +236,35 @@ export const PAYMENT_METHODS = [
   { key: "virement", label: "Virement bancaire", hint: "Transfert bancaire" },
   { key: "especes", label: "Espèces (agence)", hint: "Paiement sur place" },
 ] as const;
+
+// ---------- abonnements techniciens (paiement Mobile Money vérifié) ----------
+
+export const SUBSCRIPTION_PLANS = [
+  { key: "mensuel", label: "Mensuel", price: 5000, days: 30, hint: "30 jours" },
+  { key: "trimestriel", label: "Trimestriel", price: 12000, days: 90, hint: "90 jours · 20 % de réduction" },
+  { key: "annuel", label: "Annuel", price: 40000, days: 365, hint: "365 jours · 33 % de réduction" },
+] as const;
+
+export type SubscriptionPlanKey = (typeof SUBSCRIPTION_PLANS)[number]["key"];
+
+// ---------- rémunération techniciens (règles GTEC V1) ----------
+
+/**
+ * Part du montant TTC reversée à l'équipe : 60 % du devis.
+ * Répartition interne : chef d'équipe 1,5 part · technicien 1 part.
+ */
+export const TEAM_SHARE_PERCENT = 60;
+export const LEADER_WEIGHT = 1.5;
+export const MEMBER_WEIGHT = 1;
+
+export function payoutFor(
+  quoteTotal: number,
+  role: string,
+  crewSize: number,
+): { amount: number; sharePercent: number } {
+  const teamPot = Math.round((quoteTotal * TEAM_SHARE_PERCENT) / 100);
+  const weight = role === "Chef d'équipe" ? LEADER_WEIGHT : MEMBER_WEIGHT;
+  const totalWeights = LEADER_WEIGHT + (crewSize - 1) * MEMBER_WEIGHT;
+  const amount = Math.round((teamPot * weight) / (totalWeights || 1));
+  return { amount, sharePercent: TEAM_SHARE_PERCENT };
+}

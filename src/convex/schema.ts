@@ -212,6 +212,57 @@ const schema = defineSchema(
     })
       .index("by_request", ["requestId"])
       .index("by_status", ["status"]),
+
+    /**
+     * Paiement d'abonnement technicien (Mobile Money — vérification manuelle V1,
+     * même modèle que les paiements de devis).
+     */
+    subscriptionPayments: defineTable({
+      profileId: v.id("technicianProfiles"),
+      techUserId: v.id("users"),
+      plan: v.union(
+        v.literal("mensuel"),
+        v.literal("trimestriel"),
+        v.literal("annuel"),
+      ),
+      amount: v.number(),
+      currency: v.string(),
+      method: v.union(
+        v.literal("mtn_momo"),
+        v.literal("orange_money"),
+        v.literal("especes"),
+        v.literal("virement"),
+      ),
+      payerPhone: v.string(),
+      status: v.union(
+        v.literal("en_attente"),
+        v.literal("valide"),
+        v.literal("echoue"),
+      ),
+      externalRef: v.optional(v.string()),
+    })
+      .index("by_profile", ["profileId"])
+      .index("by_status", ["status"]),
+
+    /**
+     * Rémunération technicien — calculée quand le client signe le PV,
+     * payée à la fin du mois par l'admin.
+     */
+    payouts: defineTable({
+      techUserId: v.id("users"),
+      requestId: v.id("serviceRequests"),
+      amount: v.number(),
+      sharePercent: v.number(),
+      role: v.string(), // "Chef d'équipe" | "Technicien"
+      status: v.union(
+        v.literal("dû"),
+        v.literal("payé"),
+      ),
+      paidAt: v.optional(v.number()),
+      method: v.optional(v.string()),
+    })
+      .index("by_tech", ["techUserId", "status"])
+      .index("by_request", ["requestId"]),
   },
   {
     schemaValidation: false,
