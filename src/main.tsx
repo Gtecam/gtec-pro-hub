@@ -16,6 +16,7 @@ const Dashboard = lazy(() => import("./pages/Dashboard.tsx"));
 const NewRequest = lazy(() => import("./pages/NewRequest.tsx"));
 const RequestDetail = lazy(() => import("./pages/RequestDetail.tsx"));
 const TechnicianSpace = lazy(() => import("./pages/TechnicianSpace.tsx"));
+const AdminApp = lazy(() => import("./pages/AdminApp.tsx"));
 const NotFound = lazy(() => import("./pages/NotFound.tsx"));
 
 // Simple loading fallback for route transitions
@@ -137,11 +138,7 @@ createRoot(document.getElementById("root")!).render(
               />
               <Route
                 path="/admin"
-                element={
-                  <RequireAuth>
-                    <Dashboard />
-                  </RequireAuth>
-                }
+                element={<AdminApp />}
               />
               <Route
                 path="/dashboard/new"

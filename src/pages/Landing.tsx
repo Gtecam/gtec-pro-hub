@@ -540,7 +540,14 @@ export default function Landing() {
             >
               655 09 42 28
             </a>{" "}
-            · Électricité, solaire, CCTV, climatisation
+            · Électricité, solaire, CCTV, climatisation{" "}
+            <span className="text-muted-foreground/50">·</span>{" "}
+            <a
+              href="/admin"
+              className="text-xs text-muted-foreground/60 transition-colors hover:text-foreground"
+            >
+              Espace administration
+            </a>
           </p>
         </div>
       </footer>
