@@ -136,6 +136,7 @@ const schema = defineSchema(
       cardLast4: v.optional(v.string()), // 4 derniers chiffres Visa
       collectedBy: v.optional(v.id("users")), // technicien encaisseur (cash)
       collectedAt: v.optional(v.number()),
+      paidAt: v.optional(v.number()), // date réelle d'encaissement (démo/rapports)
     })
       .index("by_request", ["requestId"])
       .index("by_client", ["clientId"]),

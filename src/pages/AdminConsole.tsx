@@ -785,6 +785,7 @@ export default function AdminConsole() {
   const reviewTechnician = useMutation(api.gtec.adminReviewTechnician);
   const reviewMaterial = useMutation(api.gtec.adminReviewMaterial);
   const seedDemo = useMutation(api.demo.adminSeedDemoContracts);
+  const seedMissions = useMutation(api.demo.adminSeedDemoMissions);
   const createContract = useMutation(api.gtec.adminCreateContract);
   const updateContractStatus = useMutation(api.gtec.adminUpdateContractStatus);
   const scheduleVisit = useMutation(api.gtec.adminScheduleContractVisit);
@@ -1225,6 +1226,21 @@ export default function AdminConsole() {
           {/* Contrats de maintenance */}
           <TabsContent value="contrats" className="mt-4">
             <div className="mb-4 flex flex-wrap items-center justify-end gap-2">
+              {(requests ?? []).length === 0 && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={busy}
+                  onClick={() =>
+                    run(
+                      () => seedMissions(),
+                      "Missions de démonstration créées : 4 cycles complets",
+                    )
+                  }
+                >
+                  <Wrench className="mr-1.5 size-4" /> Missions de démo
+                </Button>
+              )}
               {(contracts ?? []).length === 0 && (
                 <Button
                   size="sm"
@@ -1237,7 +1253,7 @@ export default function AdminConsole() {
                     )
                   }
                 >
-                  <Sparkles className="mr-1.5 size-4" /> Données de démo
+                  <Sparkles className="mr-1.5 size-4" /> Contrats de démo
                 </Button>
               )}
               <Button size="sm" onClick={() => setShowContractForm((v) => !v)}>
