@@ -220,7 +220,7 @@ export function AppShell({
           key="console"
           variant="outline"
           size="sm"
-          onClick={() => navigate("/dashboard")}
+          onClick={() => navigate("/admin")}
         >
           <ShieldCheck className="mr-1.5 size-4 text-primary" /> Console admin
         </Button>,
@@ -231,7 +231,7 @@ export function AppShell({
           key="console"
           variant="ghost"
           size="sm"
-          onClick={() => navigate("/dashboard")}
+          onClick={() => navigate("/admin")}
         >
           <ShieldCheck className="mr-1.5 size-4 text-primary" /> Console admin
         </Button>,

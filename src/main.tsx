@@ -136,6 +136,14 @@ createRoot(document.getElementById("root")!).render(
                 }
               />
               <Route
+                path="/admin"
+                element={
+                  <RequireAuth>
+                    <Dashboard />
+                  </RequireAuth>
+                }
+              />
+              <Route
                 path="/dashboard/new"
                 element={
                   <RequireAuth>
