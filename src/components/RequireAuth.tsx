@@ -13,18 +13,16 @@ import type { ReactNode } from "react";
 import { Navigate, useLocation, useNavigate } from "react-router";
 
 /**
- * Wraps a route that requires a signed-in user.
+ * Bloque une route réservée aux utilisateurs connectés.
  *
- * Signed-out visitors used to be bounced straight to `/auth`, which left them
- * on a bare sign-in form with no idea which page they had asked for or why they
- * were moved. The block is now stated on the page they landed on, and sign-in
- * still returns them to it via `returnTo`. Pass `redirectImmediately` for a
- * route where the bounce really is the better experience.
+ * Plutôt que de renvoyer directement vers /auth (ce qui laissait l'utilisateur
+ * sur un formulaire sans contexte), on affiche le blocage sur la page visitée,
+ * puis la connexion ramène vers cette page via `returnTo`.
  */
 export function RequireAuth({
   children,
-  title = "Sign in to continue",
-  description = "This page is only available to signed-in users.",
+  title = "Connectez-vous pour continuer",
+  description = "Cette page est réservée aux utilisateurs connectés.",
   redirectImmediately = false,
 }: {
   children: ReactNode;
@@ -68,18 +66,18 @@ export function RequireAuth({
             <CardDescription>{description}</CardDescription>
           </CardHeader>
           <CardContent className="text-center text-sm text-muted-foreground">
-            You'll come straight back to this page once you're signed in.
+            Vous serez ramené ici dès votre connexion.
           </CardContent>
           <CardFooter className="flex flex-col gap-2">
             <Button className="w-full" onClick={() => navigate(signInHref)}>
-              Sign in
+              Se connecter
             </Button>
             <Button
               variant="ghost"
               className="w-full"
               onClick={() => navigate("/")}
             >
-              Back to home
+              Retour à l'accueil
             </Button>
           </CardFooter>
         </Card>

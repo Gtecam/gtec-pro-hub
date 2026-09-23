@@ -117,8 +117,8 @@ export default function Landing() {
               <Link to="/auth">Se connecter</Link>
             </Button>
             <Button size="sm" className="halo-amber" asChild>
-              <Link to="/dashboard">
-                Espace client
+              <Link to="/auth?returnTo=%2Fdashboard">
+                Créer un compte
                 <ArrowRight className="ml-1.5 size-4" />
               </Link>
             </Button>
