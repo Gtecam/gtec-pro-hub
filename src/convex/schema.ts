@@ -193,6 +193,19 @@ const schema = defineSchema(
       at: v.number(),
     }).index("by_request", ["requestId"]),
 
+    /** Avis client sur une intervention terminée (1 seul par demande). */
+    reviews: defineTable({
+      requestId: v.id("serviceRequests"),
+      clientId: v.id("users"),
+      /** Technicien ciblé : le chef d'équipe de la mission. */
+      techUserId: v.id("users"),
+      rating: v.number(), // 1 à 5
+      comment: v.optional(v.string()),
+      at: v.number(),
+    })
+      .index("by_request", ["requestId"])
+      .index("by_tech", ["techUserId"]),
+
     // ---- Espace technicien (V1.1) ----
 
     /** Profil de candidature technicien — un par utilisateur. */

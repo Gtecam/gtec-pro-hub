@@ -1523,6 +1523,118 @@ export const adminMarkPayoutPaid = mutation({
   },
 });
 
+// ---------- avis clients ----------
+
+/** Avis déjà laissé sur une demande (pour cacher le formulaire après envoi). */
+export const getReviewForRequest = query({
+  args: { requestId: v.id("serviceRequests") },
+  handler: async (ctx, args) => {
+    const user = await requireUser(ctx);
+    const request = await ctx.db.get(args.requestId);
+    if (!request) throw new Error("Demande introuvable.");
+    if (request.clientId !== user._id && user.role !== "admin") {
+      throw new Error("Action non autorisée.");
+    }
+    const review = (
+      await ctx.db
+        .query("reviews")
+        .withIndex("by_request", (q) => q.eq("requestId", args.requestId))
+        .collect()
+    )[0];
+    return review ?? null;
+  },
+});
+
+/** Client : noter l'intervention (après réception, une seule fois). */
+export const clientSubmitReview = mutation({
+  args: {
+    requestId: v.id("serviceRequests"),
+    rating: v.number(),
+    comment: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const user = await requireUser(ctx);
+    const request = await ctx.db.get(args.requestId);
+    if (!request) throw new Error("Demande introuvable.");
+    if (request.clientId !== user._id) {
+      throw new Error("Action non autorisée.");
+    }
+    if (request.status !== "terminee") {
+      throw new Error("L'intervention doit être réceptionnée avant de laisser un avis.");
+    }
+    if (args.rating < 1 || args.rating > 5) {
+      throw new Error("La note doit être entre 1 et 5 étoiles.");
+    }
+    const existing = (
+      await ctx.db
+        .query("reviews")
+        .withIndex("by_request", (q) => q.eq("requestId", args.requestId))
+        .collect()
+    )[0];
+    if (existing) {
+      throw new Error("Vous avez déjà laissé un avis sur cette intervention.");
+    }
+    const assignment = (
+      await ctx.db
+        .query("assignments")
+        .withIndex("by_request", (q) => q.eq("requestId", args.requestId))
+        .collect()
+    ).slice(-1)[0];
+    if (!assignment) throw new Error("Aucune équipe pour cette intervention.");
+    await ctx.db.insert("reviews", {
+      requestId: args.requestId,
+      clientId: user._id,
+      techUserId: assignment.teamLeaderId,
+      rating: Math.round(args.rating),
+      comment: args.comment?.trim() || undefined,
+      at: Date.now(),
+    });
+    await addEvent(
+      ctx,
+      args.requestId,
+      "reception",
+      `Avis client : ${Math.round(args.rating)}/5`,
+    );
+  },
+});
+
+/** Avis reçus par le technicien connecté (les plus récents d'abord). */
+export const myTechnicianReviews = query({
+  args: {},
+  handler: async (ctx) => {
+    const user = await requireUser(ctx);
+    const reviews = await ctx.db
+      .query("reviews")
+      .withIndex("by_tech", (q) => q.eq("techUserId", user._id))
+      .collect();
+    const sorted = [...reviews].sort((a, b) => b.at - a.at);
+    return await Promise.all(
+      sorted.map(async (r) => {
+        const client = await ctx.db.get(r.clientId);
+        const request = await ctx.db.get(r.requestId);
+        return { review: r, clientName: client?.name ?? "Client", requestRef: request?.reference ?? "" };
+      }),
+    );
+  },
+});
+
+/** Moyenne + nombre d'avis d'un technicien (pour les badges). */
+export const technicianRating = query({
+  args: { techUserId: v.id("users") },
+  handler: async (ctx, args) => {
+    const reviews = await ctx.db
+      .query("reviews")
+      .withIndex("by_tech", (q) => q.eq("techUserId", args.techUserId))
+      .collect();
+    if (reviews.length === 0) return { average: null, count: 0 };
+    const sum = reviews.reduce((s, r) => s + r.rating, 0);
+    return {
+      average: Math.round((sum / reviews.length) * 10) / 10,
+      count: reviews.length,
+    };
+  },
+});
+
 // ---------- admin : tableaux de bord ----------
 
 export const adminListRequests = query({

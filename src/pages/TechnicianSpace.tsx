@@ -17,6 +17,7 @@ import {
   Plus,
   Send,
   Sparkles,
+  Star,
   Trash2,
   Truck,
   UserCheck,
@@ -268,6 +269,11 @@ export default function TechnicianSpace() {
 
   const pendingSubPayment = useQuery(api.gtec.myPendingSubscriptionPayment);
   const myPayouts = useQuery(api.gtec.listMyPayouts);
+  const myReviews = useQuery(api.gtec.myTechnicianReviews);
+  const myRating = useQuery(
+    api.gtec.technicianRating,
+    user ? { techUserId: user._id } : "skip",
+  );
 
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
@@ -770,6 +776,14 @@ export default function TechnicianSpace() {
               <TabsTrigger value="gains">
                 <Wallet className="mr-1.5 size-4" /> Gains
               </TabsTrigger>
+              <TabsTrigger value="avis">
+                <Star className="mr-1.5 size-4" /> Avis
+                {myReviews && myReviews.length > 0 && (
+                  <span className="ml-1.5 rounded-full bg-primary px-1.5 py-0.5 text-[10px] font-bold text-primary-foreground">
+                    {myReviews.length}
+                  </span>
+                )}
+              </TabsTrigger>
             </TabsList>
 
             {/* Missions */}
@@ -1259,9 +1273,90 @@ export default function TechnicianSpace() {
                 </div>
               )}
             </TabsContent>
+
+            {/* Avis clients */}
+            <TabsContent value="avis" className="mt-4">
+              {myReviews === undefined ? (
+                <div className="h-40 animate-pulse rounded-xl bg-muted" />
+              ) : myReviews.length === 0 ? (
+                <Card className="card-layered">
+                  <CardContent className="flex flex-col items-center gap-3 py-12 text-center">
+                    <Star className="size-8 text-muted-foreground" />
+                    <p className="font-display text-lg font-semibold">
+                      Aucun avis pour le moment
+                    </p>
+                    <p className="max-w-sm text-sm text-muted-foreground">
+                      Les clients notent vos interventions après réception des
+                      travaux. Continuez comme ça !
+                    </p>
+                  </CardContent>
+                </Card>
+              ) : (
+                <div className="flex flex-col gap-4">
+                  <Card className="card-layered border-primary/20 bg-gradient-to-br from-primary/[0.05] to-transparent">
+                    <CardContent className="flex items-center gap-4 py-5">
+                      <span className="font-display text-4xl font-bold text-primary">
+                        {myRating?.average ?? "—"}
+                      </span>
+                      <div className="flex flex-col gap-1">
+                        <StarRating value={myRating?.average ?? 0} />
+                        <span className="text-xs text-muted-foreground">
+                          {myRating?.count ?? 0} avis client
+                        </span>
+                      </div>
+                    </CardContent>
+                  </Card>
+                  <div className="flex flex-col gap-2">
+                    {myReviews.map(({ review, clientName, requestRef }) => (
+                      <div
+                        key={review._id}
+                        className="flex flex-col gap-1.5 rounded-xl border border-border/70 bg-card px-4 py-3"
+                      >
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="flex items-center gap-2">
+                            <StarRating value={review.rating} />
+                            <span className="text-sm font-semibold">
+                              {review.rating}/5
+                            </span>
+                          </div>
+                          <span className="font-mono text-xs text-muted-foreground">
+                            {requestRef}
+                          </span>
+                        </div>
+                        {review.comment && (
+                          <p className="text-sm text-muted-foreground">
+                            « {review.comment} »
+                          </p>
+                        )}
+                        <span className="text-xs text-muted-foreground">
+                          {clientName} · {new Date(review.at).toLocaleDateString("fr-FR", { dateStyle: "long" })}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}            </TabsContent>
           </Tabs>
         )}
       </div>
     </AppShell>
+  );
+}
+
+function StarRating({ value, size = 5 }: { value: number; size?: number }) {
+  return (
+    <div className="flex items-center gap-0.5">
+      {[1, 2, 3, 4, 5].map((i) => (
+        <Star
+          key={i}
+          className={cn(
+            i <= Math.round(value)
+              ? "fill-amber-400 text-amber-400"
+              : "text-muted-foreground/30",
+          )}
+          style={{ width: size * 4, height: size * 4 }}
+        />
+      ))}
+    </div>
   );
 }

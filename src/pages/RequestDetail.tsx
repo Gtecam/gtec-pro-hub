@@ -1,3 +1,4 @@
+import { Star } from "lucide-react";
 import { useMutation, useQuery } from "convex/react";
 import { motion } from "framer-motion";
 import {
@@ -78,6 +79,15 @@ export default function RequestDetail() {
   const initiatePayment = useMutation(api.gtec.initiatePayment);
   const clientReception = useMutation(api.gtec.clientReception);
   const cancelRequest = useMutation(api.gtec.cancelRequest);
+  const submitReview = useMutation(api.gtec.clientSubmitReview);
+
+  const myReview = useQuery(api.gtec.getReviewForRequest, {
+    requestId: requestId as never,
+  });
+
+  const [rating, setRating] = useState(0);
+  const [hoveredRating, setHoveredRating] = useState(0);
+  const [reviewComment, setReviewComment] = useState("");
 
   const [payOpen, setPayOpen] = useState(false);
   const [method, setMethod] = useState<string>("mtn_momo");
@@ -231,6 +241,26 @@ export default function RequestDetail() {
       "Demande annulée",
     );
     if (ok) setCancelOpen(false);
+  };
+
+  const handleReview = async () => {
+    if (rating < 1) {
+      toast.error("Choisissez une note de 1 à 5 étoiles.");
+      return;
+    }
+    const ok = await run(
+      () =>
+        submitReview({
+          requestId: request._id,
+          rating,
+          comment: reviewComment.trim() || undefined,
+        }),
+      "Merci pour votre avis !",
+    );
+    if (ok) {
+      setRating(0);
+      setReviewComment("");
+    }
   };
 
   return (
@@ -758,6 +788,96 @@ export default function RequestDetail() {
                       <CheckCircle2 className="mr-2 size-4" />
                       Signer et réceptionner
                     </Button>
+                  </CardContent>
+                </Card>
+              </motion.div>
+            )}
+
+            {/* Avis client (après réception) */}
+            {request.status === "terminee" && myReview !== null && (
+              <motion.div
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+              >
+                <Card className="card-layered">
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2 text-base">
+                      <Star className="size-5 text-primary" />
+                      {myReview === undefined
+                        ? "Votre avis"
+                        : "Votre avis sur cette intervention"}
+                    </CardTitle>
+                    <CardDescription>
+                      Votre note aide GTEC à maintenir des équipes de qualité.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="flex flex-col gap-3">
+                    {myReview === undefined ? (
+                      <div className="h-16 animate-pulse rounded-xl bg-muted" />
+                    ) : myReview ? (
+                      <div className="flex flex-col gap-1.5">
+                        <div className="flex items-center gap-1">
+                          {[1, 2, 3, 4, 5].map((i) => (
+                            <Star
+                              key={i}
+                              className={cn(
+                                "size-5",
+                                i <= myReview.rating
+                                  ? "fill-amber-400 text-amber-400"
+                                  : "text-muted-foreground/30",
+                              )}
+                            />
+                          ))}
+                          <span className="ml-2 text-sm font-semibold">
+                            {myReview.rating}/5
+                          </span>
+                        </div>
+                        {myReview.comment && (
+                          <p className="text-sm text-muted-foreground">
+                            « {myReview.comment} »
+                          </p>
+                        )}
+                      </div>
+                    ) : (
+                      <>
+                        <div className="flex items-center gap-1">
+                          {[1, 2, 3, 4, 5].map((i) => (
+                            <button
+                              key={i}
+                              type="button"
+                              onMouseEnter={() => setHoveredRating(i)}
+                              onMouseLeave={() => setHoveredRating(0)}
+                              onClick={() => setRating(i)}
+                              className="transition-transform hover:scale-110"
+                              aria-label={`${i} étoile${i > 1 ? "s" : ""}`}
+                            >
+                              <Star
+                                className={cn(
+                                  "size-8 transition-colors",
+                                  i <= (hoveredRating || rating)
+                                    ? "fill-amber-400 text-amber-400"
+                                    : "text-muted-foreground/30",
+                                )}
+                              />
+                            </button>
+                          ))}
+                        </div>
+                        <Textarea
+                          value={reviewComment}
+                          onChange={(e) => setReviewComment(e.target.value)}
+                          placeholder="Partagez votre expérience (optionnel)…"
+                          rows={2}
+                        />
+                        <Button
+                          className="halo-amber w-fit"
+                          disabled={busy || rating < 1}
+                          onClick={handleReview}
+                        >
+                          <Star className="mr-2 size-4" />
+                          Envoyer mon avis
+                        </Button>
+                      </>
+                    )}
                   </CardContent>
                 </Card>
               </motion.div>
