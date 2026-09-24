@@ -42,6 +42,42 @@ function pad(n: number) {
   return String(n).padStart(4, "0");
 }
 
+/** V3 : notification in-app temps réel — poussée automatique par Convex. */
+async function notify(
+  ctx: any,
+  userId: Id<"users">,
+  kind: string,
+  title: string,
+  body: string,
+  requestId?: Id<"serviceRequests">,
+) {
+  await ctx.db.insert("notifications", {
+    userId,
+    kind,
+    title,
+    body,
+    requestId,
+    at: Date.now(),
+  });
+}
+
+/** Notifie tous les administrateurs (file de travail de la console). */
+async function notifyAdmins(
+  ctx: any,
+  kind: string,
+  title: string,
+  body: string,
+  requestId?: Id<"serviceRequests">,
+) {
+  const admins = await ctx.db
+    .query("users")
+    .filter((q: any) => q.eq(q.field("role"), "admin"))
+    .collect();
+  for (const admin of admins) {
+    await notify(ctx, admin._id, kind, title, body, requestId);
+  }
+}
+
 async function nextRef(
   ctx: any,
   table:
@@ -470,6 +506,14 @@ export const adminCreateQuote = mutation({
       `Devis ${number} émis`,
       `Total ${total.toLocaleString("fr-FR")} FCFA`,
     );
+    await notify(
+      ctx,
+      request.clientId,
+      "devis",
+      `Devis ${number} reçu`,
+      `Votre devis est prêt : ${total.toLocaleString("fr-FR")} FCFA. Acceptez-le pour lancer les travaux.`,
+      args.requestId,
+    );
   },
 });
 
@@ -484,6 +528,13 @@ export const acceptQuote = mutation({
     await ctx.db.patch(args.quoteId, { status: "accepte" });
     await ctx.db.patch(quote.requestId, { status: "devis_accepte" });
     await addEvent(ctx, quote.requestId, "devis", `Devis ${quote.number} accepté`);
+    await notifyAdmins(
+      ctx,
+      "devis",
+      `Devis ${quote.number} accepté`,
+      "Le client a accepté le devis — en attente de son paiement.",
+      quote.requestId,
+    );
   },
 });
 
@@ -687,6 +738,14 @@ export const adminValidatePayment = mutation({
       "Paiement validé",
       `${payment.amount.toLocaleString("fr-FR")} FCFA · ${payment.payerPhone}`,
     );
+    await notify(
+      ctx,
+      payment.clientId,
+      "paiement",
+      "Paiement confirmé",
+      `Votre paiement de ${payment.amount.toLocaleString("fr-FR")} FCFA est validé. L'équipe va être affectée.`,
+      payment.requestId,
+    );
   },
 });
 
@@ -760,6 +819,24 @@ export const adminAssignCrew = mutation({
       `Équipe affectée · ${members.length} technicien(s)`,
       `Intervention prévue le ${date}`,
     );
+    await notify(
+      ctx,
+      request.clientId,
+      "affectation",
+      "Équipe affectée à votre demande",
+      `${leader.name ?? "Un technicien"} interviendra le ${date}.`,
+      args.requestId,
+    );
+    for (const m of members.slice(1)) {
+      await notify(
+        ctx,
+        m.id,
+        "affectation",
+        "Nouvelle mission",
+        `Vous êtes affecté à « ${request.title} » (${request.city}) — prévue le ${date}.`,
+        args.requestId,
+      );
+    }
   },
 });
 
@@ -827,6 +904,14 @@ export const adminSubmitReport = mutation({
       "rapport",
       "Rapport d'intervention transmis",
       `Garantie ${args.warrantyMonths} mois`,
+    );
+    await notify(
+      ctx,
+      request.clientId,
+      "rapport",
+      "Rapport d'intervention disponible",
+      "L'\u00e9quipe a termin\u00e9. Consultez le rapport et signez le PV de r\u00e9ception.",
+      args.requestId,
     );
   },
 });
@@ -1124,6 +1209,13 @@ export const adminValidateSubscriptionPayment = mutation({
     if (profile.status === "verifie") {
       await ctx.db.patch(profile.userId, { role: "member" });
     }
+    await notify(
+      ctx,
+      payment.techUserId,
+      "abonnement",
+      "Abonnement activé",
+      `Votre abonnement ${payment.plan} est actif. Vous recevez désormais des missions.`,
+    );
   },
 });
 
@@ -1205,6 +1297,23 @@ export const adminReviewTechnician = mutation({
         role: "member",
         city: profile.specialty,
       });
+      await notify(
+        ctx,
+        profile.userId,
+        "general",
+        "Dossier validé ✓",
+        "Félicitations ! Votre dossier est validé. Activez votre abonnement pour recevoir des missions.",
+      );
+    } else {
+      await notify(
+        ctx,
+        profile.userId,
+        "general",
+        "Candidature refusée",
+        args.note
+          ? `Motif : ${args.note}`
+          : "Votre candidature n'a pas été retenue cette fois.",
+      );
     }
   },
 });
@@ -1292,6 +1401,14 @@ export const technicianSubmitReport = mutation({
       "rapport",
       "Rapport d'intervention transmis",
       `Garantie ${args.warrantyMonths} mois`,
+    );
+    await notify(
+      ctx,
+      request.clientId,
+      "rapport",
+      "Rapport d'intervention disponible",
+      "L'\u00e9quipe a termin\u00e9. Consultez le rapport et signez le PV de r\u00e9ception.",
+      args.requestId,
     );
   },
 });
@@ -1438,6 +1555,24 @@ export const clientReception = mutation({
     await ctx.db.patch(args.requestId, { status: "terminee" });
     await addEvent(ctx, args.requestId, "reception", "PV de réception signé");
     await addEvent(ctx, args.requestId, "facture", `Facture ${number} émise`);
+    await notify(
+      ctx,
+      user._id,
+      "facture",
+      `Facture ${number} disponible`,
+      "Merci ! Votre facture et le PV signé sont consultables dans votre espace.",
+      args.requestId,
+    );
+    if (assignment) {
+      await notify(
+        ctx,
+        assignment.teamLeaderId,
+        "reception",
+        "PV signé par le client",
+        "Le client a réceptionné les travaux — votre rémunération est enregistrée.",
+        args.requestId,
+      );
+    }
 
     // Rémunérations de l'équipe — calculées une seule fois, à la réception.
     if (quote && assignment) {
@@ -1522,6 +1657,63 @@ export const adminListClients = query({
   },
 });
 
+// ===================== V3 : notifications =====================
+
+/** Notifications de l'utilisateur connecté, les plus récentes d'abord. */
+export const listMyNotifications = query({
+  args: {},
+  handler: async (ctx) => {
+    const user = await requireUser(ctx);
+    return await ctx.db
+      .query("notifications")
+      .withIndex("by_user", (q) => q.eq("userId", user._id))
+      .order("desc")
+      .take(30);
+  },
+});
+
+/** Nombre de notifications non lues (badge temps réel). */
+export const unreadNotificationsCount = query({
+  args: {},
+  handler: async (ctx) => {
+    const user = await requireUser(ctx);
+    const all = await ctx.db
+      .query("notifications")
+      .withIndex("by_user", (q) => q.eq("userId", user._id))
+      .collect();
+    return all.filter((n) => n.readAt === undefined).length;
+  },
+});
+
+/** Marque une notification comme lue. */
+export const markNotificationRead = mutation({
+  args: { notificationId: v.id("notifications") },
+  handler: async (ctx, args) => {
+    const user = await requireUser(ctx);
+    const notif = await ctx.db.get(args.notificationId);
+    if (!notif || notif.userId !== user._id) return;
+    if (notif.readAt === undefined) {
+      await ctx.db.patch(args.notificationId, { readAt: Date.now() });
+    }
+  },
+});
+
+/** Marque toutes les notifications comme lues. */
+export const markAllNotificationsRead = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const user = await requireUser(ctx);
+    const all = await ctx.db
+      .query("notifications")
+      .withIndex("by_user", (q) => q.eq("userId", user._id))
+      .collect();
+    const now = Date.now();
+    for (const n of all) {
+      if (n.readAt === undefined) await ctx.db.patch(n._id, { readAt: now });
+    }
+  },
+});
+
 export const listMyPayouts = query({
   args: {},
   handler: async (ctx) => {
@@ -1571,6 +1763,14 @@ export const adminMarkPayoutPaid = mutation({
       paidAt: Date.now(),
       method: args.method,
     });
+    await notify(
+      ctx,
+      payout.techUserId,
+      "general",
+      "Rémunération payée",
+      `${payout.amount.toLocaleString("fr-FR")} FCFA vous ont été payés (${payout.role}).`,
+      payout.requestId,
+    );
   },
 });
 
@@ -1917,6 +2117,13 @@ export const adminScheduleContractVisit = mutation({
     await ctx.db.patch(args.contractId, {
       nextVisitAt: Number.isFinite(next) ? next : undefined,
     });
+    await notify(
+      ctx,
+      contract.clientId,
+      "visite",
+      "Nouvelle visite planifi\u00e9e",
+      `Une visite de maintenance est pr\u00e9vue le ${new Date(args.scheduledAt).toLocaleDateString("fr-FR")}.`,
+    );
   },
 });
 
@@ -1980,6 +2187,14 @@ export const adminAssignVisit = mutation({
     await ctx.db.patch(args.visitId, {
       assignedTeamLeaderId: args.teamLeaderId,
     });
+    const contract = await ctx.db.get(visit.contractId);
+    await notify(
+      ctx,
+      args.teamLeaderId,
+      "visite",
+      "Nouvelle visite de maintenance",
+      `Visite \« ${contract?.title ?? "contrat"} \» pr\u00e9vue le ${new Date(visit.scheduledAt).toLocaleDateString("fr-FR")}.`,
+    );
   },
 });
 

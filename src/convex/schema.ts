@@ -386,6 +386,23 @@ const schema = defineSchema(
     })
       .index("by_tech", ["techUserId", "status"])
       .index("by_request", ["requestId"]),
+
+    // ===================== V3 : notifications in-app =====================
+
+    /**
+     * Notification in-app temps réel (Convex = poussée automatique au client).
+     * Les étapes clés des 3 espaces créent une notification ciblée.
+     */
+    notifications: defineTable({
+      userId: v.id("users"),
+      title: v.string(),
+      body: v.string(),
+      kind: v.string(), // devis | paiement | affectation | intervention | rapport | reception | facture | visite | abonnement | materiel | avis | general
+      requestId: v.optional(v.id("serviceRequests")),
+      readAt: v.optional(v.number()),
+      at: v.number(),
+    })
+      .index("by_user", ["userId"]),
   },
   {
     schemaValidation: false,

@@ -1,12 +1,27 @@
-import { Zap, Droplets, Sun, Camera, Wind, Wrench } from "lucide-react";
+import {
+  Zap,
+  Droplets,
+  Sun,
+  Camera,
+  Wind,
+  Wrench,
+  PaintBucket,
+  Hammer,
+  Fence,
+  KeyRound,
+  Wifi,
+  Building,
+  AlertTriangle,
+} from "lucide-react";
 
 // ---------- services (écran « Que souhaitez-vous faire ? ») ----------
+// Les 12 pôles du cahier des charges GTEC PRO.
 
 export const SERVICES = [
   {
     key: "electricite",
     label: "Électricité",
-    desc: "Dépannage, installation, mise aux normes",
+    desc: "Dépannage, installation, mise aux normes CFO/CATE",
     icon: Zap,
   },
   {
@@ -23,8 +38,8 @@ export const SERVICES = [
   },
   {
     key: "cctv",
-    label: "CCTV",
-    desc: "Caméras, alarmes, vidéosurveillance",
+    label: "CCTV & Alarmes",
+    desc: "Caméras, vidéosurveillance, alarmes anti-intrusion",
     icon: Camera,
   },
   {
@@ -39,9 +54,54 @@ export const SERVICES = [
     desc: "Contrats et visites préventives",
     icon: Wrench,
   },
+  {
+    key: "peinture",
+    label: "Peinture & Finitions",
+    desc: "Intérieure, extérieure, enduits décoratifs",
+    icon: PaintBucket,
+  },
+  {
+    key: "menuiserie",
+    label: "Menuiserie",
+    desc: "Bois & aluminium : portes, placards, agencement",
+    icon: Hammer,
+  },
+  {
+    key: "cloture",
+    label: "Clôture & Portails",
+    desc: "Murs, grilles, portails coulissants et automatismes",
+    icon: Fence,
+  },
+  {
+    key: "serrurerie",
+    label: "Serrurerie",
+    desc: "Ouverture de portes, blindage, cylindres sécurisés",
+    icon: KeyRound,
+  },
+  {
+    key: "reseau",
+    label: "Réseaux & Internet",
+    desc: "Câblage, WiFi, fibre, interphonie",
+    icon: Wifi,
+  },
+  {
+    key: "urgence",
+    label: "Urgence 24/7",
+    desc: "Intervention rapide tout pôle — file prioritaire",
+    icon: AlertTriangle,
+  },
 ] as const;
 
 export type ServiceKey = (typeof SERVICES)[number]["key"];
+
+/** Pôles bâtiment « entreprise » — ciblés pour les contrats de maintenance. */
+export const ENTERPRISE_SERVICES = [
+  "electricite",
+  "climatisation",
+  "maintenance",
+  "reseau",
+  "cctv",
+] as const;
 
 export const CITIES = ["Douala", "Yaoundé", "Bafoussam", "Buea", "Garoua"] as const;
 
