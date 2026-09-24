@@ -1,6 +1,6 @@
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { v } from "convex/values";
-import { action, internalQuery, mutation, query } from "./_generated/server";
+import { action, internalAction, internalQuery, mutation, query } from "./_generated/server";
 import { internal } from "./_generated/api";
 import type { Doc } from "./_generated/dataModel";
 
@@ -90,6 +90,56 @@ export const adminListEmails = query({
         };
       }),
     );
+  },
+});
+
+/**
+ * Interne : drain de la file (webhook MoMo, cron) — sans session utilisateur.
+ * Réutilise la logique d'envoi Resend du flush client.
+ */
+export const drainEmails = internalAction({
+  args: {},
+  handler: async (ctx) => {
+    const pending = await ctx.runQuery(internal.emails.pendingEmails, {});
+    if (pending.length === 0) return { sent: 0 };
+    const apiKey = process.env.RESEND_API_KEY;
+    if (!apiKey) return { sent: 0, skipped: "RESEND_API_KEY manquante" };
+    let sent = 0;
+    for (const email of pending) {
+      try {
+        const res = await fetch("https://api.resend.com/emails", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            from: "GTEC PRO <onboarding@resend.dev>",
+            to: [email.to],
+            subject: `[GTEC PRO] ${email.title}`,
+            html: gtecEmailHtml(email.kind, email.title, email.body),
+          }),
+        });
+        if (!res.ok) {
+          const text = await res.text();
+          await ctx.runMutation(internal.emailQueue.markEmailSent, {
+            emailId: email._id as never,
+            error: `HTTP ${res.status} : ${text.slice(0, 180)}`,
+          });
+          continue;
+        }
+        await ctx.runMutation(internal.emailQueue.markEmailSent, {
+          emailId: email._id as never,
+        });
+        sent += 1;
+      } catch (e) {
+        await ctx.runMutation(internal.emailQueue.markEmailSent, {
+          emailId: email._id as never,
+          error: e instanceof Error ? e.message : "Erreur inconnue",
+        });
+      }
+    }
+    return { sent };
   },
 });
 

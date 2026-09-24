@@ -662,6 +662,20 @@ export const txForPayment = internalQuery({
   },
 });
 
+/** Interne : retrouve une transaction MoMo par sa référence opérateur. */
+export const txByProviderRef = internalQuery({
+  args: { providerRef: v.string() },
+  handler: async (ctx, args) => {
+    const tx = (
+      await ctx.db
+        .query("momoTransactions")
+        .withIndex("by_provider_ref", (q) => q.eq("providerRef", args.providerRef))
+        .collect()
+    )[0];
+    return tx ?? null;
+  },
+});
+
 export const initiatePayment = mutation({
   args: {
     quoteId: v.id("quotes"),
