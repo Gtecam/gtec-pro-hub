@@ -31,6 +31,7 @@ import { toast } from "sonner";
 import { api } from "@/convex/_generated/api";
 import { AppShell, StatusBadge } from "@/components/gtec";
 import { ReportForm } from "@/components/ReportForm";
+import ServicesCatalog from "@/pages/ServicesCatalog";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -977,6 +978,9 @@ export default function AdminConsole() {
             <TabsTrigger value="analytics">
               <BarChart3 className="mr-1.5 size-4" /> Analytics
             </TabsTrigger>
+            <TabsTrigger value="services">
+              <Sparkles className="mr-1.5 size-4" /> Services
+            </TabsTrigger>
           </TabsList>
 
           {/* Missions */}
@@ -1719,6 +1723,11 @@ export default function AdminConsole() {
           </TabsContent>
 
           {/* Abonnements techniciens */}
+          {/* Catalogue de services dynamique (§4) */}
+          <TabsContent value="services" className="mt-4">
+            <ServicesCatalog />
+          </TabsContent>
+
           <TabsContent value="abonnements" className="mt-4">
             {subPayments === undefined ? (
               <div className="h-40 animate-pulse rounded-xl bg-muted" />

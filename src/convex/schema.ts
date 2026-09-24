@@ -59,6 +59,7 @@ const schema = defineSchema(
       clientId: v.id("users"),
       reference: v.string(), // GTC-0001
       serviceKey: v.string(), // electricite | plomberie | solaire | cctv | climatisation | maintenance
+      subcategory: v.optional(v.string()), // type de problème choisi dans la catégorie
       title: v.string(),
       description: v.string(),
       address: v.string(),
@@ -424,6 +425,25 @@ const schema = defineSchema(
       .index("by_status", ["status"]),
 
     // ===================== V3 : notifications in-app =====================
+
+    // ===================== V4 : catalogue de services dynamique =====================
+
+    /**
+     * Catégorie de service gérée par l'administration (cahier des charges §4).
+     * L'admin peut ajouter, modifier, désactiver ou supprimer des catégories
+     * et leurs sous-catégories (types de problèmes du formulaire client).
+     */
+    serviceCategories: defineTable({
+      key: v.string(), // slug stable, ex. "cfo"
+      label: v.string(), // ex. "Courant Fort — CFO"
+      description: v.optional(v.string()),
+      icon: v.optional(v.string()), // nom d'icône lucide, ex. "Zap"
+      subcategories: v.array(
+        v.object({ key: v.string(), label: v.string() }),
+      ),
+      active: v.boolean(),
+      sortOrder: v.number(),
+    }).index("by_key", ["key"]),
 
     /**
      * Notification in-app temps réel (Convex = poussée automatique au client).

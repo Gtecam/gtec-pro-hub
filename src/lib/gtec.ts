@@ -11,6 +11,7 @@ import {
   Building2,
   Wrench,
   Package,
+  type LucideIcon,
 } from "lucide-react";
 
 // ---------- services (écran « Que souhaitez-vous faire ? ») ----------
@@ -92,6 +93,150 @@ export const SERVICES = [
 ] as const;
 
 export type ServiceKey = (typeof SERVICES)[number]["key"];
+
+// ---------- catalogue dynamique (V4) : catégories gérées par l'administration ----------
+
+/**
+ * Icônes lucide disponibles pour les catégories dynamiques. Une clé inconnue
+ * retombe sur l'icône générique « Wrench ».
+ */
+export const CATEGORY_ICONS: Record<string, LucideIcon> = {
+  Zap,
+  Cable,
+  Factory,
+  Sun,
+  Network,
+  Home,
+  Flame,
+  Gauge,
+  Wind,
+  Building2,
+  Wrench,
+  Package,
+};
+
+export function categoryIcon(name: string | undefined): LucideIcon {
+  return (name && CATEGORY_ICONS[name]) || Wrench;
+}
+
+/**
+ * Catégories par défaut (les 12 domaines officiels GTEC PRO, §4). Elles sont
+ * injectées en base au premier lancement et restent ensuite modifiables par
+ * l'administration depuis la console (ajout, modification, désactivation,
+ * suppression, sous-catégories incluses).
+ */
+export const DEFAULT_CATEGORIES: {
+  key: ServiceKey;
+  label: string;
+  description: string;
+  icon: string;
+  subcategories: string[];
+}[] = [
+  {
+    key: "cfo",
+    label: "Courant Fort — CFO",
+    description: "Installations électriques, tableaux, distribution, mise aux normes",
+    icon: "Zap",
+    subcategories: [
+      "Panne générale",
+      "Disjoncteur",
+      "Prise",
+      "Éclairage",
+      "Tableau électrique",
+      "Court-circuit",
+      "Mise aux normes",
+      "Autre",
+    ],
+  },
+  {
+    key: "hta",
+    label: "Haute Tension — HTA",
+    description: "Lignes MT/BT, postes de transformation, comptage",
+    icon: "Cable",
+    subcategories: ["Poste de transformation", "Ligne MT", "Comptage", "Autre"],
+  },
+  {
+    key: "industrie",
+    label: "Industrie & automatisme",
+    description: "Automatismes, moteurs, armoires de commande, régulation",
+    icon: "Factory",
+    subcategories: ["Automatisme", "Moteur", "Armoire de commande", "Régulation", "Autre"],
+  },
+  {
+    key: "solaire",
+    label: "Solaire & énergie",
+    description: "Kits solaires, onduleurs, batteries, autonomie énergétique",
+    icon: "Sun",
+    subcategories: ["Installation kit", "Onduleur", "Batterie", "Maintenance", "Autre"],
+  },
+  {
+    key: "cfa",
+    label: "Courant Faible — CFA",
+    description: "Réseaux, VDI, fibre, vidéosurveillance, interphonie",
+    icon: "Network",
+    subcategories: ["Réseau / VDI", "Vidéosurveillance", "Interphonie", "Fibre", "Autre"],
+  },
+  {
+    key: "domotique",
+    label: "Domotique",
+    description: "Bâtiments intelligents, éclairage et accès connectés",
+    icon: "Home",
+    subcategories: ["Éclairage connecté", "Contrôle d'accès", "Scénarios", "Autre"],
+  },
+  {
+    key: "incendie",
+    label: "Sécurité incendie",
+    description: "Détection, alarmes, désenfumage, extincteurs",
+    icon: "Flame",
+    subcategories: ["Détection", "Alarme", "Extincteurs", "Désenfumage", "Autre"],
+  },
+  {
+    key: "inspection",
+    label: "Inspection & diagnostic",
+    description: "Thermographie, audits énergétiques, mesures électriques",
+    icon: "Gauge",
+    subcategories: ["Thermographie", "Audit énergétique", "Mesures électriques", "Autre"],
+  },
+  {
+    key: "hvac",
+    label: "Climatisation, HVAC & froid",
+    description: "Split, central, chambres froides, entretien",
+    icon: "Wind",
+    subcategories: ["Split", "Centrale", "Chambre froide", "Entretien", "Autre"],
+  },
+  {
+    key: "batiment",
+    label: "Bâtiment & infrastructures",
+    description: "Génie civil léger, réhabilitation, supports et chemins de câbles",
+    icon: "Building2",
+    subcategories: ["Génie civil", "Réhabilitation", "Chemins de câbles", "Autre"],
+  },
+  {
+    key: "maintenance",
+    label: "Maintenance & contrats",
+    description: "Contrats préventifs, visites périodiques programmées",
+    icon: "Wrench",
+    subcategories: ["Visite préventive", "Dépannage", "Contrat nouveau", "Autre"],
+  },
+  {
+    key: "fourniture",
+    label: "Fourniture de matériel",
+    description: "Câbles, disjoncteurs, panneaux, éclairage — GTEC Store",
+    icon: "Package",
+    subcategories: ["Câbles", "Disjoncteurs", "Éclairage", "Panneaux", "Autre"],
+  },
+];
+
+/** Slugify un libellé en clé stable (pour les nouvelles catégories). */
+export function slugify(label: string): string {
+  return label
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/(^-|-$)/g, "")
+    .slice(0, 40) || "cat";
+}
 
 /** Pôles bâtiment « entreprise » — ciblés pour les contrats de maintenance. */
 export const ENTERPRISE_SERVICES = [

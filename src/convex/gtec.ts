@@ -293,6 +293,7 @@ export const adminSeedTechnicians = mutation({
 export const createRequest = mutation({
   args: {
     serviceKey: v.string(),
+    subcategory: v.optional(v.string()),
     title: v.string(),
     description: v.string(),
     address: v.string(),
@@ -306,6 +307,7 @@ export const createRequest = mutation({
       clientId: user._id,
       reference,
       serviceKey: args.serviceKey,
+      subcategory: args.subcategory,
       title: args.title,
       description: args.description,
       address: args.address,

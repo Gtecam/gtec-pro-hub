@@ -10,7 +10,7 @@ import {
 } from "lucide-react";
 import { useRef, useState } from "react";
 import { toast } from "sonner";
-import { useMutation } from "convex/react";
+import { useMutation, useQuery } from "convex/react";
 import { useNavigate } from "react-router";
 import { api } from "@/convex/_generated/api";
 import { AppShell } from "@/components/gtec";
@@ -32,7 +32,7 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
-import { CITIES, SERVICES, type ServiceKey } from "@/lib/gtec";
+import { CITIES, SERVICES, categoryIcon, type ServiceKey } from "@/lib/gtec";
 
 const STEPS = [
   { key: "service", label: "Service" },
@@ -45,10 +45,14 @@ const STEPS = [
 export default function NewRequest() {
   const navigate = useNavigate();
   const createRequest = useMutation(api.gtec.createRequest);
+  // Catalogue dynamique géré par l'administration (§4) ; tant que le backend
+  // n'a pas répondu, on affiche la liste statique des 12 domaines officiels.
+  const categories = useQuery(api.catalog.listServiceCategories, {});
   const [step, setStep] = useState(0);
   const [submitting, setSubmitting] = useState(false);
 
   const [serviceKey, setServiceKey] = useState<ServiceKey | null>(null);
+  const [subcategory, setSubcategory] = useState<string | null>(null);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [photos, setPhotos] = useState<string[]>([]);
@@ -57,9 +61,30 @@ export default function NewRequest() {
 
   const fileRef = useRef<HTMLInputElement>(null);
 
+  // Vue d'affichage : données dynamiques dès qu'elles arrivent, sinon la
+  // liste statique des 12 domaines officiels pendant le chargement.
+  const view = (
+    categories
+      ? categories.map((c) => ({
+          key: c.key as ServiceKey,
+          label: c.label,
+          desc: c.description ?? "",
+          icon: categoryIcon(c.icon),
+          subcategories: c.subcategories,
+        }))
+      : SERVICES.map((s) => ({
+          key: s.key,
+          label: s.label,
+          desc: s.desc,
+          icon: s.icon,
+          subcategories: [] as { key: string; label: string }[],
+        }))
+  );
+
   const canNext = () => {
     if (step === 0) return !!serviceKey;
-    if (step === 1) return title.trim().length >= 4 && description.trim().length >= 10;
+    if (step === 1)
+      return title.trim().length >= 4 && description.trim().length >= 10;
     if (step === 3) return address.trim().length >= 5;
     return true;
   };
@@ -93,6 +118,7 @@ export default function NewRequest() {
     try {
       const id = await createRequest({
         serviceKey,
+        subcategory: subcategory ?? undefined,
         title: title.trim(),
         description: description.trim(),
         address: address.trim(),
@@ -107,7 +133,7 @@ export default function NewRequest() {
     }
   };
 
-  const service = SERVICES.find((s) => s.key === serviceKey);
+  const service = view.find((s) => s.key === serviceKey);
 
   return (
     <AppShell>
@@ -162,7 +188,7 @@ export default function NewRequest() {
           <CardContent className="min-h-[280px]">
             {step === 0 && (
               <div className="grid gap-3 sm:grid-cols-2">
-                {SERVICES.map((s) => {
+                {view.map((s) => {
                   const Icon = s.icon;
                   const active = serviceKey === s.key;
                   return (
@@ -174,7 +200,10 @@ export default function NewRequest() {
                           ? "border-primary bg-primary/5 ring-2 ring-primary/30"
                           : "border-border hover:border-primary/40 hover:bg-muted/40",
                       )}
-                      onClick={() => setServiceKey(s.key)}
+                      onClick={() => {
+                        setServiceKey(s.key);
+                        setSubcategory(null);
+                      }}
                     >
                       <span
                         className={cn(
@@ -198,6 +227,28 @@ export default function NewRequest() {
 
             {step === 1 && (
               <div className="flex flex-col gap-4">
+                {service && service.subcategories.length > 0 && (
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-sm font-medium">
+                      Type de problème — {service.label}
+                    </label>
+                    <Select
+                      value={subcategory ?? ""}
+                      onValueChange={setSubcategory}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Précisez le type d'intervention" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {service.subcategories.map((sub) => (
+                          <SelectItem key={sub.key} value={sub.label}>
+                            {sub.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
                 <div className="flex flex-col gap-1.5">
                   <label className="text-sm font-medium">Titre</label>
                   <Input
@@ -308,6 +359,12 @@ export default function NewRequest() {
                       <dt className="text-muted-foreground">Service</dt>
                       <dd className="font-medium">{service.label}</dd>
                     </div>
+                    {subcategory && (
+                      <div className="flex justify-between gap-4">
+                        <dt className="text-muted-foreground">Type</dt>
+                        <dd className="font-medium">{subcategory}</dd>
+                      </div>
+                    )}
                     <div className="flex justify-between gap-4">
                       <dt className="text-muted-foreground">Titre</dt>
                       <dd className="text-right font-medium">{title}</dd>
