@@ -1,7 +1,8 @@
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { v } from "convex/values";
-import { action, internalQuery } from "./_generated/server";
+import { action, internalQuery, mutation, query } from "./_generated/server";
 import { internal } from "./_generated/api";
+import type { Doc } from "./_generated/dataModel";
 
 /**
  * Envoi des e-mails en attente via Resend (action Node).
@@ -55,6 +56,60 @@ export const pendingEmails = internalQuery({
         title: r.title,
         body: r.body,
       }));
+  },
+});
+
+/**
+ * Vue admin : derniers e-mails de la file (150 max), triés par priorité —
+ * en attente d'abord, puis échecs, puis envoyés (plus récents en premier).
+ * Renvoie null pour tout utilisateur non administrateur.
+ */
+export const adminListEmails = query({
+  args: {},
+  handler: async (ctx) => {
+    const userId = await getAuthUserId(ctx);
+    if (userId === null) return null;
+    const admin = await ctx.db.get(userId);
+    if (!admin || admin.role !== "admin") return null;
+    const rows = await ctx.db.query("emails").collect();
+    const rank = (r: Pick<Doc<"emails">, "sentAt" | "error">) =>
+      r.sentAt ? 2 : r.error ? 1 : 0;
+    rows.sort((a, b) => rank(a) - rank(b) || (b.sentAt ?? 0) - (a.sentAt ?? 0));
+    return Promise.all(
+      rows.slice(0, 150).map(async (r) => {
+        const user = await ctx.db.get(r.userId);
+        return {
+          _id: r._id,
+          to: r.to,
+          kind: r.kind,
+          title: r.title,
+          body: r.body,
+          sentAt: r.sentAt,
+          error: r.error,
+          userName: user?.name ?? null,
+        };
+      }),
+    );
+  },
+});
+
+/**
+ * Admin : replace un e-mail en échec dans la file (efface l'erreur) pour un
+ * nouvel essai au prochain passage de flushEmails.
+ */
+export const adminRetryEmail = mutation({
+  args: { emailId: v.id("emails") },
+  handler: async (ctx, args) => {
+    const userId = await getAuthUserId(ctx);
+    if (userId === null) throw new Error("Non connecté.");
+    const admin = await ctx.db.get(userId);
+    if (!admin || admin.role !== "admin") {
+      throw new Error("Action réservée à l'administration.");
+    }
+    const email = await ctx.db.get(args.emailId);
+    if (!email) throw new Error("E-mail introuvable.");
+    if (!email.error) return;
+    await ctx.db.patch(args.emailId, { error: undefined });
   },
 });
 

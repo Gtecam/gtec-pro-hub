@@ -1,4 +1,4 @@
-import { useMutation, useQuery } from "convex/react";
+import { useAction, useMutation, useQuery } from "convex/react";
 import { motion } from "framer-motion";
 import {
   BadgeCheck,
@@ -14,8 +14,10 @@ import {
   ImagePlus,
   Lightbulb,
   Loader2,
+  Mail,
   Package,
   Plus,
+  RefreshCw,
   ShieldCheck,
   Sparkles,
   Trash2,
@@ -792,6 +794,32 @@ export default function AdminConsole() {
   const scheduleVisit = useMutation(api.gtec.adminScheduleContractVisit);
   const assignVisit = useMutation(api.gtec.adminAssignVisit);
 
+  // V5 : statut de la file d'e-mails (Resend)
+  const adminEmails = useQuery(api.emails.adminListEmails);
+  const flushEmails = useAction(api.emails.flushEmails);
+  const retryEmail = useMutation(api.emails.adminRetryEmail);
+  const [sendingEmails, setSendingEmails] = useState(false);
+  const pendingEmailCount = (adminEmails ?? []).filter(
+    (e) => !e.sentAt && !e.error,
+  ).length;
+  const handleFlushEmails = async () => {
+    setSendingEmails(true);
+    try {
+      const res = await flushEmails();
+      toast.success(
+        res.sent > 0
+          ? `${res.sent} e-mail(s) envoyé(s).`
+          : res.skipped
+            ? `File non traitée : ${res.skipped}.`
+            : "Aucun e-mail en attente.",
+      );
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Envoi impossible");
+    } finally {
+      setSendingEmails(false);
+    }
+  };
+
   const applications = useQuery(api.gtec.adminListApplications);
   const materials = useQuery(api.gtec.listMaterialRequests);
   const pendingApps =
@@ -980,6 +1008,14 @@ export default function AdminConsole() {
             </TabsTrigger>
             <TabsTrigger value="services">
               <Sparkles className="mr-1.5 size-4" /> Services
+            </TabsTrigger>
+            <TabsTrigger value="emails">
+              <Mail className="mr-1.5 size-4" /> E-mails
+              {pendingEmailCount > 0 && (
+                <span className="ml-1.5 rounded-full bg-primary px-1.5 py-0.5 text-[10px] font-bold text-primary-foreground">
+                  {pendingEmailCount}
+                </span>
+              )}
             </TabsTrigger>
           </TabsList>
 
@@ -1726,6 +1762,121 @@ export default function AdminConsole() {
           {/* Catalogue de services dynamique (§4) */}
           <TabsContent value="services" className="mt-4">
             <ServicesCatalog />
+          </TabsContent>
+          {/* File d'e-mails transactionnels (Resend) — V5 */}
+          <TabsContent value="emails" className="mt-4">
+            <div className="flex flex-col gap-4">
+              <div className="grid gap-3 sm:grid-cols-3">
+                {[
+                  { label: "En attente", value: adminEmails?.filter((e) => !e.sentAt && !e.error).length ?? 0, tone: "text-amber-600 dark:text-amber-400" },
+                  { label: "Échecs", value: adminEmails?.filter((e) => !!e.error).length ?? 0, tone: "text-destructive" },
+                  { label: "Envoyés (150 dern.)", value: adminEmails?.filter((e) => !!e.sentAt).length ?? 0, tone: "text-emerald-600 dark:text-emerald-400" },
+                ].map(({ label, value, tone }) => (
+                  <Card key={label} className="card-layered">
+                    <CardContent className="px-4 py-3.5">
+                      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                        {label}
+                      </p>
+                      <p className={cn("font-display mt-1 text-lg font-bold", tone)}>{value}</p>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <Button size="sm" disabled={sendingEmails} onClick={() => void handleFlushEmails()}>
+                  {sendingEmails ? (
+                    <Loader2 className="mr-1.5 size-4 animate-spin" />
+                  ) : (
+                    <Mail className="mr-1.5 size-4" />
+                  )}
+                  Envoyer les e-mails en attente
+                </Button>
+                {adminEmails?.some((e) => !e.sentAt && !e.error) ? null : (
+                  <span className="text-xs text-muted-foreground">
+                    La file se vide aussi automatiquement à l'ouverture de chaque espace.
+                  </span>
+                )}
+              </div>
+
+              {adminEmails === undefined ? (
+                <div className="flex flex-col gap-2">
+                  {[0, 1, 2].map((i) => (
+                    <div key={i} className="h-14 animate-pulse rounded-xl bg-muted" />
+                  ))}
+                </div>
+              ) : adminEmails === null ? (
+                <Card className="card-layered">
+                  <CardContent className="py-10 text-center text-sm text-muted-foreground">
+                    Réservé à l'administration.
+                  </CardContent>
+                </Card>
+              ) : adminEmails.length === 0 ? (
+                <Card className="card-layered">
+                  <CardContent className="flex flex-col items-center gap-3 py-10 text-center">
+                    <Mail className="size-8 text-muted-foreground" />
+                    <p className="text-sm text-muted-foreground">
+                      Aucun e-mail dans la file — les notifications du parcours y
+                      apparaissent automatiquement.
+                    </p>
+                  </CardContent>
+                </Card>
+              ) : (
+                <div className="flex flex-col gap-2">
+                  {adminEmails.map((email) => (
+                    <div
+                      key={email._id}
+                      className="flex flex-wrap items-center gap-3 rounded-xl border border-border/70 bg-card px-4 py-3"
+                    >
+                      <span
+                        className={cn(
+                          "flex size-9 shrink-0 items-center justify-center rounded-full",
+                          email.error
+                            ? "bg-destructive/10 text-destructive"
+                            : email.sentAt
+                              ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+                              : "bg-amber-500/10 text-amber-600 dark:text-amber-400",
+                        )}
+                      >
+                        {email.error ? (
+                          <XCircle className="size-4" />
+                        ) : email.sentAt ? (
+                          <CheckCircle2 className="size-4" />
+                        ) : (
+                          <Mail className="size-4" />
+                        )}
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-medium">{email.title}</p>
+                        <p className="truncate text-xs text-muted-foreground">
+                          {email.userName ?? "Utilisateur"} · {email.to} ·{" "}
+                          <span className="uppercase">{email.kind}</span>
+                          {email.sentAt
+                            ? ` · envoyé le ${formatDateTime(email.sentAt)}`
+                            : ""}
+                        </p>
+                        {email.error && (
+                          <p className="mt-1 line-clamp-2 text-xs text-destructive">
+                            {email.error}
+                          </p>
+                        )}
+                      </div>
+                      {email.error && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() =>
+                            retryEmail({ emailId: email._id as never })
+                          }
+                        >
+                          <RefreshCw className="mr-1.5 size-4" /> Réessayer
+                        </Button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </TabsContent>
 
           <TabsContent value="abonnements" className="mt-4">
