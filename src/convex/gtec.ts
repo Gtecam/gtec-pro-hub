@@ -1,6 +1,6 @@
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { v } from "convex/values";
-import { mutation, query } from "./_generated/server";
+import { internalMutation, internalQuery, mutation, query } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import { commissionFor, payoutFor } from "../lib/gtec";
 
@@ -59,6 +59,18 @@ async function notify(
     requestId,
     at: Date.now(),
   });
+  // V5 : met l'e-mail correspondant en file (envoyé par Resend si configuré).
+  const notifUser = await ctx.db.get(userId);
+  if (notifUser?.email) {
+    await ctx.db.insert("emails", {
+      userId,
+      to: notifUser.email,
+      kind,
+      title,
+      body,
+      requestId,
+    });
+  }
 }
 
 /** Notifie tous les administrateurs (file de travail de la console). */
@@ -561,6 +573,94 @@ export const refuseQuote = mutation({
 });
 
 // ---------- paiement (mobile money — simulation vérification V1) ----------
+
+// ---------- helpers internes pour le paiement Mobile Money automatique ----------
+
+/** Interne : devis accepté et payable, vérifié côté client. */
+export const getAcceptedQuoteForPayment = internalQuery({
+  args: { quoteId: v.id("quotes"), clientId: v.id("users") },
+  handler: async (ctx, args) => {
+    const quote = await ctx.db.get(args.quoteId);
+    if (!quote) return null;
+    if (quote.clientId !== args.clientId) return null;
+    if (quote.status !== "accepte") return null;
+    return {
+      _id: quote._id,
+      requestId: quote.requestId,
+      total: quote.total,
+      currency: quote.currency,
+    };
+  },
+});
+
+/** Interne : paiement en attente existant pour une demande. */
+export const pendingPaymentForRequest = internalQuery({
+  args: { requestId: v.id("serviceRequests") },
+  handler: async (ctx, args) => {
+    const payments = await ctx.db
+      .query("payments")
+      .withIndex("by_request", (q) => q.eq("requestId", args.requestId))
+      .collect();
+    const pending = payments.find((p) => p.status === "en_attente");
+    return pending ? { _id: pending._id } : null;
+  },
+});
+
+/** Interne : crée le paiement GTEC en attente (déclenché par l'action MoMo). */
+export const createPendingPayment = internalMutation({
+  args: {
+    quoteId: v.id("quotes"),
+    clientId: v.id("users"),
+    amount: v.number(),
+    currency: v.string(),
+    method: v.union(v.literal("mtn_momo"), v.literal("orange_money")),
+    payerPhone: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const quote = await ctx.db.get(args.quoteId);
+    if (!quote) throw new Error("Devis introuvable.");
+    const id = await ctx.db.insert("payments", {
+      quoteId: args.quoteId,
+      requestId: quote.requestId,
+      clientId: args.clientId,
+      amount: args.amount,
+      currency: args.currency,
+      method: args.method,
+      payerPhone: args.payerPhone,
+      status: "en_attente",
+      externalRef: `MOMO-${Date.now().toString(36).toUpperCase()}`,
+    });
+    await addEvent(
+      ctx,
+      quote.requestId,
+      "paiement",
+      "Paiement Mobile Money initié",
+      "En attente de confirmation opérateur",
+    );
+    return id;
+  },
+});
+
+/** Interne : charge un paiement par identifiant (pour l'action MoMo). */
+export const getPaymentById = internalQuery({
+  args: { paymentId: v.id("payments") },
+  handler: async (ctx, args) => {
+    return (await ctx.db.get(args.paymentId)) ?? null;
+  },
+});
+
+/** Interne : transaction MoMo liée à un paiement. */
+export const txForPayment = internalQuery({
+  args: { paymentId: v.id("payments") },
+  handler: async (ctx, args) => {
+    const txs = await ctx.db
+      .query("momoTransactions")
+      .withIndex("by_payment", (q) => q.eq("paymentId", args.paymentId))
+      .collect();
+    const tx = txs.slice(-1)[0];
+    return tx ?? null;
+  },
+});
 
 export const initiatePayment = mutation({
   args: {

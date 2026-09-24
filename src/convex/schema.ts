@@ -40,6 +40,8 @@ const schema = defineSchema(
       // Identité complète du client (profil client)
       firstName: v.optional(v.string()),
       lastName: v.optional(v.string()),
+      /** Vérification du téléphone par code SMS (OTP Twilio). */
+      phoneVerified: v.optional(v.boolean()),
       nationalId: v.optional(v.string()), // CNI / passeport
       gender: v.optional(v.string()),
       birthDate: v.optional(v.string()), // YYYY-MM-DD
@@ -459,6 +461,59 @@ const schema = defineSchema(
       at: v.number(),
     })
       .index("by_user", ["userId"]),
+
+    // ===================== V5 : vérification SMS + Mobile Money =====================
+
+    /**
+     * Code OTP de vérification de téléphone (envoyé par SMS via Twilio).
+     * Un seul enregistrement actif par utilisateur.
+     */
+    phoneVerifications: defineTable({
+      userId: v.id("users"),
+      phone: v.string(), // format E.164 (+237…)
+      codeHash: v.string(), // SHA-256 du code à 6 chiffres
+      attempts: v.number(), // tentatives de vérification échouées
+      expiresAt: v.number(),
+      consumedAt: v.optional(v.number()),
+    }).index("by_user", ["userId"]),
+
+    /**
+     * File d'envoi des e-mails transactionnels (Resend) — un enregistrement
+     * par e-mail à envoyer, alimenté par les notifications du parcours.
+     */
+    emails: defineTable({
+      userId: v.id("users"),
+      to: v.string(),
+      kind: v.string(),
+      title: v.string(),
+      body: v.string(),
+      requestId: v.optional(v.id("serviceRequests")),
+      sentAt: v.optional(v.number()),
+      error: v.optional(v.string()),
+    }).index("by_user", ["userId"]),
+
+    /**
+     * Référence d'une transaction Mobile Money automatique (MTN Collections
+     * ou Orange Web Payment) — reliée au paiement GTEC correspondant.
+     */
+    momoTransactions: defineTable({
+      paymentId: v.id("payments"),
+      provider: v.union(v.literal("mtn"), v.literal("orange")),
+      providerRef: v.string(), // referenceId MTN / payToken ou orderId Orange
+      status: v.union(
+        v.literal("en_attente"),
+        v.literal("reussie"),
+        v.literal("echouee"),
+        v.literal("expiree"),
+      ),
+      amount: v.number(),
+      currency: v.string(),
+      payerPhone: v.string(),
+      lastCheckedAt: v.optional(v.number()),
+      failureReason: v.optional(v.string()),
+    })
+      .index("by_payment", ["paymentId"])
+      .index("by_provider_ref", ["providerRef"]),
   },
   {
     schemaValidation: false,
