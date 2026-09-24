@@ -46,7 +46,7 @@ const schema = defineSchema(
       altPhone: v.optional(v.string()),
       address: v.optional(v.string()),
       quarter: v.optional(v.string()), // quartier
-      customerType: v.optional(v.string()), // particulier | entreprise
+      customerType: v.optional(v.string()), // particulier | professionnel | entreprise | hotel | industrie | promoteur | institution (7 types GTEC)
       companyName: v.optional(v.string()),
       taxId: v.optional(v.string()), // NUI / contribuable
       idDocumentUrl: v.optional(v.string()), // photo CNI (data URL)
@@ -386,6 +386,42 @@ const schema = defineSchema(
     })
       .index("by_tech", ["techUserId", "status"])
       .index("by_request", ["requestId"]),
+
+    /**
+     * Commission GTEC de 15 % — créée automatiquement quand le client paie un
+     * devis (§10 du cahier des charges). Le technicien la règle à GTEC par
+     * Mobile Money ; la clôture financière exige sa régularisation.
+     */
+    gtecCommissions: defineTable({
+      requestId: v.id("serviceRequests"),
+      quoteId: v.id("quotes"),
+      /** Chef d'équipe redevable (débite la mission au nom de l'équipe). */
+      techUserId: v.id("users"),
+      /** Montant TTC de l'intervention, base du calcul. */
+      baseAmount: v.number(),
+      ratePercent: v.number(), // 15 par défaut
+      amount: v.number(),
+      currency: v.string(),
+      status: v.union(
+        v.literal("due"), // commission générée, en attente de paiement
+        v.literal("payee"), // réglée et validée par l'administration
+        v.literal("exoneree"), // annulée par autorisation administrative
+      ),
+      method: v.optional(
+        v.union(
+          v.literal("mtn_momo"),
+          v.literal("orange_money"),
+          v.literal("virement"),
+        ),
+      ),
+      payerPhone: v.optional(v.string()),
+      externalRef: v.optional(v.string()),
+      paidAt: v.optional(v.number()),
+      validatedBy: v.optional(v.id("users")),
+    })
+      .index("by_tech", ["techUserId", "status"])
+      .index("by_request", ["requestId"])
+      .index("by_status", ["status"]),
 
     // ===================== V3 : notifications in-app =====================
 

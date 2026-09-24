@@ -1,94 +1,93 @@
 import {
   Zap,
-  Droplets,
+  Cable,
+  Factory,
   Sun,
-  Camera,
+  Network,
+  Home,
+  Flame,
+  Gauge,
   Wind,
+  Building2,
   Wrench,
-  PaintBucket,
-  Hammer,
-  Fence,
-  KeyRound,
-  Wifi,
-  Building,
-  AlertTriangle,
+  Package,
 } from "lucide-react";
 
 // ---------- services (écran « Que souhaitez-vous faire ? ») ----------
-// Les 12 pôles du cahier des charges GTEC PRO.
+// Les 12 domaines officiels GTEC PRO (cahier des charges §4).
 
 export const SERVICES = [
   {
-    key: "electricite",
-    label: "Électricité",
-    desc: "Dépannage, installation, mise aux normes CFO/CATE",
+    key: "cfo",
+    label: "Courant Fort — CFO",
+    desc: "Installations électriques, tableaux, distribution, mise aux normes",
     icon: Zap,
   },
   {
-    key: "plomberie",
-    label: "Plomberie",
-    desc: "Fuites, sanitaires, pompes à eau",
-    icon: Droplets,
+    key: "hta",
+    label: "Haute Tension — HTA",
+    desc: "Lignes MT/BT, postes de transformation, comptage",
+    icon: Cable,
+  },
+  {
+    key: "industrie",
+    label: "Industrie & automatisme",
+    desc: "Automatismes, moteurs, armoires de commande, régulation",
+    icon: Factory,
   },
   {
     key: "solaire",
-    label: "Solaire",
-    desc: "Kits solaires, onduleurs, batteries",
+    label: "Solaire & énergie",
+    desc: "Kits solaires, onduleurs, batteries, autonomie énergétique",
     icon: Sun,
   },
   {
-    key: "cctv",
-    label: "CCTV & Alarmes",
-    desc: "Caméras, vidéosurveillance, alarmes anti-intrusion",
-    icon: Camera,
+    key: "cfa",
+    label: "Courant Faible — CFA",
+    desc: "Réseaux, VDI, fibre, vidéosurveillance, interphonie",
+    icon: Network,
   },
   {
-    key: "climatisation",
-    label: "Climatisation",
-    desc: "Split, central, entretien froid",
+    key: "domotique",
+    label: "Domotique",
+    desc: "Bâtiments intelligents, éclairage et accès connectés",
+    icon: Home,
+  },
+  {
+    key: "incendie",
+    label: "Sécurité incendie",
+    desc: "Détection, alarmes, désenfumage, extincteurs",
+    icon: Flame,
+  },
+  {
+    key: "inspection",
+    label: "Inspection & diagnostic",
+    desc: "Thermographie, audits énergétiques, mesures électriques",
+    icon: Gauge,
+  },
+  {
+    key: "hvac",
+    label: "Climatisation, HVAC & froid",
+    desc: "Split, central, chambres froides, entretien",
     icon: Wind,
   },
   {
+    key: "batiment",
+    label: "Bâtiment & infrastructures",
+    desc: "Génie civil léger, réhabilitation, supports et chemins de câbles",
+    icon: Building2,
+  },
+  {
     key: "maintenance",
-    label: "Maintenance",
-    desc: "Contrats et visites préventives",
+    label: "Maintenance & contrats",
+    desc: "Contrats préventifs, visites périodiques programmées",
     icon: Wrench,
   },
   {
-    key: "peinture",
-    label: "Peinture & Finitions",
-    desc: "Intérieure, extérieure, enduits décoratifs",
-    icon: PaintBucket,
-  },
-  {
-    key: "menuiserie",
-    label: "Menuiserie",
-    desc: "Bois & aluminium : portes, placards, agencement",
-    icon: Hammer,
-  },
-  {
-    key: "cloture",
-    label: "Clôture & Portails",
-    desc: "Murs, grilles, portails coulissants et automatismes",
-    icon: Fence,
-  },
-  {
-    key: "serrurerie",
-    label: "Serrurerie",
-    desc: "Ouverture de portes, blindage, cylindres sécurisés",
-    icon: KeyRound,
-  },
-  {
-    key: "reseau",
-    label: "Réseaux & Internet",
-    desc: "Câblage, WiFi, fibre, interphonie",
-    icon: Wifi,
-  },
-  {
-    key: "urgence",
-    label: "Urgence 24/7",
-    desc: "Intervention rapide tout pôle — file prioritaire",
-    icon: AlertTriangle,
+    key: "fourniture",
+    label: "Fourniture de matériel",
+    desc: "Câbles, disjoncteurs, panneaux, éclairage — GTEC Store",
+    icon: Package,
   },
 ] as const;
 
@@ -104,6 +103,30 @@ export const ENTERPRISE_SERVICES = [
 ] as const;
 
 export const CITIES = ["Douala", "Yaoundé", "Bafoussam", "Buea", "Garoua"] as const;
+
+/**
+ * Types de clients officiels GTEC (cahier des charges §5) — 7 profils.
+ * Types « organisés » : champs raison sociale / NUI affichés au formulaire.
+ */
+export const CUSTOMER_TYPES = [
+  { key: "particulier", label: "Particulier", company: false },
+  { key: "professionnel", label: "Professionnel (artisan, libéral)", company: false },
+  { key: "entreprise", label: "Entreprise", company: true },
+  { key: "hotel", label: "Hôtel / hébergement", company: true },
+  { key: "industrie", label: "Industrie / usine", company: true },
+  { key: "promoteur", label: "Promoteur / BTP", company: true },
+  { key: "institution", label: "Institution / administration", company: true },
+] as const;
+
+export type CustomerTypeKey = (typeof CUSTOMER_TYPES)[number]["key"];
+
+export function customerTypeLabel(key: string | undefined): string {
+  return CUSTOMER_TYPES.find((t) => t.key === key)?.label ?? "Particulier";
+}
+
+export function customerTypeNeedsCompany(key: string | undefined): boolean {
+  return CUSTOMER_TYPES.find((t) => t.key === key)?.company ?? false;
+}
 
 // ---------- pipeline V1 (un seul parcours) ----------
 
@@ -225,37 +248,25 @@ export function clientNextAction(status: string): string | null {
 // ---------- suggestion d'équipe (moteur d'affectation simplifié V1) ----------
 
 const TEAM_RULES: Record<string, { leaderHint: string; members: string[] }> = {
-  electricite: {
-    leaderHint: "CFO",
-    members: ["bâtiment"],
-  },
-  plomberie: {
-    leaderHint: "Plomberie",
-    members: ["Plomberie"],
-  },
-  solaire: {
-    leaderHint: "Solaire",
-    members: ["Solaire", "bâtiment"],
-  },
-  cctv: {
-    leaderHint: "CCTV",
-    members: ["CCTV", "bâtiment"],
-  },
-  climatisation: {
-    leaderHint: "Climatisation",
-    members: ["Climatisation", "bâtiment"],
-  },
-  maintenance: {
-    leaderHint: "CFO",
-    members: ["bâtiment", "Climatisation"],
-  },
+  cfo: { leaderHint: "CFO", members: ["bâtiment", "CFA"] },
+  hta: { leaderHint: "HTA", members: ["CFO"] },
+  industrie: { leaderHint: "automatisme", members: ["CFO", "industri"] },
+  solaire: { leaderHint: "Solaire", members: ["CFO", "bâtiment"] },
+  cfa: { leaderHint: "courant faible", members: ["réseau", "CCTV"] },
+  domotique: { leaderHint: "domotique", members: ["courant faible", "CFO"] },
+  incendie: { leaderHint: "incendie", members: ["courant faible", "CFO"] },
+  inspection: { leaderHint: "inspection", members: ["thermograph", "CFO"] },
+  hvac: { leaderHint: "Climatisation", members: ["froid", "bâtiment"] },
+  batiment: { leaderHint: "bâtiment", members: ["CFO"] },
+  maintenance: { leaderHint: "CFO", members: ["bâtiment", "Climatisation"] },
+  fourniture: { leaderHint: "CFO", members: [] },
 };
 
 export function suggestCrew(
   serviceKey: string,
   techs: { id: string; name: string; specialty?: string }[],
 ): { leaderId: string | null; memberIds: string[]; total: number } {
-  const rule = TEAM_RULES[serviceKey] ?? TEAM_RULES.electricite;
+  const rule = TEAM_RULES[serviceKey] ?? TEAM_RULES.cfo;
   const matches = (specialty: string | undefined, hint: string) =>
     !!specialty && specialty.toLowerCase().includes(hint.toLowerCase());
   const leader =
@@ -298,10 +309,20 @@ export const PAYMENT_METHODS = [
   { key: "especes", label: "Espèces", hint: "Comptant avec preuve du reçu" },
 ] as const;
 
-/** Numéros marchands GTEC pour les paiements Mobile Money. */
+/**
+ * Numéros marchands officiels GTEC pour les paiements Mobile Money
+ * (cahier des charges §9 : Orange Money 655 547 649 · MTN MoMo 678 202 824).
+ */
 export const MERCHANT_NUMBERS = {
-  orange_money: { number: "655 09 42 28", tel: "+237655094228", label: "Orange Money" },
+  orange_money: { number: "655 54 76 49", tel: "+237655547649", label: "Orange Money" },
   mtn_momo: { number: "678 20 28 24", tel: "+237678202824", label: "MTN MoMo" },
+} as const;
+
+/** Service clientèle officiel Green Tech Energy Cameroon (§20). */
+export const SUPPORT_PHONE = {
+  number: "655 09 42 28",
+  tel: "+237655094228",
+  label: "Service clientèle GTEC",
 } as const;
 
 /** Coordonnées bancaires GTEC (virements entreprises). */
@@ -313,10 +334,14 @@ export const BANK_DETAILS = {
 
 // ---------- abonnements techniciens (paiement Mobile Money vérifié) ----------
 
+/**
+ * Formules d'abonnement technicien (cahier des charges §14) :
+ * mensuel 2 500 · trimestriel 9 000 · annuel modifiable par l'administration.
+ */
 export const SUBSCRIPTION_PLANS = [
-  { key: "mensuel", label: "Mensuel", price: 5000, days: 30, hint: "30 jours" },
-  { key: "trimestriel", label: "Trimestriel", price: 12000, days: 90, hint: "90 jours · 20 % de réduction" },
-  { key: "annuel", label: "Annuel", price: 40000, days: 365, hint: "365 jours · 33 % de réduction" },
+  { key: "mensuel", label: "Mensuel", price: 2500, days: 30, hint: "1 mois" },
+  { key: "trimestriel", label: "Trimestriel", price: 9000, days: 90, hint: "3 mois" },
+  { key: "annuel", label: "Annuel", price: 30000, days: 365, hint: "12 mois · tarif à confirmer par l'administration" },
 ] as const;
 
 export type SubscriptionPlanKey = (typeof SUBSCRIPTION_PLANS)[number]["key"];
@@ -324,12 +349,19 @@ export type SubscriptionPlanKey = (typeof SUBSCRIPTION_PLANS)[number]["key"];
 // ---------- rémunération techniciens (règles GTEC V1) ----------
 
 /**
- * Part du montant TTC reversée à l'équipe : 60 % du devis.
- * Répartition interne : chef d'équipe 1,5 part · technicien 1 part.
+ * Commission GTEC obligatoire : 15 % de chaque intervention (cahier des
+ * charges §10). Base = montant total de l'intervention (TTC du devis).
+ * Le reste (85 %) revient à l'équipe selon la répartition ci-dessous.
  */
-export const TEAM_SHARE_PERCENT = 60;
+export const GTEC_COMMISSION_PERCENT = 15;
+export const TEAM_SHARE_PERCENT = 100 - GTEC_COMMISSION_PERCENT;
 export const LEADER_WEIGHT = 1.5;
 export const MEMBER_WEIGHT = 1;
+
+/** Commission GTEC due sur une intervention (15 % du montant TTC). */
+export function commissionFor(quoteTotal: number): number {
+  return Math.round((quoteTotal * GTEC_COMMISSION_PERCENT) / 100);
+}
 
 export function payoutFor(
   quoteTotal: number,

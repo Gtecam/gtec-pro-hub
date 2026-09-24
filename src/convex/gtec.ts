@@ -2,7 +2,7 @@ import { getAuthUserId } from "@convex-dev/auth/server";
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
-import { payoutFor } from "../lib/gtec";
+import { commissionFor, payoutFor } from "../lib/gtec";
 
 // ---------- helpers ----------
 
@@ -274,12 +274,12 @@ export const adminSeedTechnicians = mutation({
       .collect();
     if (existing.length > 0) return { created: 0 };
     const seed: [string, string][] = [
-      ["Jean-Baptiste Nkotto", "Chef d'équipe · Électricité CFO/CATE"],
-      ["Aline Mbarga", "Électricité bâtiment"],
-      ["Serge Etoundi", "Solaire / onduleurs"],
-      ["Marlyse Tchoumi", "Climatisation & froid"],
-      ["Idrissou Bello", "Vidéosurveillance CCTV"],
-      ["Patrick Nguini", "Plomberie sanitaire"],
+      ["Jean-Baptiste Nkotto", "Chef d'équipe · Courant Fort CFO"],
+      ["Aline Mbarga", "Électricité bâtiment CFO"],
+      ["Serge Etoundi", "Solaire & énergie"],
+      ["Marlyse Tchoumi", "Climatisation HVAC & froid"],
+      ["Idrissou Bello", "Courant faible CFA · vidéosurveillance"],
+      ["Patrick Nguini", "Bâtiment & infrastructures"],
     ];
     for (const [name, specialty] of seed) {
       await ctx.db.insert("users", { name, role: "member", city: specialty });
@@ -717,7 +717,7 @@ export const technicianCollectCash = mutation({
 export const adminValidatePayment = mutation({
   args: { paymentId: v.id("payments") },
   handler: async (ctx, args) => {
-    await requireAdmin(ctx);
+    const admin = await requireAdmin(ctx);
     const payment = await ctx.db.get(args.paymentId);
     if (!payment) throw new Error("Paiement introuvable.");
     if (payment.status !== "en_attente") {
@@ -738,6 +738,36 @@ export const adminValidatePayment = mutation({
       "Paiement validé",
       `${payment.amount.toLocaleString("fr-FR")} FCFA · ${payment.payerPhone}`,
     );
+
+    // ---- Commission GTEC 15 % (§10) : générée automatiquement au paiement ----
+    const commissionAmount = commissionFor(payment.amount);
+    if (commissionAmount > 0) {
+      const existing = await ctx.db
+        .query("gtecCommissions")
+        .withIndex("by_request", (q) => q.eq("requestId", payment.requestId))
+        .collect();
+      if (!existing.some((c) => c.status !== "exoneree")) {
+        await ctx.db.insert("gtecCommissions", {
+          requestId: payment.requestId,
+          quoteId: payment.quoteId,
+          // Encaisseur cash, sinon valeur provisoire — réattribuée au chef
+          // d'équipe lors de l'affectation de la mission.
+          techUserId: payment.collectedBy ?? admin._id,
+          baseAmount: payment.amount,
+          ratePercent: 15,
+          amount: commissionAmount,
+          currency: payment.currency,
+          status: "due",
+        });
+        await addEvent(
+          ctx,
+          payment.requestId,
+          "paiement",
+          `Commission GTEC 15 % générée (${commissionAmount.toLocaleString("fr-FR")} FCFA)`,
+        );
+      }
+    }
+
     await notify(
       ctx,
       payment.clientId,
@@ -819,6 +849,26 @@ export const adminAssignCrew = mutation({
       `Équipe affectée · ${members.length} technicien(s)`,
       `Intervention prévue le ${date}`,
     );
+
+    // La commission (créée au paiement) passe au nom du chef d'équipe.
+    const commission = (
+      await ctx.db
+        .query("gtecCommissions")
+        .withIndex("by_request", (q) => q.eq("requestId", args.requestId))
+        .collect()
+    ).slice(-1)[0];
+    if (commission && commission.status === "due") {
+      await ctx.db.patch(commission._id, { techUserId: args.teamLeaderId });
+      await notify(
+        ctx,
+        args.teamLeaderId,
+        "general",
+        "Commission GTEC à régler",
+        `Après réception de la mission, réglez les ${commission.ratePercent} % GTEC (${commission.amount.toLocaleString("fr-FR")} FCFA) depuis votre espace.`,
+        args.requestId,
+      );
+    }
+
     await notify(
       ctx,
       request.clientId,
@@ -1069,9 +1119,9 @@ export const submitTechnicianApplication = mutation({
 });
 
 const SUBSCRIPTION_PRICES: Record<string, number> = {
-  mensuel: 5000,
-  trimestriel: 12000,
-  annuel: 40000,
+  mensuel: 2500,
+  trimestriel: 9000,
+  annuel: 30000,
 };
 
 /**
@@ -1575,6 +1625,9 @@ export const clientReception = mutation({
     }
 
     // Rémunérations de l'équipe — calculées une seule fois, à la réception.
+    // §10 : la clôture financière exige la régularisation de la commission
+    // GTEC, sauf exonération administrative. Si due, les rémunérations sont
+    // créées mais restent bloquées au statut "dû" jusqu'à régularisation.
     if (quote && assignment) {
       const existingPayouts = await ctx.db
         .query("payouts")
@@ -1595,6 +1648,20 @@ export const clientReception = mutation({
             role: m.role,
             status: "dû",
           });
+        }
+        const commission = (
+          await ctx.db
+            .query("gtecCommissions")
+            .withIndex("by_request", (q) => q.eq("requestId", args.requestId))
+            .collect()
+        ).slice(-1)[0];
+        if (commission && commission.status === "due") {
+          await addEvent(
+            ctx,
+            args.requestId,
+            "reception",
+            `Commission GTEC due (${commission.amount.toLocaleString("fr-FR")} FCFA) — paiements équipe bloqués jusqu'à régularisation`,
+          );
         }
         await addEvent(
           ctx,
@@ -1654,6 +1721,169 @@ export const adminListClients = query({
         accountType: u.accountType,
       }))
       .sort((a, b) => a.name.localeCompare(b.name));
+  },
+});
+
+// ===================== Commission GTEC 15 % (§10 cahier des charges) =====================
+
+/**
+ * À l'affectation d'une équipe, la commission générée au paiement est
+ * réattribuée au chef d'équipe (redevable de la régularisation pour sa team).
+ */
+export const adminListCommissions = query({
+  args: {},
+  handler: async (ctx) => {
+    await requireAdmin(ctx);
+    const all = await ctx.db.query("gtecCommissions").collect();
+    const sorted = [...all].sort((a, b) => b._creationTime - a._creationTime);
+    return await Promise.all(
+      sorted.map(async (c) => {
+        const request = await ctx.db.get(c.requestId);
+        const tech = await ctx.db.get(c.techUserId);
+        return { commission: c, request, tech };
+      }),
+    );
+  },
+});
+
+/** Statistiques commissions pour le tableau de bord admin. */
+export const adminCommissionStats = query({
+  args: {},
+  handler: async (ctx) => {
+    await requireAdmin(ctx);
+    const all = await ctx.db.query("gtecCommissions").collect();
+    const due = all.filter((c) => c.status === "due");
+    const paid = all.filter((c) => c.status === "payee");
+    return {
+      dueCount: due.length,
+      dueTotal: due.reduce((s, c) => s + c.amount, 0),
+      paidTotal: paid.reduce((s, c) => s + c.amount, 0),
+    };
+  },
+});
+
+/**
+ * Commissions du technicien connecté : dues, payées, solde à régulariser.
+ * Un solde non nul peut suspendre l'accès aux nouvelles missions.
+ */
+export const myCommissions = query({
+  args: {},
+  handler: async (ctx) => {
+    const user = await requireUser(ctx);
+    const all = await ctx.db
+      .query("gtecCommissions")
+      .withIndex("by_tech", (q) => q.eq("techUserId", user._id))
+      .collect();
+    const due = all.filter((c) => c.status === "due");
+    const paid = all.filter((c) => c.status === "payee");
+    return {
+      items: all.sort((a, b) => b._creationTime - a._creationTime),
+      dueTotal: due.reduce((s, c) => s + c.amount, 0),
+      dueCount: due.length,
+      paidTotal: paid.reduce((s, c) => s + c.amount, 0),
+    };
+  },
+});
+
+/**
+ * Déclaration de paiement d'une commission par le technicien : Mobile Money
+ * vers les numéros officiels GTEC, ou virement. En attente de validation.
+ */
+export const payCommission = mutation({
+  args: {
+    commissionId: v.id("gtecCommissions"),
+    method: v.union(
+      v.literal("mtn_momo"),
+      v.literal("orange_money"),
+      v.literal("virement"),
+    ),
+    payerPhone: v.string(),
+    externalRef: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const user = await requireUser(ctx);
+    const commission = await ctx.db.get(args.commissionId);
+    if (!commission) throw new Error("Commission introuvable.");
+    if (commission.techUserId !== user._id) {
+      throw new Error("Seul le technicien redevable peut régler cette commission.");
+    }
+    if (commission.status !== "due") {
+      throw new Error("Cette commission est déjà réglée ou annulée.");
+    }
+    if (!args.payerPhone.trim()) {
+      throw new Error("Indiquez le numéro payeur.");
+    }
+    await ctx.db.patch(args.commissionId, {
+      status: "payee",
+      method: args.method,
+      payerPhone: args.payerPhone.trim(),
+      externalRef:
+        args.externalRef?.trim() ||
+        `COM-${Date.now().toString(36).toUpperCase()}`,
+      paidAt: Date.now(),
+    });
+    await notify(
+      ctx,
+      user._id,
+      "general",
+      "Commission déclarée",
+      `Règlement de ${commission.amount.toLocaleString("fr-FR")} FCFA déclaré — en attente de validation GTEC.`,
+      commission.requestId,
+    );
+  },
+});
+
+/** Validation par l'administration du règlement d'une commission. */
+export const adminValidateCommission = mutation({
+  args: { commissionId: v.id("gtecCommissions") },
+  handler: async (ctx, args) => {
+    const admin = await requireAdmin(ctx);
+    const commission = await ctx.db.get(args.commissionId);
+    if (!commission) throw new Error("Commission introuvable.");
+    if (commission.status !== "due") {
+      throw new Error("Cette commission n'est plus en attente.");
+    }
+    await ctx.db.patch(args.commissionId, {
+      status: "payee",
+      paidAt: commission.paidAt ?? Date.now(),
+      validatedBy: admin._id,
+    });
+    await notify(
+      ctx,
+      commission.techUserId,
+      "general",
+      "Commission validée",
+      `${commission.amount.toLocaleString("fr-FR")} FCFA régularisés. Merci !`,
+      commission.requestId,
+    );
+  },
+});
+
+/**
+ * Exonération administrative (autorisation spéciale GTEC — §10 : toute
+ * dérogation est tracée et validée par l'administration).
+ */
+export const adminWaiveCommission = mutation({
+  args: { commissionId: v.id("gtecCommissions") },
+  handler: async (ctx, args) => {
+    const admin = await requireAdmin(ctx);
+    const commission = await ctx.db.get(args.commissionId);
+    if (!commission) throw new Error("Commission introuvable.");
+    if (commission.status !== "due") {
+      throw new Error("Cette commission n'est plus en attente.");
+    }
+    await ctx.db.patch(args.commissionId, {
+      status: "exoneree",
+      validatedBy: admin._id,
+    });
+    await notify(
+      ctx,
+      commission.techUserId,
+      "general",
+      "Commission annulée",
+      "La commission de cette mission a été annulée par l'administration.",
+      commission.requestId,
+    );
   },
 });
 
