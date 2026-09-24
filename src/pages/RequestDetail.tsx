@@ -1,5 +1,5 @@
 import { Star } from "lucide-react";
-import { useMutation, useQuery } from "convex/react";
+import { useAction, useMutation, useQuery } from "convex/react";
 import { motion } from "framer-motion";
 import {
   ArrowLeft,
@@ -11,6 +11,7 @@ import {
   Download,
   FileText,
   ImagePlus,
+  Loader2,
   MapPin,
   PenLine,
   Phone,
@@ -22,7 +23,7 @@ import {
   Wrench,
   XCircle,
 } from "lucide-react";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useNavigate, useParams } from "react-router";
 import { api } from "@/convex/_generated/api";
@@ -78,6 +79,8 @@ export default function RequestDetail() {
   const refuseQuote = useMutation(api.gtec.refuseQuote);
   const initiatePayment = useMutation(api.gtec.initiatePayment);
   const clientReception = useMutation(api.gtec.clientReception);
+  const startMomoPayment = useAction(api.momo.startMomoPayment);
+  const checkMomoPayment = useAction(api.momo.checkMomoPayment);
   const cancelRequest = useMutation(api.gtec.cancelRequest);
   const submitReview = useMutation(api.gtec.clientSubmitReview);
 
@@ -100,6 +103,67 @@ export default function RequestDetail() {
   const [bankRef, setBankRef] = useState("");
   const [cardLast4, setCardLast4] = useState("");
   const proofInputRef = useRef<HTMLInputElement | null>(null);
+
+  // V5 : flux de paiement Mobile Money automatique (MTN/Orange)
+  const [momoFlow, setMomoFlow] = useState<
+    | null
+    | {
+        provider: "mtn" | "orange";
+        paymentId: string;
+        redirectUrl?: string;
+        status: "en_attente" | "reussie" | "echouee" | "expiree";
+        failureReason?: string;
+      }
+  >(null);
+
+  // V5 : interrogation MTN en boucle tant que le client n'a pas validé.
+  useEffect(() => {
+    if (!momoFlow || momoFlow.provider !== "mtn" || momoFlow.status !== "en_attente") {
+      return;
+    }
+    let stopped = false;
+    let attempts = 0;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const tick = async () => {
+      attempts += 1;
+      try {
+        const res = await checkMomoPayment({
+          paymentId: momoFlow.paymentId as never,
+        });
+        if (stopped) return;
+        const s = res?.status ?? "en_attente";
+        if (s === "reussie") {
+          setMomoFlow((f) => (f ? { ...f, status: "reussie" } : f));
+          toast.success("Paiement Mobile Money confirmé — équipe en cours d'affectation !");
+          return;
+        }
+        if (s === "echouee") {
+          setMomoFlow((f) => (f ? { ...f, status: "echouee" } : f));
+          toast.error("Paiement refusé par l'opérateur.");
+          return;
+        }
+        if (s === "expiree") {
+          setMomoFlow((f) => (f ? { ...f, status: "expiree" } : f));
+          toast.error("Demande de paiement expirée.");
+          return;
+        }
+        if (attempts < 40) {
+          timer = setTimeout(tick, 3500);
+        } else {
+          setMomoFlow((f) => (f ? { ...f, status: "expiree" } : f));
+          toast.error("Pas de confirmation après 2 min — réessayez ou déclarez le paiement manuellement.");
+        }
+      } catch {
+        if (!stopped && attempts < 40) timer = setTimeout(tick, 3500);
+      }
+    };
+    timer = setTimeout(tick, 2500);
+    return () => {
+      stopped = true;
+      if (timer) clearTimeout(timer);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [momoFlow?.provider, momoFlow?.paymentId, momoFlow?.status]);
 
   const [signature, setSignature] = useState<string | null>(null);
   const [receptionNote, setReceptionNote] = useState("");
@@ -208,6 +272,43 @@ export default function RequestDetail() {
       setBankName("");
       setBankRef("");
       setCardLast4("");
+    }
+  };
+
+  /** V5 : paiement Mobile Money automatique (demande opérateur + suivi). */
+  const handleAutoMomo = async (provider: "mtn" | "orange") => {
+    if (!quote) return;
+    if (!/^[+0-9 ]{8,}$/.test(payerPhone.trim())) {
+      toast.error("Numéro de téléphone invalide.");
+      return;
+    }
+    setBusy(true);
+    try {
+      const res = await startMomoPayment({
+        quoteId: quote._id,
+        provider,
+        payerPhone: payerPhone.trim(),
+      });
+      if (res.provider === "orange" && res.redirectUrl) {
+        // Orange : redirige vers la page de paiement Orange Money.
+        window.location.href = res.redirectUrl;
+        return;
+      }
+      setMomoFlow({
+        provider: res.provider,
+        paymentId: res.paymentId,
+        redirectUrl: "redirectUrl" in res ? res.redirectUrl : undefined,
+        status: "en_attente",
+      });
+      toast.info(
+        res.provider === "mtn"
+          ? "Demande envoyée — validez sur votre téléphone avec votre code MTN MoMo."
+          : "Demande Orange Money créée — suivez les instructions.",
+      );
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Paiement impossible");
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -968,35 +1069,92 @@ export default function RequestDetail() {
               ))}
             </div>
 
-            {/* Mobile Money : numéros marchands */}
+            {/* Mobile Money : flux automatique (V5) */}
             {(method === "mtn_momo" || method === "orange_money") && (
-              <div className="flex flex-col gap-2 rounded-xl border border-primary/25 bg-primary/[0.04] p-3">
-                {(() => {
-                  const merchant = MERCHANT_NUMBERS[method];
-                  return (
-                    <>
-                      <p className="text-sm font-medium">
-                        Envoyez {quote ? fcfa(quote.total) : ""} au{" "}
-                        {merchant.label} :
-                      </p>
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="font-display text-lg font-bold text-primary">
-                          {merchant.number}
-                        </span>
-                        <a
-                          href={`tel:${merchant.tel}`}
-                          className="flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground"
-                        >
-                          <Phone className="size-3.5" /> Appeler
-                        </a>
-                      </div>
+              <div className="flex flex-col gap-3 rounded-xl border border-primary/25 bg-primary/[0.04] p-3">
+                {momoFlow && momoFlow.provider === (method === "mtn_momo" ? "mtn" : "orange") ? (
+                  <>
+                    <p className="flex items-center gap-2 text-sm font-medium">
+                      <Loader2 className="size-4 animate-spin text-primary" />
+                      {momoFlow.status === "en_attente" &&
+                        "Demande envoyée — validez sur votre téléphone avec votre code secret Mobile Money."}
+                      {momoFlow.status === "reussie" && "Paiement confirmé — merci !"}
+                      {momoFlow.status === "echouee" && "Paiement refusé par l'opérateur."}
+                      {momoFlow.status === "expiree" && "Demande expirée sans confirmation."}
+                    </p>
+                    {momoFlow.provider === "mtn" && momoFlow.status === "en_attente" && (
                       <p className="text-xs text-muted-foreground">
-                        Utilisez votre nom en référence, puis indiquez votre
-                        numéro ci-dessous.
+                        Une notification MTN MoMo a été poussée sur {payerPhone}. Entrez
+                        votre code secret pour valider {quote ? fcfa(quote.total) : "la transaction"}.
+                        Le statut se met à jour automatiquement (jusqu'à 2 min).
                       </p>
-                    </>
-                  );
-                })()}
+                    )}
+                    {momoFlow.provider === "orange" && momoFlow.status === "en_attente" && (
+                      <p className="text-xs text-muted-foreground">
+                        Terminez le paiement sur la page Orange Money puis revenez ici :
+                        l'admin finalise la validation dès réception de la notification
+                        opérateur.
+                      </p>
+                    )}
+                    {(momoFlow.status === "echouee" || momoFlow.status === "expiree") && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setMomoFlow(null)}
+                      >
+                        Nouvel essai / paiement manuel
+                      </Button>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    <p className="text-sm font-medium">
+                      Paiement automatique {method === "mtn_momo" ? "MTN MoMo" : "Orange Money"}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {method === "mtn_momo"
+                        ? "Entrez votre numéro, validez sur votre téléphone : GTEC reçoit la confirmation en direct et enclenche l'affectation de l'équipe — sans justificatif à envoyer."
+                        : "Vous êtes redirigé vers la page de paiement sécurisée Orange Money, puis revenez sur GTEC : la confirmation opérateur finalise automatiquement votre dossier."}
+                    </p>
+                    <Button
+                      className="halo-amber"
+                      size="sm"
+                      disabled={busy || !payerPhone.trim()}
+                      onClick={() => void handleAutoMomo(method === "mtn_momo" ? "mtn" : "orange")}
+                    >
+                      <Wallet className="mr-2 size-4" />
+                      Payer automatiquement {quote ? fcfa(quote.total) : ""}
+                    </Button>
+                    <details className="rounded-lg border border-border/60 bg-background/60 px-3 py-2">
+                      <summary className="cursor-pointer text-xs font-medium text-muted-foreground">
+                        Payer plutôt manuellement (transfert vers le numéro marchand)
+                      </summary>
+                      {(() => {
+                        const merchant = MERCHANT_NUMBERS[method];
+                        return (
+                          <div className="mt-2 flex flex-col gap-2">
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="font-display text-lg font-bold text-primary">
+                                {merchant.number}
+                              </span>
+                              <a
+                                href={`tel:${merchant.tel}`}
+                                className="flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground"
+                              >
+                                <Phone className="size-3.5" /> Appeler
+                              </a>
+                            </div>
+                            <p className="text-xs text-muted-foreground">
+                              Utilisez votre nom en référence, puis cliquez sur « Payer »
+                              ci-dessous pour déclarer le transfert (vérification par un
+                              agent GTEC).
+                            </p>
+                          </div>
+                        );
+                      })()}
+                    </details>
+                  </>
+                )}
               </div>
             )}
 
@@ -1131,7 +1289,9 @@ export default function RequestDetail() {
                 ? "Déclarer le paiement"
                 : method === "virement"
                   ? "Notifier le virement"
-                  : "Payer"}{" "}
+                  : method === "mtn_momo" || method === "orange_money"
+                    ? "Déclarer un transfert manuel"
+                    : "Payer"}{" "}
               {quote ? fcfa(quote.total) : ""}
             </Button>
           </DialogFooter>

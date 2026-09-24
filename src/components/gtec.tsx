@@ -1,6 +1,19 @@
-import { Check, Eraser, LogOut, PenLine, ShieldCheck, Wrench, Bell, Inbox } from "lucide-react";
+import {
+  Bell,
+  Check,
+  Eraser,
+  Inbox,
+  Loader2,
+  LogOut,
+  MessageSquare,
+  PenLine,
+  ShieldCheck,
+  Smartphone,
+  Wrench,
+} from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { useMutation, useQuery } from "convex/react";
+import { useAction, useMutation, useQuery } from "convex/react";
+import { toast } from "sonner";
 import { api } from "@/convex/_generated/api";
 import { Button } from "@/components/ui/button";
 import {
@@ -12,6 +25,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { cn } from "@/lib/utils";
 import { completedSteps, JOURNEY_STEPS, statusMeta } from "@/lib/gtec";
 import { useNavigate } from "react-router";
+import { Input } from "@/components/ui/input";
 import logo from "@/assets/logo.svg";
 
 // ---------- V3 : cloche de notifications in-app ----------
@@ -124,6 +138,154 @@ export function NotificationBell() {
         </div>
       </PopoverContent>
     </Popover>
+  );
+}
+
+// ---------- V5 : bannière de vérification du téléphone (OTP SMS) ----------
+
+/**
+ * Bannière affichée tant que le numéro du compte n'est pas vérifié.
+ * Avec les clés Twilio configurées, le code arrive par SMS ; sans clés,
+ * le mode démo affiche le code à l'écran.
+ */
+export function PhoneVerificationBanner() {
+  const { isAuthenticated } = useAuth();
+  const verification = useQuery(
+    api.sms.myPhoneVerification,
+    isAuthenticated ? {} : "skip",
+  );
+  const sendCode = useAction(api.sms.sendSmsCode);
+  const verifyCode = useMutation(api.sms.verifySmsCode);
+  const [open, setOpen] = useState(false);
+  const [phone, setPhone] = useState("");
+  const [code, setCode] = useState("");
+  const [demoCode, setDemoCode] = useState<string | null>(null);
+  const [codeSent, setCodeSent] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [checking, setChecking] = useState(false);
+
+  if (!isAuthenticated || verification === undefined || verification?.verified) {
+    return null;
+  }
+
+  const send = async () => {
+    if (!/^[+0-9 ]{8,}$/.test(phone.trim())) {
+      toast.error("Numéro invalide. Ex. : 6 55 09 42 28");
+      return;
+    }
+    setSending(true);
+    try {
+      const res = await sendCode({ phone: phone.trim() });
+      setCodeSent(true);
+      if (res.mode === "demo") {
+        setDemoCode(res.code);
+        toast.info(`Mode démo — code : ${res.code}`);
+      } else {
+        setDemoCode(null);
+        toast.success(`Code envoyé au ${phone.trim()} par SMS.`);
+      }
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Envoi impossible");
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const verify = async () => {
+    if (!/^\d{6}$/.test(code.trim())) {
+      toast.error("Le code contient 6 chiffres.");
+      return;
+    }
+    setChecking(true);
+    try {
+      await verifyCode({ code: code.trim() });
+      toast.success("Téléphone vérifié — merci !");
+      setOpen(false);
+      setCode("");
+      setDemoCode(null);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Vérification impossible");
+    } finally {
+      setChecking(false);
+    }
+  };
+
+  return (
+    <div className="mx-auto mb-6 max-w-6xl px-4 sm:px-6">
+      <div
+        className={cn(
+          "flex flex-col gap-3 rounded-xl border border-primary/30 bg-primary/[0.06] px-4 py-3 sm:flex-row sm:items-center",
+          open && "items-start",
+        )}
+      >
+        <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/15 text-primary">
+          <Smartphone className="size-4.5" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-semibold">
+            Vérifiez votre numéro de téléphone
+          </p>
+          <p className="text-xs text-muted-foreground">
+            {verification?.phone
+              ? `Numéro enregistré : ${verification.phone} — non vérifié.`
+              : "Aucun numéro enregistré. Il sert aux notifications SMS et aux paiements Mobile Money."}
+          </p>
+        </div>
+        <Button size="sm" variant="outline" onClick={() => setOpen((o) => !o)}>
+          <MessageSquare className="mr-1.5 size-4" />
+          {open ? "Fermer" : "Vérifier maintenant"}
+        </Button>
+      </div>
+
+      {open && (
+        <div className="mt-2 flex flex-col gap-3 rounded-xl border border-border/70 bg-card p-4">
+          {demoCode && (
+            <p className="rounded-lg bg-amber-500/10 px-3 py-2 text-xs font-medium text-amber-600 dark:text-amber-400">
+              Mode démo (clés Twilio absentes) — votre code :{" "}
+              <span className="font-display text-sm font-bold tracking-widest">
+                {demoCode}
+              </span>
+            </p>
+          )}
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <Input
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+              placeholder="6 55 09 42 28"
+              inputMode="tel"
+              className="sm:max-w-56"
+            />
+            <Button size="sm" disabled={sending} onClick={() => void send()}>
+              {sending ? (
+                <Loader2 className="mr-1.5 size-4 animate-spin" />
+              ) : (
+                <MessageSquare className="mr-1.5 size-4" />
+              )}
+              Recevoir le code
+            </Button>
+          </div>
+          {codeSent && (
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <Input
+                value={code}
+                onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                placeholder="Code à 6 chiffres"
+                inputMode="numeric"
+                className="sm:max-w-56"
+              />
+              <Button size="sm" disabled={checking} onClick={() => void verify()}>
+                {checking ? (
+                  <Loader2 className="mr-1.5 size-4 animate-spin" />
+                ) : (
+                  <Check className="mr-1.5 size-4" />
+                )}
+                Valider
+              </Button>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -313,10 +475,19 @@ export function AppShell({
   adminArea?: boolean;
   areaLabel?: string;
 }) {
-  const { user, signOut } = useAuth();
+  const { user, signOut, isAuthenticated } = useAuth();
   const navigate = useNavigate();
   const isAdmin = user?.role === "admin";
   const isTech = user?.accountType === "technicien";
+
+  // V5 : vide la file d'e-mails (Resend) au chargement de chaque espace.
+  const flushEmails = useAction(api.emails.flushEmails);
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    void flushEmails().catch(() => undefined);
+    // Une seule passe par montage de l'espace.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAuthenticated]);
 
   const handleSignOut = async () => {
     await signOut();
@@ -426,6 +597,7 @@ export function AppShell({
           </div>
         </div>
       </header>
+      <PhoneVerificationBanner />
       <main className="mx-auto max-w-6xl px-4 py-8 sm:px-6">{children}</main>
     </div>
   );
