@@ -2,7 +2,9 @@ import { getAuthUserId } from "@convex-dev/auth/server";
 import { v } from "convex/values";
 import { action, internalMutation, mutation, query } from "./_generated/server";
 import { internal } from "./_generated/api";
+
 import { ADMIN_EMAIL } from "./adminApp";
+import { settleMilestone } from "./gtec";
 import type { Id } from "./_generated/dataModel";
 
 /**
@@ -120,61 +122,28 @@ export const settleMomoSuccess = internalMutation({
     const payment = await ctx.db.get(args.paymentId);
     if (!payment || payment.status === "valide") return;
     const request = await ctx.db.get(payment.requestId);
-    if (!request || request.status !== "devis_accepte") return;
+    if (!request) return;
+    // V6 : l'avance se confirme en "devis_accepte", le solde en cours de
+    // travaux / rapport émis. Toute autre étape ne consomme pas la tranche.
+    const milestone = payment.milestone !== "solde" ? "avance" : "solde";
+    const allowed =
+      milestone === "avance"
+        ? request.status === "devis_accepte"
+        : ["en_intervention", "rapport_emis"].includes(request.status);
+    if (!allowed) return;
 
-    await ctx.db.patch(payment._id, {
-      status: "valide",
-      paidAt: Date.now(),
-      externalRef: args.providerRef,
-    });
-    await ctx.db.patch(payment.requestId, { status: "paye" });
+    await settleMilestone(ctx, payment, { externalRef: args.providerRef });
     await ctx.db.insert("requestEvents", {
       requestId: payment.requestId,
       kind: "paiement",
-      label: "Paiement Mobile Money confirmé automatiquement",
+      label:
+        milestone === "avance"
+          ? "Avance 50 % confirmée automatiquement (Mobile Money)"
+          : "Solde 50 % confirmé automatiquement (Mobile Money)",
       detail: `${payment.amount.toLocaleString("fr-FR")} ${payment.currency} · réf. ${args.providerRef.slice(0, 12)}`,
       at: Date.now(),
     });
 
-    // Commission GTEC 15 % (§10) — même règle que la validation admin.
-    const commissionAmount = Math.round(payment.amount * 15) / 100;
-    const existing = await ctx.db
-      .query("gtecCommissions")
-      .withIndex("by_request", (q) => q.eq("requestId", payment.requestId))
-      .collect();
-    if (commissionAmount > 0 && !existing.some((c) => c.status !== "exoneree")) {
-      await ctx.db.insert("gtecCommissions", {
-        requestId: payment.requestId,
-        quoteId: payment.quoteId,
-        techUserId: payment.collectedBy ?? payment.clientId,
-        baseAmount: payment.amount,
-        ratePercent: 15,
-        amount: Math.round((payment.amount * 15) / 100),
-        currency: payment.currency,
-        status: "due",
-      });
-    }
-
-    await ctx.db.insert("notifications", {
-      userId: payment.clientId,
-      kind: "paiement",
-      title: "Paiement confirmé",
-      body: `Votre paiement de ${payment.amount.toLocaleString("fr-FR")} FCFA est validé. L'équipe va être affectée.`,
-      requestId: payment.requestId,
-      at: Date.now(),
-    });
-    // V5 : met aussi l'e-mail de confirmation en file (Resend).
-    const clientUser = await ctx.db.get(payment.clientId);
-    if (clientUser?.email) {
-      await ctx.db.insert("emails", {
-        userId: payment.clientId,
-        to: clientUser.email,
-        kind: "paiement",
-        title: "Paiement confirmé",
-        body: `Votre paiement de ${payment.amount.toLocaleString("fr-FR")} FCFA est validé. L'équipe va être affectée.`,
-        requestId: payment.requestId,
-      });
-    }
     // Alerte à l'administration pour lancer l'affectation de l'équipe.
     const admins = await ctx.db
       .query("users")
@@ -184,8 +153,14 @@ export const settleMomoSuccess = internalMutation({
       await ctx.db.insert("notifications", {
         userId: admin._id,
         kind: "paiement",
-        title: "Paiement Mobile Money reçu",
-        body: `Un paiement de ${payment.amount.toLocaleString("fr-FR")} FCFA a été confirmé automatiquement — affectez l'équipe.`,
+        title:
+          milestone === "avance"
+            ? "Avance Mobile Money reçue"
+            : "Solde Mobile Money reçu",
+        body:
+          milestone === "avance"
+            ? `Une avance de ${payment.amount.toLocaleString("fr-FR")} FCFA (50 %) a été confirmée automatiquement — affectez l'équipe.`
+            : `Le solde de ${payment.amount.toLocaleString("fr-FR")} FCFA (50 %) a été confirmé automatiquement — la réception peut être signée.`,
         requestId: payment.requestId,
         at: Date.now(),
       });
@@ -267,6 +242,8 @@ type MomoStartResult =
 export const startMomoPayment = action({
   args: {
     quoteId: v.id("quotes"),
+    /** V6 : tranche réglée — "avance" (50 % avant) ou "solde" (50 % à la fin). */
+    milestone: v.union(v.literal("avance"), v.literal("solde")),
     provider: v.union(v.literal("mtn"), v.literal("orange")),
     payerPhone: v.string(),
   },
@@ -281,6 +258,8 @@ export const startMomoPayment = action({
       requestId: Id<"serviceRequests">;
       total: number;
       currency: string;
+      advance: number;
+      balance: number;
     } | null;
     if (!quote) {
       throw new Error("Devis introuvable, non accepté ou déjà payé.");
@@ -291,19 +270,21 @@ export const startMomoPayment = action({
     if (existing) {
       throw new Error("Un paiement est déjà en cours de vérification.");
     }
+    const amountNum = args.milestone === "avance" ? quote.advance : quote.balance;
 
     // Crée d'abord le paiement GTEC en attente (référence provisoire).
     const paymentId = (await ctx.runMutation(internal.gtec.createPendingPayment, {
       quoteId: quote._id,
       clientId: userId,
-      amount: quote.total,
+      amount: amountNum,
       currency: quote.currency,
       method: args.provider === "mtn" ? "mtn_momo" : "orange_money",
       payerPhone: args.payerPhone,
+      milestone: args.milestone,
     })) as Id<"payments">;
 
     const referenceId = crypto.randomUUID();
-    const amount = String(Math.round(quote.total));
+    const amount = String(Math.round(amountNum));
     const payer = args.payerPhone.replace(/\D/g, "").slice(-9);
 
     if (args.provider === "mtn") {
@@ -321,13 +302,12 @@ export const startMomoPayment = action({
             : {}),
           "Ocp-Apim-Subscription-Key": process.env.MOMO_SUBSCRIPTION_KEY!,
           "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
+        },          body: JSON.stringify({
           amount,
           currency: env === "sandbox" ? "EUR" : "XAF",
           externalId: paymentId,
           payer: { partyIdType: "MSISDN", partyId: payer },
-          payerMessage: "Paiement GTEC PRO",
+          payerMessage: args.milestone === "avance" ? "Avance 50% GTEC PRO" : "Solde 50% GTEC PRO",
           payeeNote: "Paiement intervention GTEC",
         }),
       });
@@ -340,7 +320,7 @@ export const startMomoPayment = action({
         paymentId,
         provider: "mtn",
         providerRef: referenceId,
-        amount: quote.total,
+        amount: amountNum,
         currency: "XAF",
         payerPhone: args.payerPhone,
       });
@@ -383,7 +363,7 @@ export const startMomoPayment = action({
           merchant_key: merchantKey,
           currency: "XAF",
           order_id: orderId,
-          amount: Math.round(quote.total),
+          amount: Math.round(amountNum),
           return_url: process.env.ORANGE_RETURN_URL || "https://gtec.pro",
           cancel_url: process.env.ORANGE_RETURN_URL || "https://gtec.pro",
           notif_url: process.env.ORANGE_NOTIF_URL || process.env.ORANGE_RETURN_URL || "https://gtec.pro",
@@ -401,7 +381,7 @@ export const startMomoPayment = action({
       paymentId,
       provider: "orange",
       providerRef: payRes.data.pay_token ?? orderId,
-      amount: quote.total,
+      amount: amountNum,
       currency: "XAF",
       payerPhone: args.payerPhone,
     });

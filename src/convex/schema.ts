@@ -88,6 +88,9 @@ const schema = defineSchema(
     quotes: defineTable({
       requestId: v.id("serviceRequests"),
       clientId: v.id("users"),
+      /** V6 : auteur du devis — le technicien le rédige sur le terrain. */
+      authorId: v.optional(v.id("users")),
+      authorRole: v.optional(v.union(v.literal("technicien"), v.literal("admin"))),
       number: v.string(), // DEV-0001
       items: v.array(
         v.object({
@@ -107,9 +110,12 @@ const schema = defineSchema(
         v.literal("expire"),
       ),
       validUntil: v.number(),
+      /** V6 : validation automatique GTEC dès l'envoi du devis terrain. */
+      autoValidatedAt: v.optional(v.number()),
     })
       .index("by_request", ["requestId"])
-      .index("by_client", ["clientId"]),
+      .index("by_client", ["clientId"])
+      .index("by_author", ["authorId"]),
 
     payments: defineTable({
       quoteId: v.id("quotes"),
@@ -140,9 +146,16 @@ const schema = defineSchema(
       collectedBy: v.optional(v.id("users")), // technicien encaisseur (cash)
       collectedAt: v.optional(v.number()),
       paidAt: v.optional(v.number()), // date réelle d'encaissement (démo/rapports)
+
+      // ===== V6 : paiement en 2 tranches (50 % avant / 50 % après) =====
+      /** "avance" = 50 % avant travaux · "solde" = 50 % à la fin des travaux. */
+      milestone: v.optional(v.union(v.literal("avance"), v.literal("solde"))),
+      /** Part du total TTC couverte par ce paiement (50 par défaut). */
+      percent: v.optional(v.number()),
     })
       .index("by_request", ["requestId"])
-      .index("by_client", ["clientId"]),
+      .index("by_client", ["clientId"])
+      .index("by_milestone", ["requestId", "milestone"]),
 
     assignments: defineTable({
       requestId: v.id("serviceRequests"),
@@ -309,6 +322,10 @@ const schema = defineSchema(
         v.literal("rejete"),
       ),
       reviewNote: v.optional(v.string()), // motif admin en cas de rejet
+      /** V6 : source du doublon détecté (candidature rejetée automatiquement). */
+      kycFlag: v.optional(v.string()),
+      /** V6 : empreintes SHA-256 des documents (anti-doublon de pièces). */
+      kycDocHashes: v.optional(v.array(v.string())),
       subscription: v.union(
         v.literal("aucun"),
         v.literal("mensuel"),
@@ -398,6 +415,13 @@ const schema = defineSchema(
     gtecCommissions: defineTable({
       requestId: v.id("serviceRequests"),
       quoteId: v.id("quotes"),
+      /** V6 : "team" = part de l'équipe (85 %) · "gtec" = commission (15 %). */
+      breakdown: v.optional(
+        v.object({
+          teamAmount: v.number(),
+          gtecAmount: v.number(),
+        }),
+      ),
       /** Chef d'équipe redevable (débite la mission au nom de l'équipe). */
       techUserId: v.id("users"),
       /** Montant TTC de l'intervention, base du calcul. */
@@ -424,6 +448,45 @@ const schema = defineSchema(
     })
       .index("by_tech", ["techUserId", "status"])
       .index("by_request", ["requestId"])
+      .index("by_status", ["status"]),
+
+    // ===================== V6 : retraits (techniciens + administration) =====
+
+    /**
+     * Demande de retrait d'un solde disponible. Pour un technicien, le solde
+     * provient de ses rémunérations "payé" moins ses retraits déjà payés.
+     * Pour l'administration, le solde provient des commissions GTEC payées
+     * (85/15) moins les retraits déjà payés.
+     */
+    withdrawals: defineTable({
+      /** Bénéficiaire du retrait (technicien ou administrateur). */
+      userId: v.id("users"),
+      /** "technicien" = gains · "admin" = commissions GTEC encaissées. */
+      sourceRole: v.union(v.literal("technicien"), v.literal("admin")),
+      amount: v.number(),
+      currency: v.string(), // FCFA
+      method: v.union(
+        v.literal("mtn_momo"),
+        v.literal("orange_money"),
+        v.literal("virement"),
+        v.literal("especes"),
+      ),
+      /** Numéro MoMo ou IBAN selon le moyen choisi. */
+      destination: v.string(),
+      destinationLabel: v.optional(v.string()), // nom du titulaire / banque
+      status: v.union(
+        v.literal("demande"), // créée par le bénéficiaire
+        v.literal("approuve"), // validée par l'administration
+        v.literal("payee"), // transfert effectué
+        v.literal("refuse"),
+      ),
+      requestedAt: v.number(),
+      processedAt: v.optional(v.number()),
+      processedBy: v.optional(v.id("users")),
+      reference: v.string(), // RET-0001
+      note: v.optional(v.string()), // motif de refus ou note de traitement
+    })
+      .index("by_user", ["userId", "status"])
       .index("by_status", ["status"]),
 
     // ===================== V3 : notifications in-app =====================

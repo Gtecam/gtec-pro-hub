@@ -3,6 +3,9 @@ import { motion } from "framer-motion";
 import {
   BadgeCheck,
   Banknote,
+  FileText,
+  Landmark,
+  Percent,
   CalendarClock,
   CheckCircle2,
   ClipboardCheck,
@@ -257,6 +260,173 @@ function DocumentsUploader({
   );
 }
 
+// ---------- V6 : devis établi sur le terrain par le technicien ----------
+
+type QuoteItemDraft = { label: string; qty: number; unitPrice: number };
+
+function FieldQuoteForm({ onDone }: { onDone?: () => void }) {
+  const submitFieldQuote = useMutation(api.gtec.submitFieldQuote);
+  const [requestId, setRequestId] = useState<string>("");
+  const [items, setItems] = useState<QuoteItemDraft[]>([
+    { label: "", qty: 1, unitPrice: 0 },
+  ]);
+  const [busy, setBusy] = useState(false);
+
+  const subtotal = items.reduce((s, i) => s + i.qty * i.unitPrice, 0);
+  const vat = Math.round(subtotal * 0.1925);
+  const total = subtotal + vat;
+  const advance = Math.round(total / 2);
+
+  const setItem = (idx: number, patch: Partial<QuoteItemDraft>) =>
+    setItems((prev) => prev.map((it, i) => (i === idx ? { ...it, ...patch } : it)));
+
+  const submit = async () => {
+    if (!requestId) {
+      toast.error("Choisissez la demande concernée.");
+      return;
+    }
+    const clean = items.filter((i) => i.label.trim() && i.qty > 0 && i.unitPrice > 0);
+    if (clean.length === 0) {
+      toast.error("Ajoutez au moins une ligne valide.");
+      return;
+    }
+    setBusy(true);
+    try {
+      await submitFieldQuote({
+        requestId: requestId as never,
+        items: clean,
+      });
+      toast.success(
+        "Devis envoyé — GTEC l'a validé automatiquement et le client vient de le recevoir.",
+      );
+      setItems([{ label: "", qty: 1, unitPrice: 0 }]);
+      setRequestId("");
+      onDone?.();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Erreur");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Card className="card-layered">
+      <CardHeader className="pb-2">
+        <CardTitle className="flex items-center gap-2 text-sm">
+          <FileText className="size-4 text-primary" /> Établir un devis terrain
+        </CardTitle>
+        <CardDescription>
+          Après la visite chez le client, chiffrez les prestations. Dès l'envoi,
+          GTEC valide automatiquement le devis et le client reçoit une
+          notification. Paiement client ensuite en 2 tranches (50 % avant / 50 %
+          à la fin).
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-3">
+        <FieldQuoteRequestPicker value={requestId} onChange={setRequestId} />
+        {items.map((item, idx) => (
+          <div key={idx} className="flex items-center gap-2">
+            <Input
+              value={item.label}
+              onChange={(e) => setItem(idx, { label: e.target.value })}
+              placeholder="Prestation (ex. : Remplacement disjoncteur)"
+              className="flex-1"
+            />
+            <Input
+              type="number"
+              min={1}
+              value={item.qty}
+              onChange={(e) => setItem(idx, { qty: Number(e.target.value) || 1 })}
+              className="w-16"
+              aria-label="Quantité"
+            />
+            <Input
+              type="number"
+              min={0}
+              value={item.unitPrice || ""}
+              onChange={(e) => setItem(idx, { unitPrice: Number(e.target.value) || 0 })}
+              placeholder="P.U."
+              className="w-28"
+              aria-label="Prix unitaire"
+            />
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setItems((p) => p.filter((_, i) => i !== idx))}
+              disabled={items.length === 1}
+            >
+              <Trash2 className="size-4" />
+            </Button>
+          </div>
+        ))}
+        <div className="flex items-center justify-between text-sm">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setItems((p) => [...p, { label: "", qty: 1, unitPrice: 0 }])}
+          >
+            <Plus className="mr-1 size-3.5" /> Ligne
+          </Button>
+          <div className="text-right">
+            <p className="font-semibold">
+              Total TTC : <span className="text-primary">{fcfa(total)}</span>
+              <span className="ml-1 text-xs font-normal text-muted-foreground">
+                (TVA 19,25 %)
+              </span>
+            </p>
+            <p className="text-xs text-muted-foreground">
+              Avance client 50 % : {fcfa(advance)} · solde {fcfa(total - advance)}
+            </p>
+          </div>
+        </div>
+        <Button
+          className="halo-amber"
+          disabled={busy || !requestId}
+          onClick={submit}
+        >
+          <Send className="mr-2 size-4" />
+          {busy ? "Envoi…" : "Envoyer le devis (validation auto GTEC)"}
+        </Button>
+      </CardContent>
+    </Card>
+  );
+}
+
+/** Sélecteur de demande à chiffrer (statuts nouvelle / devis_emis). */
+function FieldQuoteRequestPicker({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  const requests = useQuery(api.gtec.listQuoteableRequests);
+  if (requests === undefined) {
+    return <div className="h-9 animate-pulse rounded-lg bg-muted" />;
+  }
+  if (requests.length === 0) {
+    return (
+      <p className="text-xs text-muted-foreground">
+        Aucune demande à chiffrer pour le moment.
+      </p>
+    );
+  }
+  return (
+    <Select value={value} onValueChange={onChange}>
+      <SelectTrigger>
+        <SelectValue placeholder="Demande à chiffrer" />
+      </SelectTrigger>
+      <SelectContent>
+        {requests.map(({ request, clientName }) => (
+          <SelectItem key={request._id} value={request._id}>
+            {request.reference} · {request.title} — {clientName} ({request.city})
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+}
+
 export default function TechnicianSpace() {
   const { user } = useAuth();
   const profile = useQuery(api.gtec.myTechnicianProfile);
@@ -269,6 +439,10 @@ export default function TechnicianSpace() {
   const completeVisit = useMutation(api.gtec.completeContractVisit);
 
   const pendingSubPayment = useQuery(api.gtec.myPendingSubscriptionPayment);
+  const myCommissions = useQuery(api.gtec.myCommissions);
+  const myWallet = useQuery(api.gtec.myWallet);
+  const requestWithdrawal = useMutation(api.gtec.requestWithdrawal);
+  const payCommission = useMutation(api.gtec.payCommission);
   const myPayouts = useQuery(api.gtec.listMyPayouts);
   const myVisits = useQuery(api.gtec.listMyVisits);
   const myReviews = useQuery(api.gtec.myTechnicianReviews);
@@ -314,6 +488,13 @@ export default function TechnicianSpace() {
   const [materialFor, setMaterialFor] = useState<string | null>(null);
   const [materialLabel, setMaterialLabel] = useState("");
   const [materialQty, setMaterialQty] = useState(1);
+
+  // V6 : retraits + règlement des commissions GTEC 15 %
+  const [wdAmount, setWdAmount] = useState("");
+  const [wdMethod, setWdMethod] = useState("mtn_momo");
+  const [wdDestination, setWdDestination] = useState("");
+  const [commPhone, setCommPhone] = useState("");
+  const [commRef, setCommRef] = useState("");
 
   const toggleZone = (city: string) =>
     setZones((prev) =>
@@ -781,8 +962,14 @@ export default function TechnicianSpace() {
                   </span>
                 )}
               </TabsTrigger>
+              <TabsTrigger value="devis">
+                <FileText className="mr-1.5 size-4" /> Devis
+              </TabsTrigger>
               <TabsTrigger value="abonnement">
                 <Crown className="mr-1.5 size-4" /> Abonnement
+              </TabsTrigger>
+              <TabsTrigger value="retraits">
+                <Landmark className="mr-1.5 size-4" /> Retraits
               </TabsTrigger>
               <TabsTrigger value="gains">
                 <Wallet className="mr-1.5 size-4" /> Gains
@@ -1062,6 +1249,167 @@ export default function TechnicianSpace() {
               )}
             </TabsContent>
 
+            {/* Devis terrain (V6) */}
+            <TabsContent value="devis" className="mt-4">
+              <div className="mx-auto flex w-full max-w-2xl flex-col gap-4">
+                <FieldQuoteForm />
+                <Card className="card-layered">
+                  <CardContent className="py-4 text-xs text-muted-foreground">
+                    Rappel du flux : le client accepte votre intervention puis
+                    vous chiffrez sur place. Dès l'envoi, GTEC valide
+                    automatiquement le devis. Le client paie 50 % avant les
+                    travaux (avance) et 50 % à la fin (solde) — la
+                    part GTEC de 15 % est déduite de la mission et
+                    réglée depuis l'onglet Commissions.
+                  </CardContent>
+                </Card>
+              </div>
+            </TabsContent>
+
+            {/* Retraits (V6) */}
+            <TabsContent value="retraits" className="mt-4">
+              {myWallet === undefined ? (
+                <div className="h-40 animate-pulse rounded-xl bg-muted" />
+              ) : (
+                <div className="mx-auto flex w-full max-w-2xl flex-col gap-4">
+                  <div className="grid gap-3 sm:grid-cols-3">
+                    {[
+                      { label: "Total gagné (payé)", value: myWallet.earned },
+                      { label: "Retraits effectués", value: myWallet.withdrawn },
+                      { label: "Disponible", value: myWallet.available },
+                    ].map(({ label, value }) => (
+                      <Card key={label} className="card-layered">
+                        <CardContent className="px-4 py-3.5">
+                          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                            {label}
+                          </p>
+                          <p className="font-display mt-1 text-lg font-bold">
+                            {fcfa(value)}
+                          </p>
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                  <Card className="card-layered">
+                    <CardHeader className="pb-2">
+                      <CardTitle className="flex items-center gap-2 text-sm">
+                        <Landmark className="size-4 text-primary" /> Demander un
+                        retrait
+                      </CardTitle>
+                      <CardDescription>
+                        Minimum 1 000 FCFA. Le transfert part vers votre compte
+                        après validation par l'administration GTEC.
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="flex flex-col gap-3">
+                      <div className="grid gap-2 sm:grid-cols-[130px_1fr_1fr_auto]">
+                        <Input
+                          type="number"
+                          min={1000}
+                          value={wdAmount}
+                          onChange={(e) => setWdAmount(e.target.value)}
+                          placeholder="Montant"
+                        />
+                        <Select value={wdMethod} onValueChange={setWdMethod}>
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="mtn_momo">MTN MoMo</SelectItem>
+                            <SelectItem value="orange_money">Orange Money</SelectItem>
+                            <SelectItem value="virement">Virement bancaire</SelectItem>
+                            <SelectItem value="especes">Espèces</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <Input
+                          value={wdDestination}
+                          onChange={(e) => setWdDestination(e.target.value)}
+                          placeholder="Numéro MoMo ou IBAN"
+                          inputMode="text"
+                        />
+                        <Button
+                          className="halo-amber"
+                          disabled={
+                            busy ||
+                            Number(wdAmount) < 1000 ||
+                            !wdDestination.trim() ||
+                            Number(wdAmount) > myWallet.available
+                          }
+                          onClick={async () => {
+                            setBusy(true);
+                            try {
+                              await requestWithdrawal({
+                                amount: Number(wdAmount),
+                                method: wdMethod as never,
+                                destination: wdDestination.trim(),
+                              });
+                              toast.success("Demande de retrait envoyée — en attente de validation GTEC");
+                              setWdAmount("");
+                              setWdDestination("");
+                            } catch (e) {
+                              toast.error(e instanceof Error ? e.message : "Erreur");
+                            } finally {
+                              setBusy(false);
+                            }
+                          }}
+                        >
+                          <Send className="mr-1.5 size-4" /> Retirer
+                        </Button>
+                      </div>
+                      {myWallet.pending > 0 && (
+                        <p className="rounded-lg bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-400">
+                          {fcfa(myWallet.pending)} de retraits en cours de traitement.
+                        </p>
+                      )}
+                    </CardContent>
+                  </Card>
+                  {myWallet.history.length > 0 && (
+                    <div className="flex flex-col gap-2">
+                      <h3 className="text-sm font-semibold text-muted-foreground">
+                        Historique des retraits
+                      </h3>
+                      {myWallet.history.map((w) => (
+                        <div
+                          key={w._id}
+                          className="flex flex-wrap items-center gap-3 rounded-xl border border-border/70 bg-card px-4 py-2.5"
+                        >
+                          <span className="flex size-8 items-center justify-center rounded-full bg-primary/15 text-primary">
+                            <Landmark className="size-4" />
+                          </span>
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate text-sm font-medium">
+                              {w.reference} · {fcfa(w.amount)} · {w.method}
+                            </p>
+                            <p className="truncate text-xs text-muted-foreground">
+                              {w.destination} · {formatDateTime(w.requestedAt)}
+                            </p>
+                          </div>
+                          <span
+                            className={cn(
+                              "rounded-full px-2.5 py-1 text-xs font-medium capitalize ring-1 ring-inset",
+                              w.status === "payee"
+                                ? "bg-emerald-500/10 text-emerald-600 ring-emerald-500/20 dark:text-emerald-400"
+                                : w.status === "refuse"
+                                  ? "bg-destructive/10 text-destructive ring-destructive/20"
+                                  : "bg-amber-500/10 text-amber-700 ring-amber-500/20 dark:text-amber-400",
+                            )}
+                          >
+                            {w.status === "payee"
+                              ? "Payé"
+                              : w.status === "refuse"
+                                ? "Refusé"
+                                : w.status === "approuve"
+                                  ? "Approuvé"
+                                  : "En attente"}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </TabsContent>
+
             {/* Abonnement */}
             <TabsContent value="abonnement" className="mt-4">
               <div className="grid gap-4 lg:grid-cols-[1fr_340px]">
@@ -1210,18 +1558,56 @@ export default function TechnicianSpace() {
               {myPayouts === undefined ? (
                 <div className="h-40 animate-pulse rounded-xl bg-muted" />
               ) : myPayouts.length === 0 ? (
-                <Card className="card-layered">
-                  <CardContent className="flex flex-col items-center gap-3 py-12 text-center">
-                    <Wallet className="size-8 text-muted-foreground" />
-                    <p className="font-display text-lg font-semibold">
-                      Aucun gain pour le moment
-                    </p>
-                    <p className="max-w-sm text-sm text-muted-foreground">
-                      Vos rémunérations apparaissent ici dès qu'un client signe le
-                      PV d'une de vos missions terminées.
-                    </p>
-                  </CardContent>
-                </Card>
+                <div className="flex flex-col gap-4">
+                  {myCommissions && myCommissions.items.length > 0 && (
+                    <Card className="card-layered border-primary/20">
+                      <CardHeader className="pb-2">
+                        <CardTitle className="flex items-center gap-2 text-sm">
+                          <Percent className="size-4 text-primary" /> Commission
+                          GTEC 15 %
+                          {myCommissions.dueTotal > 0 && (
+                            <span className="ml-auto rounded-full bg-amber-500/10 px-2.5 py-1 text-xs font-semibold text-amber-700 ring-1 ring-inset ring-amber-500/20 dark:text-amber-400">
+                              {fcfa(myCommissions.dueTotal)} à régler
+                            </span>
+                          )}
+                        </CardTitle>
+                        <CardDescription>
+                          85 % équipe / 15 % GTEC PRO — réglez la part GTEC
+                          depuis une mission terminée ou contactez
+                          l'administration.
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="grid gap-2 sm:grid-cols-2">
+                          <div className="rounded-lg bg-muted/60 px-3 py-2">
+                            <p className="text-xs text-muted-foreground">Dû</p>
+                            <p className="text-sm font-semibold">
+                              {fcfa(myCommissions.dueTotal)}
+                            </p>
+                          </div>
+                          <div className="rounded-lg bg-muted/60 px-3 py-2">
+                            <p className="text-xs text-muted-foreground">Réglé</p>
+                            <p className="text-sm font-semibold">
+                              {fcfa(myCommissions.paidTotal)}
+                            </p>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  )}
+                  <Card className="card-layered">
+                    <CardContent className="flex flex-col items-center gap-3 py-12 text-center">
+                      <Wallet className="size-8 text-muted-foreground" />
+                      <p className="font-display text-lg font-semibold">
+                        Aucun gain pour le moment
+                      </p>
+                      <p className="max-w-sm text-sm text-muted-foreground">
+                        Vos rémunérations apparaissent ici dès qu'un client signe
+                        le PV d'une de vos missions terminées.
+                      </p>
+                    </CardContent>
+                  </Card>
+                </div>
               ) : (
                 <div className="flex flex-col gap-4">
                   <div className="grid gap-3 sm:grid-cols-3">
@@ -1261,6 +1647,112 @@ export default function TechnicianSpace() {
                       </Card>
                     ))}
                   </div>
+                  {/* Commission GTEC 15 % — détail & régularisation */}
+                  {myCommissions && myCommissions.items.length > 0 && (
+                    <Card className="card-layered border-primary/20">
+                      <CardHeader className="pb-2">
+                        <CardTitle className="flex items-center justify-between gap-2 text-sm">
+                          <span className="flex items-center gap-2">
+                            <Percent className="size-4 text-primary" /> Commission
+                            GTEC 15 %
+                          </span>
+                          <span
+                            className={cn(
+                              "rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ring-inset",
+                              myCommissions.dueTotal > 0
+                                ? "bg-amber-500/10 text-amber-700 ring-amber-500/20 dark:text-amber-400"
+                                : "bg-emerald-500/10 text-emerald-600 ring-emerald-500/20 dark:text-emerald-400",
+                            )}
+                          >
+                            {myCommissions.dueTotal > 0
+                              ? `${fcfa(myCommissions.dueTotal)} à régler`
+                              : "A jour"}
+                          </span>
+                        </CardTitle>
+                        <CardDescription>
+                          Sur chaque intervention : 85 % pour l'équipe, 15 %
+                          pour GTEC PRO. Le chef d'équipe règle la
+                          part GTEC (Mobile Money ou virement) puis l'admin
+                          l'encaisse.
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent className="flex flex-col gap-3">
+                        <div className="grid gap-2 sm:grid-cols-3">
+                          {[
+                            { label: "Dû", value: myCommissions.dueTotal },
+                            { label: "Réglé", value: myCommissions.paidTotal },
+                            {
+                              label: "Répartition",
+                              value: null,
+                              detail: "85 % équipe / 15 % GTEC",
+                            },
+                          ].map(({ label, value, detail }) => (
+                            <div key={label} className="rounded-lg bg-muted/60 px-3 py-2">
+                              <p className="text-xs text-muted-foreground">{label}</p>
+                              <p className="text-sm font-semibold">
+                                {value === null ? detail : fcfa(value)}
+                              </p>
+                            </div>
+                          ))}
+                        </div>
+                        {myCommissions.items.slice(0, 6).map((c) => (
+                          <div
+                            key={c._id}
+                            className="flex flex-wrap items-center gap-2 rounded-xl border border-border/70 px-3 py-2"
+                          >
+                            <div className="min-w-0 flex-1">
+                              <p className="truncate text-sm font-medium">
+                                {fcfa(c.baseAmount)} × 15 % ={" "}
+                                <span className="text-primary">{fcfa(c.amount)}</span>
+                                {c.breakdown && (
+                                  <span className="ml-2 text-xs font-normal text-muted-foreground">
+                                    (équipe {fcfa(c.breakdown.teamAmount)} / GTEC{" "}
+                                    {fcfa(c.breakdown.gtecAmount)})
+                                  </span>
+                                )}
+                              </p>
+                              <p className="text-xs capitalize text-muted-foreground">
+                                Statut : {c.status === "due" ? "à régler" : c.status === "payee" ? "réglée" : "exonérée"}
+                              </p>
+                            </div>
+                            {c.status === "due" && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                disabled={busy || commPhone.trim().length < 6}
+                                onClick={async () => {
+                                  setBusy(true);
+                                  try {
+                                    await payCommission({
+                                      commissionId: c._id,
+                                      method: "mtn_momo",
+                                      payerPhone: commPhone.trim(),
+                                      externalRef: commRef.trim() || undefined,
+                                    });
+                                    toast.success("Règlement déclaré — validation GTEC en cours");
+                                  } catch (e) {
+                                    toast.error(e instanceof Error ? e.message : "Erreur");
+                                  } finally {
+                                    setBusy(false);
+                                  }
+                                }}
+                              >
+                                Déclarer le règlement
+                              </Button>
+                            )}
+                          </div>
+                        ))}
+                        {myCommissions.dueCount > 0 && (
+                          <Input
+                            value={commPhone}
+                            onChange={(e) => setCommPhone(e.target.value)}
+                            placeholder="Numéro payeur MoMo (6 XX XX XX XX)"
+                            inputMode="tel"
+                          />
+                        )}
+                      </CardContent>
+                    </Card>
+                  )}
                   <div className="flex flex-col gap-2">
                     {myPayouts.map(({ payout, request }) => (
                       <div

@@ -25,6 +25,7 @@ import {
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
+import type { Doc } from "@/convex/_generated/dataModel";
 import { useNavigate, useParams } from "react-router";
 import { api } from "@/convex/_generated/api";
 import {
@@ -58,7 +59,9 @@ import {
   fcfa,
   formatDateTime,
   MERCHANT_NUMBERS,
+  MILESTONE_LABELS,
   PAYMENT_METHODS,
+  splitFiftyFifty,
   SERVICES,
   statusMeta,
 } from "@/lib/gtec";
@@ -81,6 +84,20 @@ export default function RequestDetail() {
   const clientReception = useMutation(api.gtec.clientReception);
   const startMomoPayment = useAction(api.momo.startMomoPayment);
   const checkMomoPayment = useAction(api.momo.checkMomoPayment);
+
+  // V6 : paiements en 2 tranches — toutes les tranches de la demande.
+  const payments = (detail?.payments ?? []) as Doc<"payments">[] | undefined;
+  const advanceValidated = !!payments?.some(
+    (p) => p.milestone === "avance" && p.status === "valide",
+  );
+  const balanceValidated = !!payments?.some(
+    (p) => p.milestone === "solde" && p.status === "valide",
+  );
+  const pendingMilestone = payments?.find((p) => p.status === "en_attente")
+    ?.milestone as "avance" | "solde" | undefined;
+  const { advance: advanceAmount, balance: balanceAmount } = splitFiftyFifty(
+    detail?.quote?.total ?? 0,
+  );
   const cancelRequest = useMutation(api.gtec.cancelRequest);
   const submitReview = useMutation(api.gtec.clientSubmitReview);
 
@@ -96,6 +113,8 @@ export default function RequestDetail() {
   const [method, setMethod] = useState<string>("mtn_momo");
   const [payerPhone, setPayerPhone] = useState("");
   const [busy, setBusy] = useState(false);
+  /** V6 : tranche à payer dans le dialog (avance = 1ʳᵉ, solde = 2ᵉ). */
+  const [milestone, setMilestone] = useState<"avance" | "solde">("avance");
 
   // Champs spécifiques par moyen de paiement
   const [proofUrl, setProofUrl] = useState<string | null>(null);
@@ -257,6 +276,7 @@ export default function RequestDetail() {
       () =>
         initiatePayment({
           quoteId: quote._id,
+          milestone,
           method: method as never,
           payerPhone: payerPhone.trim(),
           proofPhotoUrl: proofUrl ?? undefined,
@@ -264,7 +284,9 @@ export default function RequestDetail() {
           bankRef: bankRef.trim() || undefined,
           cardLast4: cardLast4.trim() || undefined,
         }),
-      "Paiement initié — en attente de vérification",
+      milestone === "avance"
+        ? "Avance (50 %) initiée — en attente de vérification"
+        : "Solde (50 %) initié — en attente de vérification",
     );
     if (ok) {
       setPayOpen(false);
@@ -275,7 +297,7 @@ export default function RequestDetail() {
     }
   };
 
-  /** V5 : paiement Mobile Money automatique (demande opérateur + suivi). */
+  /** V5/V6 : paiement Mobile Money automatique de la tranche courante. */
   const handleAutoMomo = async (provider: "mtn" | "orange") => {
     if (!quote) return;
     if (!/^[+0-9 ]{8,}$/.test(payerPhone.trim())) {
@@ -286,6 +308,7 @@ export default function RequestDetail() {
     try {
       const res = await startMomoPayment({
         quoteId: quote._id,
+        milestone,
         provider,
         payerPhone: payerPhone.trim(),
       });
@@ -566,54 +589,89 @@ export default function RequestDetail() {
               </Card>
             )}
 
-            {/* Paiement */}
-            {payment && (
+            {/* Paiement en 2 tranches (V6 : 50 % avant / 50 % après) */}
+            {quote && (
               <Card className="card-layered">
                 <CardHeader>
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="flex items-center gap-2.5">
-                      <span className="flex size-9 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                        <Wallet className="size-5" />
-                      </span>
-                      <div>
-                        <CardTitle className="text-base">Paiement</CardTitle>
-                        <CardDescription>
-                          {PAYMENT_METHODS.find((m) => m.key === payment.method)
-                            ?.label ?? payment.method}{" "}
-                          · {payment.payerPhone}
-                        </CardDescription>
-                      </div>
-                    </div>
-                    <span
-                      className={cn(
-                        "rounded-full px-2.5 py-1 text-xs font-medium ring-1 ring-inset",
-                        payment.status === "valide" &&
-                          "bg-emerald-500/10 text-emerald-600 ring-emerald-500/20 dark:text-emerald-400",
-                        payment.status === "en_attente" &&
-                          "bg-primary/10 text-primary ring-primary/20",
-                        payment.status === "echoue" &&
-                          "bg-destructive/10 text-destructive ring-destructive/20",
-                      )}
-                    >
-                      {payment.status === "valide" && "Validé"}
-                      {payment.status === "en_attente" && "En attente"}
-                      {payment.status === "echoue" && "Échoué"}
+                  <div className="flex items-center gap-2.5">
+                    <span className="flex size-9 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                      <Wallet className="size-5" />
                     </span>
+                    <div>
+                      <CardTitle className="text-base">
+                        Paiement en 2 tranches
+                      </CardTitle>
+                      <CardDescription>
+                        50 % avant le début des travaux · 50 % à la fin des
+                        travaux
+                      </CardDescription>
+                    </div>
                   </div>
                 </CardHeader>
-                <CardContent className="flex flex-wrap items-center justify-between gap-3">
-                  <span className="font-display text-xl font-bold">
-                    {fcfa(payment.amount)}
-                  </span>
-                  {payment.status === "en_attente" && (
-                    <span className="text-sm text-amber-600 dark:text-amber-400">
-                      Vérification en cours par GTEC…
-                    </span>
-                  )}
-                  {payment.status === "valide" && (
-                    <span className="flex items-center gap-1.5 text-sm text-emerald-600 dark:text-emerald-400">
-                      <CheckCircle2 className="size-4" /> Paiement confirmé
-                    </span>
+                <CardContent className="flex flex-col gap-3">
+                  {([
+                    {
+                      key: "avance" as const,
+                      amount: advanceAmount,
+                      done: advanceValidated,
+                      pending: pendingMilestone === "avance",
+                    },
+                    {
+                      key: "solde" as const,
+                      amount: balanceAmount,
+                      done: balanceValidated,
+                      pending: pendingMilestone === "solde",
+                    },
+                  ]).map((t, i) => (
+                    <div
+                      key={t.key}
+                      className={cn(
+                        "flex flex-wrap items-center gap-3 rounded-xl border px-4 py-3",
+                        t.done
+                          ? "border-emerald-500/30 bg-emerald-500/[0.04]"
+                          : t.pending
+                            ? "border-amber-500/30 bg-amber-500/[0.04]"
+                            : "border-border/70",
+                      )}
+                    >
+                      <span
+                        className={cn(
+                          "flex size-8 items-center justify-center rounded-full text-xs font-bold",
+                          t.done
+                            ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400"
+                            : "bg-muted text-muted-foreground",
+                        )}
+                      >
+                        {i + 1}
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-medium">
+                          {MILESTONE_LABELS[t.key]}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          50 % · {fcfa(t.amount)}
+                        </p>
+                      </div>
+                      {t.done ? (
+                        <span className="flex items-center gap-1.5 text-sm font-medium text-emerald-600 dark:text-emerald-400">
+                          <CheckCircle2 className="size-4" /> Payé
+                        </span>
+                      ) : t.pending ? (
+                        <span className="text-sm font-medium text-amber-600 dark:text-amber-400">
+                          Vérification en cours…
+                        </span>
+                      ) : (
+                        <span className="text-sm text-muted-foreground">À payer</span>
+                      )}
+                    </div>
+                  ))}
+                  {payment && (
+                    <p className="text-xs text-muted-foreground">
+                      Dernier paiement déclaré : {fcfa(payment.amount)} ·{" "}
+                      {PAYMENT_METHODS.find((m) => m.key === payment.method)?.label ??
+                        payment.method}{' '}
+                      · {payment.payerPhone}
+                    </p>
                   )}
                 </CardContent>
               </Card>
@@ -828,8 +886,8 @@ export default function RequestDetail() {
 
           {/* Colonne latérale */}
           <div className="flex flex-col gap-6">
-            {/* Prochaine action */}
-            {request.status === "devis_accepte" && quote && !payment && (
+            {/* Prochaine action : avance avant travaux, solde à la fin */}
+            {request.status === "devis_accepte" && !advanceValidated && !pendingMilestone && (
               <motion.div
                 initial={{ opacity: 0, y: 8 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -838,27 +896,63 @@ export default function RequestDetail() {
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2 text-base">
                       <CircleDollarSign className="size-5 text-primary" />
-                      Payer le devis
+                      Payer l'avance (50 %)
                     </CardTitle>
                     <CardDescription>
-                      Réglez {fcfa(quote.total)} par Mobile Money pour lancer
-                      l'affectation de votre équipe.
+                      Réglez {fcfa(advanceAmount)} avant le début des travaux —
+                      l'équipe est affectée dès confirmation. Le solde de{" "}
+                      {fcfa(balanceAmount)} sera exigé à la fin des travaux.
                     </CardDescription>
                   </CardHeader>
                   <CardContent>
                     <Button
                       className="halo-amber w-full"
-                      onClick={() => setPayOpen(true)}
+                      onClick={() => {
+                        setMilestone("avance");
+                        setPayOpen(true);
+                      }}
                     >
                       <Wallet className="mr-2 size-4" />
-                      Payer maintenant
+                      Payer l'avance
                     </Button>
                   </CardContent>
                 </Card>
               </motion.div>
             )}
 
-            {request.status === "rapport_emis" && report && (
+            {request.status === "rapport_emis" && !balanceValidated && !pendingMilestone && (
+              <motion.div
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+              >
+                <Card className="card-layered border-amber-500/30 bg-gradient-to-br from-amber-500/[0.07] to-transparent">
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2 text-base">
+                      <CircleDollarSign className="size-5 text-primary" />
+                      Payer le solde (50 %)
+                    </CardTitle>
+                    <CardDescription>
+                      Les travaux sont terminés — réglez {fcfa(balanceAmount)}
+                      pour débloquer la signature du PV de réception.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <Button
+                      className="halo-amber w-full"
+                      onClick={() => {
+                        setMilestone("solde");
+                        setPayOpen(true);
+                      }}
+                    >
+                      <Wallet className="mr-2 size-4" />
+                      Payer le solde
+                    </Button>
+                  </CardContent>
+                </Card>
+              </motion.div>
+            )}
+
+            {request.status === "rapport_emis" && report && balanceValidated && (
               <motion.div
                 initial={{ opacity: 0, y: 8 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -1042,13 +1136,54 @@ export default function RequestDetail() {
       <Dialog open={payOpen} onOpenChange={setPayOpen}>
         <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle>Payer le devis {quote?.number}</DialogTitle>
+            <DialogTitle>
+              {milestone === "avance" ? "Payer l'avance" : "Payer le solde"} —{" "}
+              devis {quote?.number}
+            </DialogTitle>
             <DialogDescription>
-              {quote && `${fcfa(quote.total)} · `}Choisissez votre moyen de
-              paiement. Un agent GTEC vérifie la réception.
+              Paiement en 2 tranches : 50 % avant les travaux, 50 % à la fin.
+              Vous réglez ici : {MILESTONE_LABELS[milestone]}.
             </DialogDescription>
           </DialogHeader>
           <div className="flex flex-col gap-4">
+            {/* Sélecteur de tranche (50/50) */}
+            <div className="grid grid-cols-2 gap-2">
+              {([
+                {
+                  key: "avance" as const,
+                  amount: advanceAmount,
+                  disabled: advanceValidated || !!pendingMilestone,
+                },
+                {
+                  key: "solde" as const,
+                  amount: balanceAmount,
+                  disabled:
+                    balanceValidated ||
+                    !advanceValidated ||
+                    !!pendingMilestone,
+                },
+              ]).map((t) => (
+                <button
+                  key={t.key}
+                  className={cn(
+                    "rounded-xl border p-3 text-left transition-all",
+                    milestone === t.key
+                      ? "border-primary bg-primary/5 ring-2 ring-primary/30"
+                      : "border-border hover:border-primary/40",
+                    t.disabled && "opacity-40",
+                  )}
+                  disabled={t.disabled}
+                  onClick={() => setMilestone(t.key)}
+                >
+                  <span className="block text-sm font-medium">
+                    {t.key === "avance" ? "1ʳᵉ tranche" : "2ᵉ tranche"}
+                  </span>
+                  <span className="mt-0.5 block text-xs text-muted-foreground">
+                    {MILESTONE_LABELS[t.key]} · {fcfa(t.amount)}
+                  </span>
+                </button>
+              ))}
+            </div>
             <div className="grid grid-cols-2 gap-2">
               {PAYMENT_METHODS.map((m) => (
                 <button
@@ -1123,7 +1258,8 @@ export default function RequestDetail() {
                       onClick={() => void handleAutoMomo(method === "mtn_momo" ? "mtn" : "orange")}
                     >
                       <Wallet className="mr-2 size-4" />
-                      Payer automatiquement {quote ? fcfa(quote.total) : ""}
+                      Payer automatiquement{" "}
+                      {milestone === "avance" ? fcfa(advanceAmount) : fcfa(balanceAmount)}
                     </Button>
                     <details className="rounded-lg border border-border/60 bg-background/60 px-3 py-2">
                       <summary className="cursor-pointer text-xs font-medium text-muted-foreground">
@@ -1292,7 +1428,7 @@ export default function RequestDetail() {
                   : method === "mtn_momo" || method === "orange_money"
                     ? "Déclarer un transfert manuel"
                     : "Payer"}{" "}
-              {quote ? fcfa(quote.total) : ""}
+              {milestone === "avance" ? fcfa(advanceAmount) : fcfa(balanceAmount)}
             </Button>
           </DialogFooter>
         </DialogContent>

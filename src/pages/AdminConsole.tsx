@@ -4,6 +4,8 @@ import {
   BadgeCheck,
   Banknote,
   BarChart3,
+  Landmark,
+  Percent,
   CalendarClock,
   CheckCircle2,
   ChevronDown,
@@ -66,7 +68,7 @@ import { Textarea } from "@/components/ui/textarea";
 import type { Doc, Id } from "@/convex/_generated/dataModel";
 import { useAuth } from "@/hooks/use-auth";
 import { cn } from "@/lib/utils";
-import { CITIES, fcfa, formatDate, formatDateTime, suggestCrew, SERVICES, CONTRACT_STATUS_META, contractFrequencyLabel } from "@/lib/gtec";
+import { CITIES, fcfa, formatDate, formatDateTime, suggestTeam, SERVICES, CONTRACT_STATUS_META, contractFrequencyLabel } from "@/lib/gtec";
 import {
   Bar,
   BarChart,
@@ -77,106 +79,19 @@ import {
   YAxis,
 } from "recharts";
 
-// ---------- constructeur de devis ----------
+// ---------- devis : désormais établi par le technicien sur le terrain ----------
 
-type QuoteItem = { label: string; qty: number; unitPrice: number };
-
-function QuoteBuilder({ requestId }: { requestId: string }) {
-  const createQuote = useMutation(api.gtec.adminCreateQuote);
-  const [items, setItems] = useState<QuoteItem[]>([
-    { label: "", qty: 1, unitPrice: 0 },
-  ]);
-  const [busy, setBusy] = useState(false);
-
-  const subtotal = items.reduce((s, i) => s + i.qty * i.unitPrice, 0);
-  const total = Math.round(subtotal * 1.1925);
-
-  const setItem = (idx: number, patch: Partial<QuoteItem>) =>
-    setItems((prev) => prev.map((it, i) => (i === idx ? { ...it, ...patch } : it)));
-
-  const submit = async () => {
-    const clean = items.filter((i) => i.label.trim() && i.unitPrice > 0);
-    if (clean.length === 0) {
-      toast.error("Ajoutez au moins une ligne valide.");
-      return;
-    }
-    setBusy(true);
-    try {
-      await createQuote({
-        requestId: requestId as never,
-        items: clean.map((i) => ({
-          label: i.label.trim(),
-          qty: i.qty,
-          unitPrice: i.unitPrice,
-        })),
-      });
-      toast.success("Devis envoyé au client");
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Erreur");
-    } finally {
-      setBusy(false);
-    }
-  };
-
+function FieldQuoteNotice() {
   return (
-    <div className="flex flex-col gap-3 rounded-xl border border-primary/25 bg-primary/[0.04] p-4">
-      <p className="flex items-center gap-1.5 text-sm font-semibold">
-        <FileText className="size-4 text-primary" /> Établir le devis
+    <div className="flex items-start gap-2 rounded-xl border border-primary/25 bg-primary/[0.04] p-4 text-sm text-muted-foreground">
+      <FileText className="mt-0.5 size-4 shrink-0 text-primary" />
+      <p>
+        <span className="font-medium text-foreground">Devis côté terrain.</span>{" "}
+        Le technicien affecté à la visite établit le devis sur place ; dès son
+        envoi, GTEC le valide automatiquement et le client reçoit le devis à
+        accepter. Paiement ensuite en 2 tranches : 50 % avant les travaux, 50 %
+        à la fin.
       </p>
-      {items.map((item, idx) => (
-        <div key={idx} className="flex items-center gap-2">
-          <Input
-            value={item.label}
-            onChange={(e) => setItem(idx, { label: e.target.value })}
-            placeholder="Prestation (ex. : Remplacement disjoncteur)"
-            className="flex-1"
-          />
-          <Input
-            type="number"
-            min={1}
-            value={item.qty}
-            onChange={(e) => setItem(idx, { qty: Number(e.target.value) || 1 })}
-            className="w-16"
-            aria-label="Quantité"
-          />
-          <Input
-            type="number"
-            min={0}
-            value={item.unitPrice || ""}
-            onChange={(e) => setItem(idx, { unitPrice: Number(e.target.value) || 0 })}
-            placeholder="P.U."
-            className="w-28"
-            aria-label="Prix unitaire"
-          />
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => setItems((p) => p.filter((_, i) => i !== idx))}
-            disabled={items.length === 1}
-          >
-            <Trash2 className="size-4" />
-          </Button>
-        </div>
-      ))}
-      <div className="flex items-center justify-between text-sm">
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => setItems((p) => [...p, { label: "", qty: 1, unitPrice: 0 }])}
-        >
-          <Plus className="mr-1 size-3.5" /> Ligne
-        </Button>
-        <span className="font-semibold">
-          Total TTC : <span className="text-primary">{fcfa(total)}</span>
-          <span className="ml-1 text-xs font-normal text-muted-foreground">
-            (TVA 19,25 %)
-          </span>
-        </span>
-      </div>
-      <Button className="halo-amber" disabled={busy} onClick={submit}>
-        <FileText className="mr-2 size-4" />
-        {busy ? "Envoi…" : "Envoyer le devis au client"}
-      </Button>
     </div>
   );
 }
@@ -187,22 +102,37 @@ function AssignCrew({
   request,
   techs,
 }: {
-  request: { _id: string; serviceKey: string };
+  request: { _id: string; serviceKey: string; city: string };
   techs: {
     _id: Id<"users">;
     name: string;
     city?: string;
     active?: boolean;
     subscription?: string;
+    zones?: string[];
+    experienceYears?: number;
+    rating?: number;
+    verified?: boolean;
   }[];
 }) {
   const assignCrew = useMutation(api.gtec.adminAssignCrew);
-  // La suggestion automatique n'utilise que les techniciens à abonnement actif.
-  const suggestion = suggestCrew(
+  // V6 : moteur géo — équipe ≥ 2 proche du chantier, chef choisi sur des
+  // critères objectifs (expérience, note client, missions réalisées).
+  const suggestion = suggestTeam(
     request.serviceKey,
-    techs
-      .filter((t) => t.active !== false)
-      .map((t) => ({ id: t._id, name: t.name, specialty: t.city })),
+    request.city,
+    techs.map((t) => ({
+      id: t._id,
+      name: t.name,
+      city: t.city,
+      zones: t.zones,
+      specialty: t.city,
+      experienceYears: t.experienceYears,
+      rating: t.rating,
+      active: t.active,
+      verified: t.verified,
+    })),
+    2,
   );
   const [leaderId, setLeaderId] = useState<Id<"users"> | null>(
     (suggestion.leaderId as Id<"users">) ?? null,
@@ -222,6 +152,12 @@ function AssignCrew({
   const submit = async () => {
     if (!leaderId) {
       toast.error("Choisissez un chef d'équipe.");
+      return;
+    }
+    if (memberIds.filter((m) => m !== leaderId).length < 1) {
+      toast.error(
+        "Équipe impossible : une intervention terrain exige au moins 2 personnes (chef d'équipe + 1 technicien).",
+      );
       return;
     }
     const ts = when ? new Date(when).getTime() : Date.now() + 24 * 3600 * 1000;
@@ -260,8 +196,14 @@ function AssignCrew({
           {suggestion.total > 0 && (
             <p className="flex items-start gap-1.5 rounded-lg bg-accent/60 px-3 py-2 text-xs text-accent-foreground">
               <Lightbulb className="mt-0.5 size-3.5 shrink-0" />
-              Suggestion pour ce type de mission : {suggestion.total} technicien(s)
-              selon la spécialité requise.
+              {suggestion.reason} — sélection géo automatique (min. 2 personnes,
+              chef d'équipe selon expérience, note client et missions réalisées).
+            </p>
+          )}
+          {suggestion.total > 0 && suggestion.total < 2 && (
+            <p className="rounded-lg bg-destructive/10 px-3 py-2 text-xs text-destructive">
+              Moins de 2 techniciens disponibles à proximité — élargissez les
+              zones ou activez des abonnements pour compléter l'équipe.
             </p>
           )}
           <div className="flex flex-col gap-1.5">
@@ -415,6 +357,11 @@ function ApplicationRow({
           <span className="block truncate text-xs text-muted-foreground">
             {profile.city} · {profile.zones.join(", ")} ·{" "}
             {profile.documents.length} document(s)
+            {profile.kycFlag && (
+              <span className="ml-1.5 font-semibold text-destructive">
+                · ⚠ KYC : {profile.kycFlag}
+              </span>
+            )}
           </span>
         </span>
         {profile.status !== "en_attente" && (
@@ -641,7 +588,7 @@ function AdminRequestRow({
   const { request, client, quote, payment } = entry;
 
   const actions: React.ReactNode[] = [];
-  if (request.status === "nouvelle") actions.push(<QuoteBuilder key="q" requestId={request._id} />);
+  if (request.status === "nouvelle") actions.push(<FieldQuoteNotice key="q" />);
   if (request.status === "paye" && techs.length > 0)
     actions.push(
       <AssignCrew key="a" request={request} techs={techs} />,
@@ -793,6 +740,19 @@ export default function AdminConsole() {
   const updateContractStatus = useMutation(api.gtec.adminUpdateContractStatus);
   const scheduleVisit = useMutation(api.gtec.adminScheduleContractVisit);
   const assignVisit = useMutation(api.gtec.adminAssignVisit);
+
+  // V6 : retraits (techniciens + admin) et commissions GTEC.
+  const withdrawals = useQuery(api.gtec.adminListWithdrawals);
+  const commissions = useQuery(api.gtec.adminListCommissions);
+  const commissionStats = useQuery(api.gtec.adminCommissionStats);
+  const adminWallet = useQuery(api.gtec.myWallet);
+  const processWithdrawal = useMutation(api.gtec.adminProcessWithdrawal);
+  const validateCommission = useMutation(api.gtec.adminValidateCommission);
+  const waiveCommission = useMutation(api.gtec.adminWaiveCommission);
+  const adminRequestWithdrawal = useMutation(api.gtec.requestWithdrawal);
+  const [wdAmount, setWdAmount] = useState("");
+  const [wdMethod, setWdMethod] = useState("mtn_momo");
+  const [wdDestination, setWdDestination] = useState("");
 
   // V5 : statut de la file d'e-mails (Resend)
   const adminEmails = useQuery(api.emails.adminListEmails);
@@ -980,6 +940,17 @@ export default function AdminConsole() {
                   {pendingPayouts.length}
                 </span>
               )}
+            </TabsTrigger>
+            <TabsTrigger value="retraits">
+              <Landmark className="mr-1.5 size-4" /> Retraits
+              {(withdrawals?.length ?? 0) > 0 && (
+                <span className="ml-1.5 rounded-full bg-primary px-1.5 py-0.5 text-[10px] font-bold text-primary-foreground">
+                  {withdrawals?.length}
+                </span>
+              )}
+            </TabsTrigger>
+            <TabsTrigger value="commissions">
+              <Percent className="mr-1.5 size-4" /> Commissions 15 %
             </TabsTrigger>
             <TabsTrigger value="techniciens">
               <Users className="mr-1.5 size-4" /> Techniciens
@@ -2042,6 +2013,323 @@ export default function AdminConsole() {
                 </div>
               </div>
             )}
+          </TabsContent>
+
+          {/* Retraits (techniciens + administration) */}
+          <TabsContent value="retraits" className="mt-4">
+            <div className="flex flex-col gap-4">
+              {/* Solde de l'administration (commissions 15 % encaissées) */}
+              <Card className="card-layered border-primary/25">
+                <CardHeader className="pb-2">
+                  <CardTitle className="flex items-center gap-2 text-sm">
+                    <Landmark className="size-4 text-primary" /> Solde
+                    commissions GTEC (administration)
+                  </CardTitle>
+                  <CardDescription>
+                    15 % de chaque intervention, encaissés par GTEC PRO —
+                    retirable sur le compte de la société.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="flex flex-col gap-3">
+                  <div className="grid gap-3 sm:grid-cols-3">
+                    {[
+                      { label: "Commissions encaissées", value: adminWallet?.earned },
+                      { label: "Retraits effectués", value: adminWallet?.withdrawn },
+                      { label: "Disponible", value: adminWallet?.available },
+                    ].map(({ label, value }) => (
+                      <div key={label} className="rounded-xl bg-muted/60 px-4 py-3">
+                        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                          {label}
+                        </p>
+                        <p className="font-display mt-1 text-lg font-bold">
+                          {value === undefined ? "—" : fcfa(value)}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="grid gap-2 sm:grid-cols-[120px_1fr_1fr_auto]">
+                    <Input
+                      type="number"
+                      min={1000}
+                      value={wdAmount}
+                      onChange={(e) => setWdAmount(e.target.value)}
+                      placeholder="Montant"
+                    />
+                    <Select value={wdMethod} onValueChange={setWdMethod}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="mtn_momo">MTN MoMo</SelectItem>
+                        <SelectItem value="orange_money">Orange Money</SelectItem>
+                        <SelectItem value="virement">Virement bancaire</SelectItem>
+                        <SelectItem value="especes">Espèces</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <Input
+                      value={wdDestination}
+                      onChange={(e) => setWdDestination(e.target.value)}
+                      placeholder="Compte de réception (MoMo / IBAN)"
+                    />
+                    <Button
+                      className="halo-amber"
+                      disabled={
+                        busy ||
+                        Number(wdAmount) < 1000 ||
+                        !wdDestination.trim() ||
+                        (adminWallet?.available ?? 0) < Number(wdAmount)
+                      }
+                      onClick={() =>
+                        run(async () => {
+                          await adminRequestWithdrawal({
+                            sourceRole: "admin",
+                            amount: Number(wdAmount),
+                            method: wdMethod as never,
+                            destination: wdDestination.trim(),
+                          });
+                          setWdAmount("");
+                          setWdDestination("");
+                        }, "Demande de retrait enregistrée")
+                      }
+                    >
+                      <Banknote className="mr-1.5 size-4" /> Retirer
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Demandes de retrait (techniciens) */}
+              {withdrawals === undefined ? (
+                <div className="h-32 animate-pulse rounded-xl bg-muted" />
+              ) : withdrawals.length === 0 ? (
+                <Card className="card-layered">
+                  <CardContent className="py-10 text-center text-sm text-muted-foreground">
+                    Aucune demande de retrait en attente.
+                  </CardContent>
+                </Card>
+              ) : (
+                <div className="flex flex-col gap-2">
+                  {withdrawals.map(({ withdrawal, user }) => (
+                    <div
+                      key={withdrawal._id}
+                      className="flex flex-wrap items-center gap-3 rounded-xl border border-border/70 bg-card px-4 py-3"
+                    >
+                      <span className="flex size-9 items-center justify-center rounded-full bg-primary/15 text-primary">
+                        <Landmark className="size-4" />
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-medium">
+                          {withdrawal.reference} · {fcfa(withdrawal.amount)}
+                          <span className="ml-2 text-xs font-normal text-muted-foreground">
+                            {withdrawal.sourceRole === "admin"
+                              ? "Administration"
+                              : (user as Doc<"users"> | null)?.name ?? "Technicien"}{" "}
+                            · {withdrawal.method} → {withdrawal.destination}
+                          </span>
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          Demandé le {formatDateTime(withdrawal.requestedAt)}
+                          {withdrawal.note ? ` · ${withdrawal.note}` : ""}
+                        </p>
+                      </div>
+                      <span className="rounded-full bg-amber-500/10 px-2.5 py-1 text-xs font-medium capitalize text-amber-700 ring-1 ring-inset ring-amber-500/20 dark:text-amber-400">
+                        {withdrawal.status}
+                      </span>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          className="halo-amber"
+                          size="sm"
+                          disabled={busy || withdrawal.status === "approuve"}
+                          onClick={() =>
+                            run(
+                              () =>
+                                processWithdrawal({
+                                  withdrawalId: withdrawal._id as never,
+                                  decision: "approuve",
+                                }),
+                              "Retrait approuvé",
+                            )
+                          }
+                        >
+                          <CheckCircle2 className="mr-1.5 size-4" /> Approuver
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={busy}
+                          onClick={() =>
+                            run(
+                              () =>
+                                processWithdrawal({
+                                  withdrawalId: withdrawal._id as never,
+                                  decision: "payee",
+                                  note: "Transfert effectué",
+                                }),
+                              "Retrait marqué payé",
+                            )
+                          }
+                        >
+                          <Banknote className="mr-1.5 size-4" /> Payé
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="text-destructive"
+                          disabled={busy}
+                          onClick={() =>
+                            run(
+                              () =>
+                                processWithdrawal({
+                                  withdrawalId: withdrawal._id as never,
+                                  decision: "refuse",
+                                  note: "Refusé par l'administration",
+                                }),
+                              "Retrait refusé",
+                            )
+                          }
+                        >
+                          <XCircle className="mr-1.5 size-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </TabsContent>
+
+          {/* Commissions GTEC 15 % — répartition détaillée */}
+          <TabsContent value="commissions" className="mt-4">
+            <div className="flex flex-col gap-4">
+              <div className="grid gap-3 sm:grid-cols-4">
+                {[
+                  { label: "Commission due", value: commissionStats?.dueTotal, tone: "text-amber-600 dark:text-amber-400" },
+                  { label: "Commission encaissée", value: commissionStats?.paidTotal, tone: "text-emerald-600 dark:text-emerald-400" },
+                  {
+                    label: "Part équipe (85 %)",
+                    value: (commissions ?? []).reduce(
+                      (s, c) => s + (c.commission.breakdown?.teamAmount ?? 0),
+                      0,
+                    ),
+                    tone: "text-sky-600 dark:text-sky-400",
+                  },
+                  {
+                    label: "Part GTEC (15 %)",
+                    value: (commissions ?? []).reduce(
+                      (s, c) => s + (c.commission.breakdown?.gtecAmount ?? c.commission.amount),
+                      0,
+                    ),
+                    tone: "text-primary",
+                  },
+                ].map(({ label, value, tone }) => (
+                  <Card key={label} className="card-layered">
+                    <CardContent className="px-4 py-3.5">
+                      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                        {label}
+                      </p>
+                      <p className={cn("font-display mt-1 text-lg font-bold", tone)}>
+                        {value === undefined ? "—" : fcfa(value)}
+                      </p>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+              <p className="rounded-lg bg-muted/60 px-4 py-3 text-xs text-muted-foreground">
+                Sur chaque intervention : <span className="font-medium text-foreground">85 %</span>{" "}
+                reviennent à l'équipe terrain (payouts) et{" "}
+                <span className="font-medium text-foreground">15 %</span> reviennent à GTEC PRO
+                (commission à la charge du technicien, réglée puis encaissée ici).
+              </p>
+              {commissions === undefined ? (
+                <div className="h-32 animate-pulse rounded-xl bg-muted" />
+              ) : commissions.length === 0 ? (
+                <Card className="card-layered">
+                  <CardContent className="py-10 text-center text-sm text-muted-foreground">
+                    Aucune commission — elles sont générées quand l'avance de 50 % est validée.
+                  </CardContent>
+                </Card>
+              ) : (
+                <div className="flex flex-col gap-2">
+                  {commissions.map(({ commission, request, tech }) => (
+                    <div
+                      key={commission._id}
+                      className="flex flex-wrap items-center gap-3 rounded-xl border border-border/70 bg-card px-4 py-3"
+                    >
+                      <span className="flex size-9 items-center justify-center rounded-full bg-primary/15 text-xs font-bold text-primary">
+                        15%
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-medium">
+                          {request?.reference ?? "—"} ·{" "}
+                          <span className="text-muted-foreground">
+                            base {fcfa(commission.baseAmount)}
+                          </span>
+                        </p>
+                        <p className="truncate text-xs text-muted-foreground">
+                          {commission.breakdown
+                            ? `Équipe ${fcfa(commission.breakdown.teamAmount)} (85 %) · GTEC ${fcfa(commission.breakdown.gtecAmount)} (15 %)`
+                            : `Montant ${fcfa(commission.amount)}`}{" "}
+                          · redevable : {tech?.name ?? "—"}
+                        </p>
+                      </div>
+                      <span
+                        className={cn(
+                          "rounded-full px-2.5 py-1 text-xs font-medium capitalize ring-1 ring-inset",
+                          commission.status === "payee"
+                            ? "bg-emerald-500/10 text-emerald-600 ring-emerald-500/20 dark:text-emerald-400"
+                            : commission.status === "exoneree"
+                              ? "bg-muted text-muted-foreground ring-border"
+                              : "bg-amber-500/10 text-amber-700 ring-amber-500/20 dark:text-amber-400",
+                        )}
+                      >
+                        {commission.status === "payee"
+                          ? "Encaissée"
+                          : commission.status === "exoneree"
+                            ? "Exonérée"
+                            : "Due"}
+                      </span>
+                      {commission.status === "due" && (
+                        <div className="flex items-center gap-2">
+                          <Button
+                            className="halo-amber"
+                            size="sm"
+                            disabled={busy}
+                            onClick={() =>
+                              run(
+                                () =>
+                                  validateCommission({
+                                    commissionId: commission._id as never,
+                                  }),
+                                "Commission encaissée",
+                              )
+                            }
+                          >
+                            <CheckCircle2 className="mr-1.5 size-4" /> Encaisser
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="text-destructive"
+                            disabled={busy}
+                            onClick={() =>
+                              run(
+                                () =>
+                                  waiveCommission({
+                                    commissionId: commission._id as never,
+                                  }),
+                                "Commission exonérée",
+                              )
+                            }
+                          >
+                            <XCircle className="mr-1.5 size-4" /> Exonérer
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </TabsContent>
 
           {/* Techniciens */}

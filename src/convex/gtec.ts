@@ -2,7 +2,14 @@ import { getAuthUserId } from "@convex-dev/auth/server";
 import { v } from "convex/values";
 import { internalMutation, internalQuery, mutation, query } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
-import { commissionFor, payoutFor } from "../lib/gtec";
+import {
+  commissionFor,
+  payoutFor,
+  splitFiftyFifty,
+  suggestTeam,
+  ADVANCE_PERCENT,
+  BALANCE_PERCENT,
+} from "../lib/gtec";
 
 // ---------- helpers ----------
 
@@ -108,6 +115,37 @@ function quoteTotals(items: { qty: number; unitPrice: number }[]) {
   const vatRate = 19.25; // TVA Cameroun
   const total = Math.round(subtotal * (1 + vatRate / 100));
   return { subtotal, vatRate, total };
+}
+
+// ===================== V6 : KYC anti-fraude & doublons =====================
+
+/**
+ * Empreinte déterministe d'un document (djb2 sur début/milieu/fin du data
+ * URL). Sert à détecter la réutilisation d'une même pièce d'identité ou d'un
+ * même diplôme par plusieurs candidats — sans dépendre de node:crypto.
+ */
+function docFingerprint(url: string): string {
+  const mid = Math.floor(url.length / 2);
+  const parts = [
+    url.slice(0, 4096),
+    url.slice(mid, mid + 4096),
+    url.slice(-4096),
+  ];
+  let h1 = 5381;
+  let h2 = 52711;
+  for (const part of parts) {
+    for (let i = 0; i < part.length; i++) {
+      const c = part.charCodeAt(i);
+      h1 = ((h1 << 5) + h1 + c) | 0;
+      h2 = ((h2 << 5) - h2 + c) | 0;
+    }
+  }
+  return `${(h1 >>> 0).toString(36)}${(h2 >>> 0).toString(36)}`;
+}
+
+/** Normalise un numéro de CNI/passeport pour la comparaison anti-doublon. */
+function normalizeNationalId(s: string): string {
+  return s.replace(/[\s\-./]/g, "").toLowerCase();
 }
 
 // ---------- profils ----------
@@ -452,10 +490,16 @@ export const getRequestDetail = query({
       .withIndex("by_request", (q) => q.eq("requestId", request._id))
       .order("desc")
       .collect();
+    // V6 : toutes les tranches de paiement (avance 50 % + solde 50 %).
+    const payments = await ctx.db
+      .query("payments")
+      .withIndex("by_request", (q) => q.eq("requestId", request._id))
+      .collect();
     return {
       request,
       quote,
       payment,
+      payments,
       assignment,
       teamLeader,
       members: members.filter(Boolean),
@@ -468,7 +512,12 @@ export const getRequestDetail = query({
 
 // ---------- devis ----------
 
-export const adminCreateQuote = mutation({
+/**
+ * V6 : le technicien établit le devis SUR LE TERRAIN après validation du
+ * client. Dès qu'il l'envoie, GTEC le valide automatiquement (plus de
+ * QuoteBuilder admin manuel) : le devis part immédiatement au client.
+ */
+export const submitFieldQuote = mutation({
   args: {
     requestId: v.id("serviceRequests"),
     items: v.array(
@@ -481,7 +530,7 @@ export const adminCreateQuote = mutation({
     validDays: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    await requireAdmin(ctx);
+    const user = await requireUser(ctx);
     const request = await ctx.db.get(args.requestId);
     if (!request) throw new Error("Demande introuvable.");
     if (!["nouvelle", "devis_emis"].includes(request.status)) {
@@ -489,6 +538,25 @@ export const adminCreateQuote = mutation({
     }
     if (args.items.length === 0) {
       throw new Error("Ajoutez au moins une ligne au devis.");
+    }
+    if (args.items.some((i) => !i.label.trim() || i.qty <= 0 || i.unitPrice < 0)) {
+      throw new Error("Chaque ligne doit avoir un libellé, une quantité et un prix valides.");
+    }
+    // Auteur : technicien vérifié (visite terrain) ou administration.
+    let authorRole: "technicien" | "admin" = "admin";
+    if (user.role !== "admin") {
+      const profile = (
+        await ctx.db
+          .query("technicianProfiles")
+          .withIndex("by_user", (q) => q.eq("userId", user._id))
+          .collect()
+      )[0];
+      if (profile?.status !== "verifie") {
+        throw new Error(
+          "Seul un technicien vérifié par GTEC peut établir un devis terrain.",
+        );
+      }
+      authorRole = "technicien";
     }
     const previous = await ctx.db
       .query("quotes")
@@ -498,6 +566,7 @@ export const adminCreateQuote = mutation({
       if (q.status === "emis") await ctx.db.patch(q._id, { status: "expire" });
     }
     const { subtotal, vatRate, total } = quoteTotals(args.items);
+    if (total <= 0) throw new Error("Le montant du devis doit être positif.");
     const number = await nextRef(ctx, "quotes", "DEV");
     const validUntil = Date.now() + (args.validDays ?? 7) * 24 * 3600 * 1000;
     await ctx.db.insert("quotes", {
@@ -511,21 +580,32 @@ export const adminCreateQuote = mutation({
       currency: "FCFA",
       status: "emis",
       validUntil,
+      authorId: user._id,
+      authorRole,
+      // Validation automatique GTEC dès l'envoi du devis terrain.
+      autoValidatedAt: Date.now(),
     });
     await ctx.db.patch(args.requestId, { status: "devis_emis" });
     await addEvent(
       ctx,
       args.requestId,
       "devis",
-      `Devis ${number} émis`,
-      `Total ${total.toLocaleString("fr-FR")} FCFA`,
+      `Devis ${number} émis sur le terrain`,
+      `Total ${total.toLocaleString("fr-FR")} FCFA · validé automatiquement par GTEC`,
     );
     await notify(
       ctx,
       request.clientId,
       "devis",
       `Devis ${number} reçu`,
-      `Votre devis est prêt : ${total.toLocaleString("fr-FR")} FCFA. Acceptez-le pour lancer les travaux.`,
+      `Votre technicien a établi le devis : ${total.toLocaleString("fr-FR")} FCFA. Acceptez-le, puis réglez l'avance de ${Math.round((total * 50) / 100).toLocaleString("fr-FR")} FCFA (50 %) pour lancer les travaux.`,
+      args.requestId,
+    );
+    await notifyAdmins(
+      ctx,
+      "devis",
+      `Devis ${number} émis par ${user.name ?? "un technicien"}`,
+      `Devis terrain de ${total.toLocaleString("fr-FR")} FCFA validé automatiquement — en attente d'acceptation du client.`,
       args.requestId,
     );
   },
@@ -584,11 +664,14 @@ export const getAcceptedQuoteForPayment = internalQuery({
     if (!quote) return null;
     if (quote.clientId !== args.clientId) return null;
     if (quote.status !== "accepte") return null;
+    const { advance, balance } = splitFiftyFifty(quote.total);
     return {
       _id: quote._id,
       requestId: quote.requestId,
       total: quote.total,
       currency: quote.currency,
+      advance,
+      balance,
     };
   },
 });
@@ -615,6 +698,8 @@ export const createPendingPayment = internalMutation({
     currency: v.string(),
     method: v.union(v.literal("mtn_momo"), v.literal("orange_money")),
     payerPhone: v.string(),
+    /** V6 : tranche payée — "avance" (50 % avant travaux) ou "solde". */
+    milestone: v.union(v.literal("avance"), v.literal("solde")),
   },
   handler: async (ctx, args) => {
     const quote = await ctx.db.get(args.quoteId);
@@ -629,12 +714,14 @@ export const createPendingPayment = internalMutation({
       payerPhone: args.payerPhone,
       status: "en_attente",
       externalRef: `MOMO-${Date.now().toString(36).toUpperCase()}`,
+      milestone: args.milestone,
+      percent: args.milestone === "avance" ? 50 : 50,
     });
     await addEvent(
       ctx,
       quote.requestId,
       "paiement",
-      "Paiement Mobile Money initié",
+      `${args.milestone === "avance" ? "Avance" : "Solde"} (50 %) Mobile Money initié`,
       "En attente de confirmation opérateur",
     );
     return id;
@@ -676,9 +763,14 @@ export const txByProviderRef = internalQuery({
   },
 });
 
+/**
+ * V6 : paiement en 2 tranches — le client règle 50 % AVANT le début des
+ * travaux puis 50 % à la fin. `milestone` vaut "avance" ou "solde".
+ */
 export const initiatePayment = mutation({
   args: {
     quoteId: v.id("quotes"),
+    milestone: v.union(v.literal("avance"), v.literal("solde")),
     method: v.union(
       v.literal("mtn_momo"),
       v.literal("orange_money"),
@@ -703,6 +795,31 @@ export const initiatePayment = mutation({
     if (quote.status !== "accepte") {
       throw new Error("Acceptez d'abord le devis avant de payer.");
     }
+    const existing = await ctx.db
+      .query("payments")
+      .withIndex("by_request", (q) => q.eq("requestId", quote.requestId))
+      .collect();
+    if (existing.some((p) => p.status === "en_attente")) {
+      throw new Error("Un paiement est déjà en cours de vérification.");
+    }
+    const advanceValidated = existing.some(
+      (p) => p.milestone === "avance" && p.status === "valide",
+    );
+    // L'avance se paie quand la demande attend le paiement ; le solde quand
+    // les travaux sont finis (rapport transmis). L'ordre est imposé.
+    if (args.milestone === "avance" && advanceValidated) {
+      throw new Error("L'avance de 50 % est déjà payée.");
+    }
+    if (args.milestone === "solde" && !advanceValidated) {
+      throw new Error("Payez d'abord l'avance de 50 % avant travaux.");
+    }
+    if (existing.some((p) => p.milestone === args.milestone && p.status === "valide")) {
+      throw new Error(
+        args.milestone === "avance"
+          ? "L'avance de 50 % est déjà payée."
+          : "Le solde de 50 % est déjà payé.",
+      );
+    }
     // Cash : une preuve photo est OBLIGATOIRE.
     if (args.method === "especes" && !args.proofPhotoUrl?.startsWith("data:")) {
       throw new Error(
@@ -724,20 +841,14 @@ export const initiatePayment = mutation({
         throw new Error("Indiquez les 4 derniers chiffres de la carte.");
       }
     }
-    const existing = await ctx.db
-      .query("payments")
-      .withIndex("by_request", (q) => q.eq("requestId", quote.requestId))
-      .collect();
-    for (const p of existing) {
-      if (p.status === "en_attente") {
-        throw new Error("Un paiement est déjà en cours de vérification.");
-      }
-    }
+    const { advance, balance } = splitFiftyFifty(quote.total);
+    const amount = args.milestone === "avance" ? advance : balance;
+    const percent = args.milestone === "avance" ? ADVANCE_PERCENT : BALANCE_PERCENT;
     await ctx.db.insert("payments", {
       quoteId: quote._id,
       requestId: quote.requestId,
       clientId: user._id,
-      amount: quote.total,
+      amount,
       currency: quote.currency,
       method: args.method,
       payerPhone: args.payerPhone.trim(),
@@ -749,22 +860,24 @@ export const initiatePayment = mutation({
       cardLast4: args.cardLast4,
       collectedBy: args.collectedBy,
       collectedAt: args.method === "especes" ? Date.now() : undefined,
+      milestone: args.milestone,
+      percent,
     });
+    const advanceDone = advanceValidated;
     await addEvent(
       ctx,
       quote.requestId,
       "paiement",
-      "Paiement initié",
-      args.method === "especes"
-        ? "Espèces avec preuve — en attente de validation GTEC"
-        : "En attente de vérification GTEC",
+      `${args.milestone === "avance" ? "Avance" : "Solde"} (${percent} %) initié`,
+      `${amount.toLocaleString("fr-FR")} FCFA · ${advanceDone ? "2ᵉ tranche" : "1ʳᵉ tranche sur 2"}`,
     );
   },
 });
 
 /**
  * Encaissement cash par un technicien : il enregistre la collecte avec preuve
- * photo. Crée le paiement en attente de validation par l'admin.
+ * photo. V6 : il collecte soit l'avance (50 % avant travaux), soit le solde
+ * (50 % à la fin). Crée le paiement en attente de validation admin.
  */
 export const technicianCollectCash = mutation({
   args: {
@@ -806,11 +919,22 @@ export const technicianCollectCash = mutation({
         throw new Error("Un paiement est déjà en cours de vérification.");
       }
     }
+    const advanceValidated = existing.some(
+      (p) => p.milestone === "avance" && p.status === "valide",
+    );
+    if (existing.some((p) => p.milestone === "solde" && p.status === "valide")) {
+      throw new Error("Le solde de 50 % est déjà payé.");
+    }
+    const { advance, balance } = splitFiftyFifty(quote.total);
+    // La mission est en cours : le technicien encaisse l'avance si elle
+    // manque (démarrage), sinon le solde de fin de travaux.
+    const milestone = advanceValidated ? "solde" : "avance";
+    const amount = milestone === "avance" ? advance : balance;
     await ctx.db.insert("payments", {
       quoteId: quote._id,
       requestId: args.requestId,
       clientId: request.clientId,
-      amount: quote.total,
+      amount,
       currency: quote.currency,
       method: "especes",
       payerPhone: args.payerPhone?.trim() || "—",
@@ -819,16 +943,109 @@ export const technicianCollectCash = mutation({
       proofPhotoUrl: args.proofPhotoUrl,
       collectedBy: user._id,
       collectedAt: Date.now(),
+      milestone,
+      percent: milestone === "avance" ? ADVANCE_PERCENT : BALANCE_PERCENT,
     });
     await addEvent(
       ctx,
       args.requestId,
       "paiement",
-      "Espèces encaissées par le technicien",
+      milestone === "avance"
+        ? "Avance (50 %) encaissée en espèces"
+        : "Solde (50 %) encaissé en espèces",
       "En attente de validation GTEC",
     );
   },
 });
+
+/**
+ * V6 : applique la validation d'une tranche de paiement. Factorisé pour
+ * l'admin, le webhook MoMo et le flux automatique — crée la commission GTEC
+ * détaillée 85/15 uniquement sur l'avance (1ʳᵉ tranche encaissée).
+ */
+export async function settleMilestone(
+  ctx: any,
+  payment: Doc<"payments">,
+  opts: { externalRef?: string; adminId?: Id<"users"> } = {},
+) {
+  const request = await ctx.db.get(payment.requestId);
+  if (!request) return;
+  const existing = await ctx.db
+    .query("payments")
+    .withIndex("by_request", (q: any) => q.eq("requestId", payment.requestId))
+    .collect();
+  const isAdvance = payment.milestone !== "solde"; // rétrocompat : 1ʳᵉ tranche
+  await ctx.db.patch(payment._id, {
+    status: "valide",
+    paidAt: Date.now(),
+    ...(opts.externalRef ? { externalRef: opts.externalRef } : {}),
+  });
+
+  if (isAdvance) {
+    // 1ʳᵉ tranche encaissée : les travaux peuvent démarrer.
+    await ctx.db.patch(payment.requestId, { status: "paye" });
+    await addEvent(
+      ctx,
+      payment.requestId,
+      "paiement",
+      `Avance 50 % validée (${payment.amount.toLocaleString("fr-FR")} FCFA)`,
+      "L'équipe va être affectée — travaux autorisés",
+    );
+    // ---- Répartition détaillée 85/15 (commission à la charge du technicien)
+    const commissionAmount = commissionFor(payment.amount * 2);
+    const teamAmount = payment.amount * 2 - commissionAmount;
+    const existingCommissions = await ctx.db
+      .query("gtecCommissions")
+      .withIndex("by_request", (q: any) => q.eq("requestId", payment.requestId))
+      .collect();
+    if (!existingCommissions.some((c: any) => c.status !== "exoneree")) {
+      await ctx.db.insert("gtecCommissions", {
+        requestId: payment.requestId,
+        quoteId: payment.quoteId,
+        // Encaisseur cash, sinon valeur provisoire — réattribuée au chef
+        // d'équipe lors de l'affectation de la mission.
+        techUserId: payment.collectedBy ?? opts.adminId ?? request.clientId,
+        baseAmount: payment.amount * 2,
+        ratePercent: 15,
+        amount: commissionAmount,
+        currency: payment.currency,
+        status: "due",
+        breakdown: { teamAmount, gtecAmount: commissionAmount },
+      });
+      await addEvent(
+        ctx,
+        payment.requestId,
+        "paiement",
+        `Répartition 85/15 : équipe ${teamAmount.toLocaleString("fr-FR")} FCFA · GTEC ${commissionAmount.toLocaleString("fr-FR")} FCFA (15 %)`,
+      );
+    }
+    await notify(
+      ctx,
+      payment.clientId,
+      "paiement",
+      "Avance confirmée",
+      `Votre avance de 50 % (${payment.amount.toLocaleString("fr-FR")} FCFA) est validée. L'équipe va être affectée et les travaux vont démarrer.`,
+      payment.requestId,
+    );
+  } else {
+    // 2ᵉ tranche encaissée : le solde est complet (réception débloquée).
+    await addEvent(
+      ctx,
+      payment.requestId,
+      "paiement",
+      `Solde 50 % validé (${payment.amount.toLocaleString("fr-FR")} FCFA)`,
+      "Paiement complet — la réception peut être signée",
+    );
+    await notify(
+      ctx,
+      payment.clientId,
+      "paiement",
+      "Solde confirmé",
+      `Votre solde de ${payment.amount.toLocaleString("fr-FR")} FCFA est validé. Vous pouvez réceptionner les travaux et signer le PV.`,
+      payment.requestId,
+    );
+  }
+}
 
 export const adminValidatePayment = mutation({
   args: { paymentId: v.id("payments") },
@@ -840,58 +1057,29 @@ export const adminValidatePayment = mutation({
       throw new Error("Ce paiement a déjà été traité.");
     }
     const request = await ctx.db.get(payment.requestId);
-    if (!request || request.status !== "devis_accepte") {
+    if (!request) throw new Error("Demande introuvable.");
+    const existing = await ctx.db
+      .query("payments")
+      .withIndex("by_request", (q) => q.eq("requestId", payment.requestId))
+      .collect();
+    const advanceValidated = existing.some(
+      (p) => p.milestone === "avance" && p.status === "valide",
+    );
+    if (payment.milestone === "solde" && !advanceValidated) {
+      throw new Error("L'avance doit être validée avant le solde.");
+    }
+    const wasPendingAdvance =
+      payment.milestone !== "solde" &&
+      ["devis_accepte", "paye"].includes(request.status);
+    const wasPendingBalance =
+      payment.milestone === "solde" &&
+      ["en_intervention", "rapport_emis"].includes(request.status);
+    if (!wasPendingAdvance && !wasPendingBalance) {
       throw new Error(
         "La demande n'est plus en attente de paiement (déjà payée ou annulée).",
       );
     }
-    await ctx.db.patch(args.paymentId, { status: "valide" });
-    await ctx.db.patch(payment.requestId, { status: "paye" });
-    await addEvent(
-      ctx,
-      payment.requestId,
-      "paiement",
-      "Paiement validé",
-      `${payment.amount.toLocaleString("fr-FR")} FCFA · ${payment.payerPhone}`,
-    );
-
-    // ---- Commission GTEC 15 % (§10) : générée automatiquement au paiement ----
-    const commissionAmount = commissionFor(payment.amount);
-    if (commissionAmount > 0) {
-      const existing = await ctx.db
-        .query("gtecCommissions")
-        .withIndex("by_request", (q) => q.eq("requestId", payment.requestId))
-        .collect();
-      if (!existing.some((c) => c.status !== "exoneree")) {
-        await ctx.db.insert("gtecCommissions", {
-          requestId: payment.requestId,
-          quoteId: payment.quoteId,
-          // Encaisseur cash, sinon valeur provisoire — réattribuée au chef
-          // d'équipe lors de l'affectation de la mission.
-          techUserId: payment.collectedBy ?? admin._id,
-          baseAmount: payment.amount,
-          ratePercent: 15,
-          amount: commissionAmount,
-          currency: payment.currency,
-          status: "due",
-        });
-        await addEvent(
-          ctx,
-          payment.requestId,
-          "paiement",
-          `Commission GTEC 15 % générée (${commissionAmount.toLocaleString("fr-FR")} FCFA)`,
-        );
-      }
-    }
-
-    await notify(
-      ctx,
-      payment.clientId,
-      "paiement",
-      "Paiement confirmé",
-      `Votre paiement de ${payment.amount.toLocaleString("fr-FR")} FCFA est validé. L'équipe va être affectée.`,
-      payment.requestId,
-    );
+    await settleMilestone(ctx, payment, { adminId: admin._id });
   },
 });
 
@@ -930,17 +1118,24 @@ export const adminAssignCrew = mutation({
     const request = await ctx.db.get(args.requestId);
     if (!request) throw new Error("Demande introuvable.");
     if (request.status !== "paye") {
-      throw new Error("La demande doit être payée avant affectation.");
+      throw new Error(
+        "La demande doit avoir son avance de 50 % validée avant affectation.",
+      );
     }
     const leader = await ctx.db.get(args.teamLeaderId);
     if (!leader || leader.role !== "member") {
       throw new Error("Choisissez un chef d'équipe.");
     }
+    // V6 : toute intervention terrain compte AU MOINS 2 personnes.
+    const uniqueMembers = args.memberIds.filter((m) => m !== args.teamLeaderId);
+    if (uniqueMembers.length + 1 < 2) {
+      throw new Error(
+        "Équipe impossible : une intervention terrain exige au moins 2 personnes (chef d'équipe + 1 technicien).",
+      );
+    }
     const members = [
       { id: args.teamLeaderId, role: "Chef d'équipe" },
-      ...args.memberIds
-        .filter((m) => m !== args.teamLeaderId)
-        .map((id) => ({ id, role: "Technicien" })),
+      ...uniqueMembers.map((id) => ({ id, role: "Technicien" })),
     ];
     await ctx.db.insert("assignments", {
       requestId: args.requestId,
@@ -962,11 +1157,12 @@ export const adminAssignCrew = mutation({
       ctx,
       args.requestId,
       "affectation",
-      `Équipe affectée · ${members.length} technicien(s)`,
+      `Équipe affectée · ${members.length} technicien(s) (min. 2 appliqué)`,
       `Intervention prévue le ${date}`,
     );
 
-    // La commission (créée au paiement) passe au nom du chef d'équipe.
+    // La commission (créée au paiement de l'avance) passe au nom du chef
+    // d'équipe — redevable de la part GTEC 15 % pour son équipe.
     const commission = (
       await ctx.db
         .query("gtecCommissions")
@@ -979,8 +1175,8 @@ export const adminAssignCrew = mutation({
         ctx,
         args.teamLeaderId,
         "general",
-        "Commission GTEC à régler",
-        `Après réception de la mission, réglez les ${commission.ratePercent} % GTEC (${commission.amount.toLocaleString("fr-FR")} FCFA) depuis votre espace.`,
+        "Commission GTEC 15 % à régler",
+        `Vous êtes chef d'équipe. La part GTEC de la mission est de ${commission.amount.toLocaleString("fr-FR")} FCFA (15 % de ${commission.baseAmount.toLocaleString("fr-FR")} FCFA) — réglez-la depuis votre espace.`,
         args.requestId,
       );
     }
@@ -990,7 +1186,7 @@ export const adminAssignCrew = mutation({
       request.clientId,
       "affectation",
       "Équipe affectée à votre demande",
-      `${leader.name ?? "Un technicien"} interviendra le ${date}.`,
+      `${leader.name ?? "Un technicien"} et son équipe (${members.length} personnes) interviendront le ${date}.`,
       args.requestId,
     );
     for (const m of members.slice(1)) {
@@ -1003,6 +1199,61 @@ export const adminAssignCrew = mutation({
         args.requestId,
       );
     }
+  },
+});
+
+/**
+ * V6 : suggestion d'équipe serveur (moteur géo). Retourne leader + membres
+ * (≥ 2 personnes) proches de la ville du chantier + le motif du choix.
+ */
+export const suggestTeamForRequest = query({
+  args: { requestId: v.id("serviceRequests") },
+  handler: async (ctx, args) => {
+    await requireAdmin(ctx);
+    const request = await ctx.db.get(args.requestId);
+    if (!request) return null;
+    const members = await ctx.db
+      .query("users")
+      .filter((q) => q.eq(q.field("role"), "member"))
+      .collect();
+    const enriched = await Promise.all(
+      members.map(async (t) => {
+        const profile = (
+          await ctx.db
+            .query("technicianProfiles")
+            .withIndex("by_user", (q) => q.eq("userId", t._id))
+            .collect()
+        )[0];
+        const ratings = await ctx.db
+          .query("reviews")
+          .withIndex("by_tech", (q) => q.eq("techUserId", t._id))
+          .collect();
+        const avgRating = ratings.length
+          ? ratings.reduce((s, r) => s + r.rating, 0) / ratings.length
+          : undefined;
+        const missionCount = (
+          await ctx.db
+            .query("assignments")
+            .filter((q) =>
+              q.eq(q.field("teamLeaderId"), t._id),
+            )
+            .collect()
+        ).length;
+        return {
+          id: t._id,
+          name: t.name ?? "Technicien",
+          city: t.city,
+          zones: profile?.zones ?? (t.city ? [t.city] : []),
+          specialty: t.city,
+          experienceYears: profile?.experienceYears,
+          rating: avgRating,
+          missionCount,
+          active: profile ? subscriptionActive(profile) : true,
+          verified: profile?.status === "verifie" || !profile,
+        };
+      }),
+    );
+    return suggestTeam(request.serviceKey, request.city, enriched, 2);
   },
 });
 
@@ -1200,6 +1451,75 @@ export const submitTechnicianApplication = mutation({
       }
       throw new Error("Vous avez déjà une candidature en cours.");
     }
+
+    // ===== V6 : contrôle KYC anti-fraude & doublons =====
+    const nid = normalizeNationalId(args.nationalId);
+    const allProfiles = await ctx.db.query("technicianProfiles").collect();
+    // 1. Une même pièce d'identité ne peut pas créer plusieurs comptes.
+    const idDup = allProfiles.find(
+      (p) => normalizeNationalId(p.nationalId) === nid,
+    );
+    if (idDup) {
+      await ctx.db.insert("technicianProfiles", {
+        userId: user._id,
+        firstName: args.firstName.trim(),
+        lastName: args.lastName.trim(),
+        nationalId: args.nationalId.trim(),
+        gender: args.gender || undefined,
+        birthDate: args.birthDate || undefined,
+        phone: args.phone.trim(),
+        altPhone: args.altPhone?.trim() || undefined,
+        city: args.city.trim(),
+        address: args.address?.trim() || undefined,
+        specialty: args.specialty.trim(),
+        profession: args.profession?.trim() || undefined,
+        experienceYears: Math.max(0, args.experienceYears),
+        currentEmployer: args.currentEmployer?.trim() || undefined,
+        references: args.references?.trim() || undefined,
+        zones: args.zones,
+        bio: args.bio?.trim() || undefined,
+        highestDegree: args.highestDegree.trim(),
+        fieldOfStudy: args.fieldOfStudy?.trim() || undefined,
+        school: args.school?.trim() || undefined,
+        graduationYear: args.graduationYear || undefined,
+        documents: args.documents,
+        status: "rejete",
+        kycFlag: `pièce d'identité déjà utilisée par un autre compte (${idDup.firstName} ${idDup.lastName})`,
+        kycDocHashes: args.documents.map((d) => docFingerprint(d.url)),
+        subscription: "aucun",
+      });
+      throw new Error(
+        "Cet numéro de CNI/passeport est déjà enregistré sur un autre compte technicien. La candidature a été rejetée pour doublon d'identité.",
+      );
+    }
+    // 2. Un même téléphone ne peut pas servir pour deux dossiers.
+    const phoneDup = allProfiles.find(
+      (p) => p.phone.replace(/\D/g, "").slice(-9) === args.phone.replace(/\D/g, "").slice(-9),
+    );
+    if (phoneDup) {
+      throw new Error(
+        "Ce numéro de téléphone est déjà utilisé par un autre dossier technicien.",
+      );
+    }
+    // 3. Une pièce (photo/PDF) déjà soumise par un autre dossier = fraude.
+    const docHashes = args.documents.map((d) => docFingerprint(d.url));
+    const otherHashes = new Map<string, string>();
+    for (const p of allProfiles) {
+      for (const h of p.kycDocHashes ?? []) {
+        otherHashes.set(h, `${p.firstName} ${p.lastName}`);
+      }
+    }
+    for (const d of args.documents) {
+      if (!d.url) continue;
+      const fp = docFingerprint(d.url);
+      const owner = otherHashes.get(fp);
+      if (owner) {
+        throw new Error(
+          `Le document « ${d.label} » est identique à celui d'un autre dossier (${owner}). Doublon détecté — vérifiez vos pièces.`,
+        );
+      }
+    }
+
     await ctx.db.insert("technicianProfiles", {
       userId: user._id,
       firstName: args.firstName.trim(),
@@ -1225,6 +1545,7 @@ export const submitTechnicianApplication = mutation({
       documents: args.documents,
       status: "en_attente",
       subscription: "aucun",
+      kycDocHashes: docHashes,
     });
     // Le nom du compte est mis à jour à partir de l'identité déclarée.
     await ctx.db.patch(user._id, {
@@ -1452,6 +1773,57 @@ export const adminReviewTechnician = mutation({
     if (profile.status !== "en_attente") {
       throw new Error("Cette candidature a déjà été traitée.");
     }
+    if (profile.kycFlag) {
+      throw new Error(
+        `Dossier bloqué par le contrôle KYC : ${profile.kycFlag}. Refusez-le.`,
+      );
+    }
+    if (args.decision === "verifie") {
+      // Contrôle final anti-doublon (CNI, téléphone, documents).
+      const nid = normalizeNationalId(profile.nationalId);
+      const others = (await ctx.db.query("technicianProfiles").collect()).filter(
+        (p: any) => p._id !== profile._id,
+      );
+      const idDup = others.find(
+        (p: any) =>
+          normalizeNationalId(p.nationalId) === nid && p.status !== "rejete",
+      );
+      if (idDup) {
+        await ctx.db.patch(profile._id, {
+          status: "rejete",
+          kycFlag: `pièce d'identité déjà utilisée par ${idDup.firstName} ${idDup.lastName}`,
+        });
+        throw new Error(
+          "Doublon d'identité détecté (même CNI sur un autre dossier) — candidature refusée automatiquement.",
+        );
+      }
+      const phoneDup = others.find(
+        (p: any) =>
+          p.status !== "rejete" &&
+          p.phone.replace(/\D/g, "").slice(-9) ===
+            profile.phone.replace(/\D/g, "").slice(-9),
+      );
+      if (phoneDup) {
+        throw new Error(
+          "Ce numéro de téléphone existe déjà sur un autre dossier vérifié.",
+        );
+      }
+      const myHashes = new Set(profile.kycDocHashes ?? []);
+      for (const p of others) {
+        if (p.status === "rejete") continue;
+        for (const h of p.kycDocHashes ?? []) {
+          if (myHashes.has(h)) {
+            await ctx.db.patch(profile._id, {
+              status: "rejete",
+              kycFlag: `document déjà soumis par ${p.firstName} ${p.lastName}`,
+            });
+            throw new Error(
+              `Document identique à celui de ${p.firstName} ${p.lastName} — candidature refusée automatiquement (fraude).`,
+            );
+          }
+        }
+      }
+    }
     await ctx.db.patch(args.profileId, {
       status: args.decision,
       reviewNote: args.note,
@@ -1481,6 +1853,43 @@ export const adminReviewTechnician = mutation({
           : "Votre candidature n'a pas été retenue cette fois.",
       );
     }
+  },
+});
+
+/**
+ * V6 : demandes à chiffrer sur le terrain — le technicien vérifié établit le
+ * devis après la visite. Statuts « nouvelle » ou « devis_emis » seulement.
+ */
+export const listQuoteableRequests = query({
+  args: {},
+  handler: async (ctx) => {
+    const user = await requireUser(ctx);
+    if (user.role !== "admin") {
+      const profile = (
+        await ctx.db
+          .query("technicianProfiles")
+          .withIndex("by_user", (q) => q.eq("userId", user._id))
+          .collect()
+      )[0];
+      if (profile?.status !== "verifie") return [];
+    }
+    const all = await ctx.db.query("serviceRequests").collect();
+    const quoteable = all
+      .filter((r) => ["nouvelle", "devis_emis"].includes(r.status))
+      .sort((a, b) => b._creationTime - a._creationTime)
+      .slice(0, 30);
+    return await Promise.all(
+      quoteable.map(async (r) => {
+        const client = await ctx.db.get(r.clientId);
+        const quote = (
+          await ctx.db
+            .query("quotes")
+            .withIndex("by_request", (q) => q.eq("requestId", r._id))
+            .collect()
+        ).slice(-1)[0];
+        return { request: r, clientName: client?.name ?? "Client", existingQuote: quote };
+      }),
+    );
   },
 });
 
@@ -1708,6 +2117,25 @@ export const clientReception = mutation({
         .withIndex("by_request", (q) => q.eq("requestId", args.requestId))
         .collect()
     ).slice(-1)[0];
+    // V6 : le solde de 50 % doit être encaissé avant la signature du PV.
+    const allPayments = await ctx.db
+      .query("payments")
+      .withIndex("by_request", (q) => q.eq("requestId", args.requestId))
+      .collect();
+    const advanceValidated = allPayments.some(
+      (p) => p.milestone === "avance" && p.status === "valide",
+    );
+    const balanceValidated = allPayments.some(
+      (p) => p.milestone === "solde" && p.status === "valide",
+    );
+    if (!advanceValidated) {
+      throw new Error("L'avance de 50 % doit être payée avant la réception.");
+    }
+    if (!balanceValidated) {
+      throw new Error(
+        "Réglez d'abord le solde de 50 % (fin des travaux) pour signer le PV.",
+      );
+    }
     const number = await nextRef(ctx, "invoices", "FAC");
     await ctx.db.insert("invoices", {
       requestId: args.requestId,
@@ -2652,5 +3080,219 @@ export const adminRevenueSeries = query({
       .slice(0, 6);
 
     return { months, services };
+  },
+});
+
+// ===================== V6 : retraits (techniciens & administration) =====================
+
+/** Référence suivante pour les retraits (RET-0001). */
+async function nextWithdrawalRef(ctx: any): Promise<string> {
+  const all = await ctx.db.query("withdrawals").collect();
+  return `RET-${pad(all.length + 1)}`;
+}
+
+/**
+ * Solde retirable d'un utilisateur.
+ *  - technicien : rémunérations "payé" − retraits
+ *  - admin : commissions GTEC "payée" (15 % encaissées) − retraits
+ */
+export const myWallet = query({
+  args: {},
+  handler: async (ctx) => {
+    const user = await requireUser(ctx);
+    const isAdmin = user.role === "admin";
+    const wallet = await myWalletInternal(ctx, user._id, isAdmin);
+    const withdrawals = await ctx.db
+      .query("withdrawals")
+      .withIndex("by_user", (q: any) => q.eq("userId", user._id))
+      .collect();
+    return {
+      sourceRole: isAdmin ? ("admin" as const) : ("technicien" as const),
+      earned: wallet.earned,
+      withdrawn: wallet.withdrawn,
+      pending: wallet.pending,
+      available: wallet.available,
+      history: withdrawals.sort((a: any, b: any) => b.requestedAt - a.requestedAt),
+    };
+  },
+});
+
+/** Liste de tous les retraits (console admin). */
+export const adminListWithdrawals = query({
+  args: {},
+  handler: async (ctx) => {
+    await requireAdmin(ctx);
+    const all = await ctx.db
+      .query("withdrawals")
+      .filter((q: any) => q.ne(q.field("status"), "payee"))
+      .collect();
+    const sorted = [...all].sort((a: any, b: any) => b.requestedAt - a.requestedAt);
+    return await Promise.all(
+      sorted.map(async (w: any) => {
+        const user = await ctx.db.get(w.userId);
+        return { withdrawal: w, user };
+      }),
+    );
+  },
+});
+
+/**
+ * Demande de retrait — disponible pour les techniciens (sur leurs gains) ET
+ * pour l'administration (sur les commissions GTEC encaissées).
+ */
+export const requestWithdrawal = mutation({
+  args: {
+    sourceRole: v.optional(v.union(v.literal("technicien"), v.literal("admin"))),
+    amount: v.number(),
+    method: v.union(
+      v.literal("mtn_momo"),
+      v.literal("orange_money"),
+      v.literal("virement"),
+      v.literal("especes"),
+    ),
+    destination: v.string(),
+    destinationLabel: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const user = await requireUser(ctx);
+    const isAdmin = user.role === "admin";
+    const sourceRole = args.sourceRole ?? (isAdmin ? "admin" : "technicien");
+    if (isAdmin && args.sourceRole === "technicien") {
+      throw new Error("Un compte administrateur retire les commissions GTEC, pas des gains techniciens.");
+    }
+    if (!isAdmin && sourceRole === "admin") {
+      throw new Error("Seule l'administration peut retirer les commissions GTEC.");
+    }
+    if (args.amount < 1000) {
+      throw new Error("Montant minimum de retrait : 1 000 FCFA.");
+    }
+    if (!args.destination.trim()) {
+      throw new Error(
+        sourceRole === "admin"
+          ? "Indiquez le compte de réception des commissions (MoMo ou IBAN)."
+          : "Indiquez le numéro MoMo ou l'IBAN de réception.",
+      );
+    }
+    const wallet = await myWalletInternal(ctx, user._id, isAdmin);
+    if (args.amount > wallet.available) {
+      throw new Error(
+        `Solde insuffisant : disponible ${wallet.available.toLocaleString("fr-FR")} FCFA.`,
+      );
+    }
+    const reference = await nextWithdrawalRef(ctx);
+    const id = await ctx.db.insert("withdrawals", {
+      userId: user._id,
+      sourceRole,
+      amount: Math.round(args.amount),
+      currency: "FCFA",
+      method: args.method,
+      destination: args.destination.trim(),
+      destinationLabel: args.destinationLabel?.trim() || undefined,
+      status: "demande",
+      requestedAt: Date.now(),
+      reference,
+    });
+    await notifyAdmins(
+      ctx,
+      "general",
+      `Demande de retrait ${reference}`,
+      sourceRole === "admin"
+        ? `L'administration demande le retrait de ${args.amount.toLocaleString("fr-FR")} FCFA de commissions.`
+        : `${user.name ?? "Un technicien"} demande un retrait de ${args.amount.toLocaleString("fr-FR")} FCFA.`,
+    );
+    return id;
+  },
+});
+
+/** Solde interne (helper partagé par myWallet et requestWithdrawal). */
+async function myWalletInternal(ctx: any, userId: Id<"users">, isAdmin: boolean) {
+  let earned = 0;
+  if (isAdmin) {
+    const commissions = await ctx.db
+      .query("gtecCommissions")
+      .filter((q: any) => q.eq(q.field("status"), "payee"))
+      .collect();
+    earned = commissions.reduce((s: number, c: any) => s + c.amount, 0);
+  } else {
+    const payouts = await ctx.db.query("payouts").collect();
+    earned = payouts
+      .filter((p: any) => p.techUserId === userId && p.status === "payé")
+      .reduce((s: number, p: any) => s + p.amount, 0);
+  }
+  const withdrawals = await ctx.db
+    .query("withdrawals")
+    .withIndex("by_user", (q: any) => q.eq("userId", userId))
+    .collect();
+  const withdrawn = withdrawals
+    .filter((w: any) => w.status === "payee")
+    .reduce((s: number, w: any) => s + w.amount, 0);
+  const pending = withdrawals
+    .filter((w: any) => w.status === "demande" || w.status === "approuve")
+    .reduce((s: number, w: any) => s + w.amount, 0);
+  return { earned, withdrawn, pending, available: Math.max(0, earned - withdrawn - pending) };
+}
+
+/** Traitement d'une demande de retrait par l'administration. */
+export const adminProcessWithdrawal = mutation({
+  args: {
+    withdrawalId: v.id("withdrawals"),
+    decision: v.union(v.literal("approuve"), v.literal("payee"), v.literal("refuse")),
+    note: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const admin = await requireAdmin(ctx);
+    const w = await ctx.db.get(args.withdrawalId);
+    if (!w) throw new Error("Retrait introuvable.");
+    if (w.status === "payee" || w.status === "refuse") {
+      throw new Error("Ce retrait est déjà clôturé.");
+    }
+    if (args.decision === "refuse") {
+      await ctx.db.patch(args.withdrawalId, {
+        status: "refuse",
+        processedAt: Date.now(),
+        processedBy: admin._id,
+        note: args.note,
+      });
+      await notify(
+        ctx,
+        w.userId,
+        "general",
+        `Retrait ${w.reference} refusé`,
+        args.note ?? "Votre demande de retrait n'a pas été approuvée.",
+      );
+      return;
+    }
+    if (args.decision === "approuve" && w.status !== "demande") {
+      throw new Error("Seule une demande peut être approuvée.");
+    }
+    if (args.decision === "payee") {
+      await ctx.db.patch(args.withdrawalId, {
+        status: "payee",
+        processedAt: Date.now(),
+        processedBy: admin._id,
+        note: args.note,
+      });
+      await notify(
+        ctx,
+        w.userId,
+        "general",
+        `Retrait ${w.reference} payé`,
+        `${w.amount.toLocaleString("fr-FR")} FCFA ont été transférés vers ${w.destination}.`,
+      );
+      return;
+    }
+    await ctx.db.patch(args.withdrawalId, {
+      status: "approuve",
+      processedAt: Date.now(),
+      processedBy: admin._id,
+      note: args.note,
+    });
+    await notify(
+      ctx,
+      w.userId,
+      "general",
+      `Retrait ${w.reference} approuvé`,
+      "Votre demande est validée — le transfert sera effectué par l'administration.",
+    );
   },
 });

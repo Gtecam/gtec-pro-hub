@@ -320,10 +320,10 @@ export const STATUS_META: Record<
     hint: "Réglez le devis par Mobile Money pour lancer l'intervention.",
   },
   paye: {
-    label: "Paiement validé",
+    label: "Avance payée",
     stepIndex: 4,
     variant: "sky",
-    hint: "GTEC affecte votre équipe d'intervention.",
+    hint: "Avance de 50 % reçue — GTEC affecte votre équipe.",
   },
   affectee: {
     label: "Équipe affectée",
@@ -335,13 +335,13 @@ export const STATUS_META: Record<
     label: "En intervention",
     stepIndex: 5,
     variant: "sky",
-    hint: "L'équipe travaille sur place.",
+    hint: "L'équipe travaille sur place. Le solde (50 %) sera exigé à la fin des travaux.",
   },
   rapport_emis: {
     label: "Rapport à réceptionner",
     stepIndex: 7,
     variant: "amber",
-    hint: "Vérifiez le travail, puis signez le PV de réception.",
+    hint: "Réglez le solde (50 %) puis vérifiez le travail et signez le PV.",
   },
   terminee: {
     label: "Terminée",
@@ -382,12 +382,28 @@ export function clientNextAction(status: string): string | null {
     case "devis_emis":
       return "Valider le devis";
     case "devis_accepte":
-      return "Payer le devis";
+      return "Payer l'avance (50 %)";
     case "rapport_emis":
-      return "Signer le PV";
+      return "Payer le solde & signer le PV";
     default:
       return null;
   }
+}
+
+// ---------- paiement en 2 tranches (V6 : 50 % avant / 50 % après) ----------
+
+export const ADVANCE_PERCENT = 50; // tranche 1 : AVANT le début des travaux
+export const BALANCE_PERCENT = 50; // tranche 2 : à la fin des travaux
+
+export const MILESTONE_LABELS: Record<string, string> = {
+  avance: "Avance — avant les travaux",
+  solde: "Solde — à la fin des travaux",
+};
+
+/** Parts de chaque tranche (arrondiFCFA, le solde absorbe la différence). */
+export function splitFiftyFifty(total: number): { advance: number; balance: number } {
+  const advance = Math.round((total * ADVANCE_PERCENT) / 100);
+  return { advance, balance: Math.max(0, total - advance) };
 }
 
 // ---------- suggestion d'équipe (moteur d'affectation simplifié V1) ----------
@@ -407,6 +423,129 @@ const TEAM_RULES: Record<string, { leaderHint: string; members: string[] }> = {
   fourniture: { leaderHint: "CFO", members: [] },
 };
 
+/**
+ * Coordonnées approximatives des villes d'intervention (moteur géo V6).
+ * Elles servent à rapprocher l'équipe du chantier : la distance par
+ * haversine trie les techniciens du plus proche au plus éloigné.
+ */
+export const CITY_GEO: Record<string, { lat: number; lon: number }> = {
+  Douala: { lat: 4.0511, lon: 9.7679 },
+  Yaoundé: { lat: 3.848, lon: 11.5021 },
+  Bafoussam: { lat: 5.4781, lon: 10.4179 },
+  Buea: { lat: 4.1527, lon: 9.241 },
+  Garoua: { lat: 9.3265, lon: 13.3981 },
+};
+
+/** Distance approximative en km entre deux villes (haversine). */
+export function cityDistanceKm(a: string, b: string): number {
+  const A = CITY_GEO[a];
+  const B = CITY_GEO[b];
+  if (!A || !B) return 9999; // ville inconnue : pire score
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const dLat = toRad(B.lat - A.lat);
+  const dLon = toRad(B.lon - A.lon);
+  const lat1 = toRad(A.lat);
+  const lat2 = toRad(B.lat);
+  const h =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) ** 2;
+  return Math.round(2 * 6371 * Math.asin(Math.sqrt(h)));
+}
+
+/**
+ * V6 : constitution d'équipe (≥ 2 personnes) selon la zone géographique et
+ * la spécialité du chantier, puis choix du chef d'équipe selon des critères
+ * objectifs. Le même code sert au dashboard admin (suggestion) et au backend.
+ */
+export type CrewCandidate = {
+  id: string;
+  name: string;
+  city?: string;
+  /** Villes d'intervention déclarées (profil technicien). */
+  zones?: string[];
+  specialty?: string;
+  /** Années d'expérience. */
+  experienceYears?: number;
+  /** Note client moyenne (1-5). */
+  rating?: number;
+  /** Nombre d'interventions réalisées. */
+  missionCount?: number;
+  /** Abonnement actif — sinon exclu par défaut. */
+  active?: boolean;
+  /** Dossier KYC vérifié par l'administration. */
+  verified?: boolean;
+};
+
+/** Chef d'équipe : score = expérience pondérée + note client + ancienneté. */
+export function pickTeamLeader(
+  candidates: CrewCandidate[],
+): { leaderId: string | null; scores: { id: string; score: number }[] } {
+  const scored = candidates.map((t) => {
+    const exp = Math.min(t.experienceYears ?? 0, 30); // cap à 30 ans
+    const rating = t.rating ?? 3.5;
+    const missions = Math.min(t.missionCount ?? 0, 100);
+    const score = exp * 1.0 + rating * 4 + missions * 0.2;
+    return { id: t.id, score: Math.round(score * 10) / 10 };
+  });
+  const best = [...scored].sort((a, b) => b.score - a.score)[0];
+  return { leaderId: best?.id ?? null, scores: scored };
+}
+
+/**
+ * Moteur géo V6 : filtre par abonnement, trie par proximité de la ville du
+ * chantier puis par couverture de zone et spécialité, garantit au moins
+ * 2 membres (leader + 1) et désigne le chef selon les critères GTEC.
+ */
+export function suggestTeam(
+  serviceKey: string,
+  requestCity: string,
+  techs: CrewCandidate[],
+  minSize = 2,
+): { leaderId: string | null; memberIds: string[]; total: number; reason: string } {
+  const pool = techs.filter((t) => t.active !== false);
+  if (pool.length === 0) {
+    return { leaderId: null, memberIds: [], total: 0, reason: "Aucun technicien disponible" };
+  }
+  const rule = TEAM_RULES[serviceKey] ?? TEAM_RULES.cfo;
+  const matches = (specialty: string | undefined, hint: string) =>
+    !!specialty && specialty.toLowerCase().includes(hint.toLowerCase());
+  const zoneOf = (t: CrewCandidate) =>
+    t.zones?.length ? t.zones : t.city ? [t.city] : [];
+
+  // Score : proximité géo (dominant) + zone couverte + spécialité + KYC.
+  const scored = pool
+    .map((t) => {
+      const zones = zoneOf(t);
+      const distances = zones
+        .map((c) => (c === requestCity ? 0 : cityDistanceKm(requestCity, c)))
+        .filter((d) => d < 9999);
+      const distance = distances.length ? Math.min(...distances) : 9999;
+      const specialtyFit = [rule.leaderHint, ...rule.members].some((hint) =>
+        matches(t.specialty, hint),
+      );
+      const kycBonus = t.verified === false ? -25 : 0;
+      const score = 100 - distance * 0.8 + (specialtyFit ? 20 : 0) + kycBonus;
+      return { tech: t, distance, score };
+    })
+    .sort((a, b) => b.score - a.score);
+
+  const chosen = scored.slice(0, Math.max(minSize, 0));
+  const { leaderId } = pickTeamLeader(chosen.map((c) => c.tech));
+  const memberIds = chosen.map((c) => c.tech.id).filter((id) => id !== leaderId);
+  const avgDistance = chosen.length
+    ? Math.round(chosen.reduce((s, c) => s + c.distance, 0) / chosen.length)
+    : 0;
+  const reason =
+    chosen.length === 0
+      ? "Aucun technicien disponible"
+      : `Équipe de ${chosen.length} · proximité ${requestCity}${avgDistance ? ` (${avgDistance} km)` : ""}${chosen.some((c) => matches(c.tech.specialty, rule.leaderHint)) ? " · spécialité" : ""}`;
+  return { leaderId, memberIds, total: memberIds.length + (leaderId ? 1 : 0), reason };
+}
+
+/**
+ * Ancien moteur conservé pour compat (suggestion par spécialité seule) —
+ * utilisé comme repli si la ville du chantier est inconnue.
+ */
 export function suggestCrew(
   serviceKey: string,
   techs: { id: string; name: string; specialty?: string }[],

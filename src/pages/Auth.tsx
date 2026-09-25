@@ -22,7 +22,6 @@ import {
   Loader2,
   Mail,
   UserRound,
-  UserX,
   Wrench,
 } from "lucide-react";
 import { Suspense, useEffect, useState } from "react";
@@ -143,21 +142,6 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
       setIsLoading(false);
 
       setOtp("");
-    }
-  };
-
-  const handleGuestLogin = async () => {
-    setIsLoading(true);
-    setError(null);
-    try {
-      await signIn("anonymous");
-      // Navigation gérée par l'effet d'enregistrement de l'espace.
-    } catch (error) {
-      console.error("Guest login error:", error);
-      setError(
-        `Connexion invité impossible : ${error instanceof Error ? error.message : "erreur inconnue"}`,
-      );
-      setIsLoading(false);
     }
   };
 
@@ -309,16 +293,10 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
                           </div>
                         </div>
 
-                        <Button
-                          type="button"
-                          variant="outline"
-                          className="w-full mt-4"
-                          onClick={handleGuestLogin}
-                          disabled={isLoading}
-                        >
-                          <UserX className="mr-2 h-4 w-4" />
-                          Continuer en mode invité
-                        </Button>
+                        <p className="mt-4 text-center text-xs text-muted-foreground">
+                          Connexion 100 % sécurisée par code e-mail — le mode
+                          invité n'est plus disponible.
+                        </p>
 
                         <Button
                           type="button"
