@@ -428,6 +428,38 @@ const TEAM_RULES: Record<string, { leaderHint: string; members: string[] }> = {
  * Elles servent à rapprocher l'équipe du chantier : la distance par
  * haversine trie les techniciens du plus proche au plus éloigné.
  */
+// ===== Téléphone Cameroun (+237) — authentification et profils =====
+
+export const CM_COUNTRY_CODE = "+237";
+
+/** Préfixes mobiles camerounais (MTN, Orange, Nexttel/Vanco, Camtel). */
+const CM_MOBILE_PREFIXES = [
+  "67", "68", "650", "651", "652", "653", "654", "655", "656", "657",
+  "658", "659", "66", "680", "681", "682", "683", "69", "62", "242", "243",
+  "233", "222",
+];
+
+/**
+ * Convertit une saisie en numéro camerounais : renvoie les 9 chiffres locaux
+ * (ex. "655094228") ou null si le numéro n'est pas un mobile camerounais.
+ * Accepte 9 chiffres, +237…, 237… ou 00 237….
+ */
+export function toCmLocal(raw: string): string | null {
+  let digits = raw.replace(/\D/g, "");
+  if (digits.startsWith("00237")) digits = digits.slice(5);
+  else if (digits.startsWith("237")) digits = digits.slice(3);
+  if (digits.length !== 9) return null;
+  if (!CM_MOBILE_PREFIXES.some((p) => digits.startsWith(p))) return null;
+  return digits;
+}
+
+/** Affichage lisible : "655 09 42 28" (+ indicatif en option). */
+export function formatCmPhone(local9: string, withCode = false): string {
+  const d = local9.replace(/\D/g, "").slice(-9);
+  const pretty = `${d.slice(0, 3)} ${d.slice(3, 5)} ${d.slice(5, 7)} ${d.slice(7, 9)}`;
+  return withCode ? `${CM_COUNTRY_CODE} ${pretty}` : pretty;
+}
+
 export const CITY_GEO: Record<string, { lat: number; lon: number }> = {
   Douala: { lat: 4.0511, lon: 9.7679 },
   Yaoundé: { lat: 3.848, lon: 11.5021 },

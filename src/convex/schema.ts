@@ -541,6 +541,19 @@ const schema = defineSchema(
     }).index("by_user", ["userId"]),
 
     /**
+     * Écho de l'OTP de connexion (provider phone-otp) — utilisé uniquement
+     * quand l'envoi SMS est impossible (Twilio non configuré) : le client
+     * peut alors consulter son dernier code via une query dédiée.
+     * En production (clés Twilio présentes), aucune ligne n'est écrite.
+     */
+    authSmsEcho: defineTable({
+      phone: v.string(), // E.164
+      code: v.string(), // code en clair — UNIQUEMENT en mode démo
+      createdAt: v.number(),
+      expiresAt: v.number(),
+    }).index("by_phone", ["phone"]),
+
+    /**
      * File d'envoi des e-mails transactionnels (Resend) — un enregistrement
      * par e-mail à envoyer, alimenté par les notifications du parcours.
      */

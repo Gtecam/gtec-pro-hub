@@ -21,11 +21,13 @@ import {
   ArrowRight,
   Loader2,
   Mail,
+  Phone,
   UserRound,
   Wrench,
 } from "lucide-react";
+import { CM_COUNTRY_CODE, formatCmPhone, toCmLocal } from "@/lib/gtec";
 import { Suspense, useEffect, useState } from "react";
-import { useMutation } from "convex/react";
+import { useMutation, useQuery } from "convex/react";
 import { toast } from "sonner";
 import { useNavigate, useSearchParams } from "react-router";
 
@@ -58,10 +60,21 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
   // Écran 1 : choix de l'espace (client ou technicien) — écran 2 : connexion.
   const [space, setSpace] = useState<AccountType | null>(null);
   const [registered, setRegistered] = useState(false);
-  const [step, setStep] = useState<"signIn" | { email: string }>("signIn");
+  const [method, setMethod] = useState<"phone" | "email">("phone");
+  const [step, setStep] = useState<
+    "signIn" | { email?: string; phone?: string }
+  >("signIn");
+  const [phoneLocal, setPhoneLocal] = useState("");
   const [otp, setOtp] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Mode démo (Twilio non configuré) : le dernier code envoyé au numéro
+  // saisi est lisible ici pour permettre la connexion depuis la preview.
+  const demoCode = useQuery(
+    api.sms.peekAuthSmsEcho,
+    step !== "signIn" && step.phone ? { phone: step.phone } : "skip",
+  );
 
   // Déjà connecté avec un espace défini : on entre directement.
   useEffect(() => {
@@ -125,13 +138,46 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
     }
   };
 
-  const handleOtpSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
+  /** Connexion par numéro camerounais : envoi du code par SMS. */
+  const handlePhoneSubmit = async () => {
+    const local = toCmLocal(phoneLocal);
+    if (!local) {
+      setError("Numéro camerounais invalide. Exemple : 655 09 42 28.");
+      return;
+    }
     setIsLoading(true);
     setError(null);
     try {
-      const formData = new FormData(event.currentTarget);
-      await signIn("email-otp", formData);
+      const formData = new FormData();
+      formData.set("phone", `${CM_COUNTRY_CODE}${local}`);
+      await signIn("phone-otp", formData);
+      setStep({ phone: local });
+      setIsLoading(false);
+    } catch (error) {
+      console.error("Phone sign-in error:", error);
+      setError(
+        error instanceof Error
+          ? error.message
+          : "Échec de l'envoi du SMS. Réessayez.",
+      );
+      setIsLoading(false);
+    }
+  };
+
+  const handleOtpSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (step === "signIn") return;
+    setIsLoading(true);
+    setError(null);
+    try {
+      const formData = new FormData();
+      if (step.phone) {
+        formData.set("phone", `${CM_COUNTRY_CODE}${step.phone}`);
+      } else if (step.email) {
+        formData.set("email", step.email);
+      }
+      formData.set("code", otp);
+      await signIn(step.phone ? "phone-otp" : "email-otp", formData);
 
       // L'enregistrement du type d'espace + navigation se font dans l'effet
       // qui observe l'utilisateur fraîchement connecté.
@@ -246,86 +292,165 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
                         : "Espace client"}
                     </CardTitle>
                     <CardDescription>
-                      Entrez votre email pour vous connecter ou créer votre
-                      compte {space === "technicien" ? "technicien" : "client"}
+                      {method === "phone"
+                        ? "Entrez votre numéro de téléphone camerounais pour vous connecter ou créer votre compte."
+                        : `Entrez votre email pour vous connecter ou créer votre compte ${space === "technicien" ? "technicien" : "client"}.`}
                     </CardDescription>
                   </CardHeader>
-                  <form onSubmit={handleEmailSubmit}>
-                    <CardContent>
-                      <div className="relative flex items-center gap-2">
-                        <div className="relative flex-1">
-                          <Mail className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                          <Input
-                            name="email"
-                            placeholder="name@example.com"
-                            type="email"
-                            className="pl-9"
-                            disabled={isLoading}
-                            required
-                          />
-                        </div>
-                        <Button
-                          type="submit"
-                          variant="outline"
-                          size="icon"
-                          disabled={isLoading}
-                        >
-                          {isLoading ? (
-                            <Loader2 className="h-4 w-4 animate-spin" />
-                          ) : (
-                            <ArrowRight className="h-4 w-4" />
-                          )}
-                        </Button>
-                      </div>
-                      {error && (
-                        <p className="mt-2 text-sm text-destructive">{error}</p>
-                      )}
-
-                      <div className="mt-4">
-                        <div className="relative">
-                          <div className="absolute inset-0 flex items-center">
-                            <span className="w-full border-t" />
-                          </div>
-                          <div className="relative flex justify-center text-xs uppercase">
-                            <span className="bg-background px-2 text-muted-foreground">
-                              Ou
+                  {method === "phone" ? (
+                    <form
+                      onSubmit={(e) => {
+                        e.preventDefault();
+                        handlePhoneSubmit();
+                      }}
+                    >
+                      <CardContent>
+                        <div className="flex items-center gap-2">
+                          <div className="relative flex flex-1 items-center">
+                            <Phone className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                            <span className="absolute left-9 select-none text-sm font-medium text-muted-foreground">
+                              {CM_COUNTRY_CODE}
                             </span>
+                            <Input
+                              value={phoneLocal}
+                              onChange={(e) => {
+                                setPhoneLocal(e.target.value);
+                                setError(null);
+                              }}
+                              placeholder="6XX XX XX XX"
+                              inputMode="numeric"
+                              autoComplete="tel-national"
+                              className="pl-20 tracking-wide"
+                              disabled={isLoading}
+                            />
                           </div>
+                          <Button
+                            type="submit"
+                            variant="outline"
+                            size="icon"
+                            disabled={isLoading}
+                          >
+                            {isLoading ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <ArrowRight className="h-4 w-4" />
+                            )}
+                          </Button>
                         </div>
-
-                        <p className="mt-4 text-center text-xs text-muted-foreground">
-                          Connexion 100 % sécurisée par code e-mail — le mode
-                          invité n'est plus disponible.
+                        {phoneLocal && toCmLocal(phoneLocal) && (
+                          <p className="mt-2 text-xs text-muted-foreground">
+                            {formatCmPhone(toCmLocal(phoneLocal)!)} — MTN / Orange
+                            / Nexttel / Camtel
+                          </p>
+                        )}
+                        {error && (
+                          <p className="mt-2 text-sm text-destructive">{error}</p>
+                        )}
+                        <p className="mt-3 text-xs text-muted-foreground">
+                          Un code de connexion vous sera envoyé par SMS.
                         </p>
-
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          className="w-full mt-2"
-                          onClick={() => {
-                            setSpace(null);
-                            setStep("signIn");
-                            setError(null);
-                          }}
-                          disabled={isLoading}
-                        >
-                          Changer d'espace
-                        </Button>
+                      </CardContent>
+                    </form>
+                  ) : (
+                    <form onSubmit={handleEmailSubmit}>
+                      <CardContent>
+                        <div className="relative flex items-center gap-2">
+                          <div className="relative flex-1">
+                            <Mail className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                            <Input
+                              name="email"
+                              placeholder="name@example.com"
+                              type="email"
+                              className="pl-9"
+                              disabled={isLoading}
+                              required
+                            />
+                          </div>
+                          <Button
+                            type="submit"
+                            variant="outline"
+                            size="icon"
+                            disabled={isLoading}
+                          >
+                            {isLoading ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <ArrowRight className="h-4 w-4" />
+                            )}
+                          </Button>
+                        </div>
+                        {error && (
+                          <p className="mt-2 text-sm text-destructive">{error}</p>
+                        )}
+                      </CardContent>
+                    </form>
+                  )}
+                  <CardContent>
+                    <div className="relative">
+                      <div className="absolute inset-0 flex items-center">
+                        <span className="w-full border-t" />
                       </div>
-                    </CardContent>
-                  </form>
+                      <div className="relative flex justify-center text-xs uppercase">
+                        <span className="bg-background px-2 text-muted-foreground">
+                          Ou
+                        </span>
+                      </div>
+                    </div>
+
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      className="mt-3 w-full"
+                      onClick={() => {
+                        setMethod(method === "phone" ? "email" : "phone");
+                        setError(null);
+                      }}
+                      disabled={isLoading}
+                    >
+                      {method === "phone"
+                        ? "Continuer avec un e-mail"
+                        : "Continuer avec un numéro camerounais"}
+                    </Button>
+
+                    <p className="mt-3 text-center text-xs text-muted-foreground">
+                      Connexion 100 % sécurisée par code unique — le mode
+                      invité n'est plus disponible.
+                    </p>
+
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      className="mt-2 w-full"
+                      onClick={() => {
+                        setSpace(null);
+                        setStep("signIn");
+                        setError(null);
+                      }}
+                      disabled={isLoading}
+                    >
+                      Changer d'espace
+                    </Button>
+                  </CardContent>
                 </>
               ) : (
                 <>
                   <CardHeader className="text-center mt-4">
-                    <CardTitle>Vérifiez votre boîte mail</CardTitle>
+                    <CardTitle>
+                      {step.phone
+                        ? "Vérifiez vos SMS"
+                        : "Vérifiez votre boîte mail"}
+                    </CardTitle>
                     <CardDescription>
-                      Un code à 6 chiffres a été envoyé à {step.email}
+                      Un code à 6 chiffres a été envoyé à{" "}
+                      <span className="font-medium text-foreground">
+                        {step.phone
+                          ? `${CM_COUNTRY_CODE} ${formatCmPhone(step.phone)}`
+                          : step.email}
+                      </span>
                     </CardDescription>
                   </CardHeader>
                   <form onSubmit={handleOtpSubmit}>
                     <CardContent className="pb-4">
-                      <input type="hidden" name="email" value={step.email} />
                       <input type="hidden" name="code" value={otp} />
 
                       <div className="flex justify-center">
@@ -361,12 +486,27 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
                           {error}
                         </p>
                       )}
+                      {step.phone && demoCode && (
+                        <p className="mt-3 rounded-lg border border-dashed border-border bg-muted/60 px-3 py-2 text-center text-xs text-muted-foreground">
+                          Mode démo — SMS non configuré. Code de connexion :{" "}
+                          <span className="font-mono text-sm font-bold tracking-widest text-foreground">
+                            {demoCode.code}
+                          </span>
+                        </p>
+                      )}
                       <p className="text-sm text-muted-foreground text-center mt-4">
                         Code non reçu ?{" "}
                         <Button
                           variant="link"
-                          className="p-0 h-auto"
-                          onClick={() => setStep("signIn")}
+                          className="h-auto p-0"
+                          disabled={isLoading}
+                          onClick={() => {
+                            if (step.phone) {
+                              handlePhoneSubmit();
+                            } else {
+                              setStep("signIn");
+                            }
+                          }}
                         >
                           Renvoyer
                         </Button>
@@ -397,7 +537,7 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
                         disabled={isLoading}
                         className="w-full"
                       >
-                        Utiliser un autre email
+                        Modifier le numéro ou l'e-mail
                       </Button>
                     </CardFooter>
                   </form>

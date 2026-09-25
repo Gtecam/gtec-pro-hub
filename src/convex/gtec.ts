@@ -7,9 +7,24 @@ import {
   payoutFor,
   splitFiftyFifty,
   suggestTeam,
+  toCmLocal,
   ADVANCE_PERCENT,
   BALANCE_PERCENT,
 } from "../lib/gtec";
+
+/**
+ * Normalise un numéro camerounais validé en E.164 (+237XXXXXXXX).
+ * Lève une erreur explicite si le numéro n'est pas un mobile camerounais.
+ */
+function cmE164(raw: string): string {
+  const local = toCmLocal(raw);
+  if (!local) {
+    throw new Error(
+      "Numéro camerounais invalide. Format attendu : 6XX XX XX XX (MTN/Orange/Nexttel).",
+    );
+  }
+  return `+237${local}`;
+}
 
 // ---------- helpers ----------
 
@@ -170,7 +185,7 @@ export const setAccountType = mutation({
     await ctx.db.patch(user._id, {
       accountType: args.accountType,
       ...(args.name?.trim() ? { name: args.name.trim() } : {}),
-      ...(args.phone?.trim() ? { phone: args.phone.trim() } : {}),
+      ...(args.phone?.trim() ? { phone: cmE164(args.phone) } : {}),
     });
   },
 });
@@ -183,9 +198,14 @@ export const updateClientProfile = mutation({
   },
   handler: async (ctx, args) => {
     const user = await requireUser(ctx);
+    if (args.phone?.trim() && !toCmLocal(args.phone)) {
+      throw new Error(
+        "Numéro camerounais invalide. Format attendu : 6XX XX XX XX (MTN/Orange/Nexttel).",
+      );
+    }
     await ctx.db.patch(user._id, {
       name: args.name,
-      phone: args.phone,
+      ...(args.phone?.trim() ? { phone: cmE164(args.phone) } : {}),
       city: args.city,
     });
   },
@@ -223,8 +243,10 @@ export const updateClientIdentity = mutation({
     if (args.nationalId.trim().length < 6) {
       throw new Error("Numéro CNI / passeport invalide.");
     }
-    if (args.phone.trim().length < 6) {
-      throw new Error("Numéro de téléphone invalide.");
+    if (!toCmLocal(args.phone)) {
+      throw new Error(
+        "Numéro camerounais invalide. Format attendu : 6XX XX XX XX (MTN/Orange/Nexttel).",
+      );
     }
     if (!args.address.trim()) {
       throw new Error("Indiquez votre adresse.");
@@ -239,8 +261,8 @@ export const updateClientIdentity = mutation({
       nationalId: args.nationalId.trim(),
       gender: args.gender || undefined,
       birthDate: args.birthDate || undefined,
-      phone: args.phone.trim(),
-      altPhone: args.altPhone?.trim() || undefined,
+      phone: cmE164(args.phone),
+      altPhone: args.altPhone?.trim() ? cmE164(args.altPhone) : undefined,
       city: args.city,
       address: args.address.trim(),
       quarter: args.quarter?.trim() || undefined,
@@ -306,7 +328,7 @@ export const adminCreateTechnician = mutation({
       .collect();
     const id = await ctx.db.insert("users", {
       name: args.name,
-      phone: args.phone,
+      phone: args.phone?.trim() ? cmE164(args.phone) : undefined,
       role: "member",
       city: args.specialty,
     });
@@ -1421,8 +1443,10 @@ export const submitTechnicianApplication = mutation({
     if (args.nationalId.trim().length < 6) {
       throw new Error("Numéro CNI / passeport invalide.");
     }
-    if (args.phone.trim().length < 6) {
-      throw new Error("Numéro de téléphone invalide.");
+    if (!toCmLocal(args.phone)) {
+      throw new Error(
+        "Numéro camerounais invalide. Format attendu : 6XX XX XX XX (MTN/Orange/Nexttel).",
+      );
     }
     if (!args.city.trim()) {
       throw new Error("Indiquez votre ville de résidence.");
@@ -1489,8 +1513,8 @@ export const submitTechnicianApplication = mutation({
         nationalId: args.nationalId.trim(),
         gender: args.gender || undefined,
         birthDate: args.birthDate || undefined,
-        phone: args.phone.trim(),
-        altPhone: args.altPhone?.trim() || undefined,
+        phone: cmE164(args.phone),
+        altPhone: args.altPhone?.trim() ? cmE164(args.altPhone) : undefined,
         city: args.city.trim(),
         address: args.address?.trim() || undefined,
         specialty: args.specialty.trim(),
@@ -1549,8 +1573,8 @@ export const submitTechnicianApplication = mutation({
       nationalId: args.nationalId.trim(),
       gender: args.gender || undefined,
       birthDate: args.birthDate || undefined,
-      phone: args.phone.trim(),
-      altPhone: args.altPhone?.trim() || undefined,
+      phone: cmE164(args.phone),
+      altPhone: args.altPhone?.trim() ? cmE164(args.altPhone) : undefined,
       city: args.city.trim(),
       address: args.address?.trim() || undefined,
       specialty: args.specialty.trim(),
@@ -1572,7 +1596,7 @@ export const submitTechnicianApplication = mutation({
     // Le nom du compte est mis à jour à partir de l'identité déclarée.
     await ctx.db.patch(user._id, {
       name: `${args.firstName.trim()} ${args.lastName.trim()}`.trim(),
-      phone: args.phone.trim(),
+      phone: cmE164(args.phone),
     });
   },
 });
