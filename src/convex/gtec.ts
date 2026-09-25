@@ -371,6 +371,10 @@ export const createRequest = mutation({
     address: v.string(),
     city: v.string(),
     photos: v.array(v.string()),
+    /** GPS du chantier (position du client au moment de la demande). */
+    coords: v.optional(
+      v.object({ lat: v.number(), lon: v.number(), accuracy: v.optional(v.number()) }),
+    ),
   },
   handler: async (ctx, args) => {
     const user = await requireUser(ctx);
@@ -385,6 +389,7 @@ export const createRequest = mutation({
       address: args.address,
       city: args.city,
       photos: args.photos,
+      ...(args.coords ? { coords: args.coords, coordsAt: Date.now() } : {}),
       status: "nouvelle",
     });
     await addEvent(
@@ -392,7 +397,7 @@ export const createRequest = mutation({
       id,
       "demande",
       "Demande créée",
-      `${args.serviceKey} · ${args.city}`,
+      `${args.serviceKey} · ${args.city}${args.coords ? " · position GPS enregistrée" : ""}`,
     );
     return id;
   },
@@ -1197,12 +1202,25 @@ export const adminAssignCrew = mutation({
       dateStyle: "medium",
       timeStyle: "short",
     });
+    // Positions GPS connues dans l'équipe (info logistique, non bloquant).
+    const gpsKnown = await Promise.all(
+      members.map(async (m) => {
+        const p = (
+          await ctx.db
+            .query("technicianProfiles")
+            .withIndex("by_user", (q) => q.eq("userId", m.id))
+            .collect()
+        )[0];
+        return !!p?.lastLocation;
+      }),
+    );
+    const gpsCount = gpsKnown.filter(Boolean).length;
     await addEvent(
       ctx,
       args.requestId,
       "affectation",
       `Équipe affectée · ${members.length} technicien(s) (min. 2 appliqué)`,
-      `Intervention prévue le ${date}`,
+      `Intervention prévue le ${date}${gpsCount ? ` · ${gpsCount} position(s) GPS disponible(s)` : ""}`,
     );
 
     // La commission (créée au paiement de l'avance) passe au nom du chef
@@ -1294,10 +1312,19 @@ export const suggestTeamForRequest = query({
           missionCount,
           active: profile ? subscriptionActive(profile) : true,
           verified: profile?.status === "verifie" || !profile,
+          gps: profile?.lastLocation
+            ? { lat: profile.lastLocation.lat, lon: profile.lastLocation.lon }
+            : undefined,
         };
       }),
     );
-    return suggestTeam(request.serviceKey, request.city, enriched, 2);
+    return suggestTeam(
+      request.serviceKey,
+      request.city,
+      enriched,
+      2,
+      request.coords ? { lat: request.coords.lat, lon: request.coords.lon } : undefined,
+    );
   },
 });
 
@@ -1378,6 +1405,79 @@ export const adminSubmitReport = mutation({
 });
 
 // ---------- espace technicien ----------
+
+// ---------- GPS technicien (V6) ----------
+
+/**
+ * Enregistre la position GPS du technicien connecté (bouton « Partager ma
+ * position » ou suivi temps réel côté app). Aucune géolocalisation de fond :
+ * le technicien garde la main sur l'activation et la désactivation.
+ */
+export const updateTechnicianLocation = mutation({
+  args: {
+    lat: v.optional(v.number()),
+    lon: v.optional(v.number()),
+    accuracy: v.optional(v.number()),
+    /** Active/désactive le partage temps réel. */
+    sharing: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args) => {
+    const user = await requireUser(ctx);
+    const profile = (
+      await ctx.db
+        .query("technicianProfiles")
+        .withIndex("by_user", (q) => q.eq("userId", user._id))
+        .collect()
+    )[0];
+    if (!profile) {
+      throw new Error(
+        "Le partage GPS est disponible après l'envoi de votre dossier technicien.",
+      );
+    }
+    // Garde-fous anti-aberration.
+    if (
+      (args.lat !== undefined && Math.abs(args.lat) > 90) ||
+      (args.lon !== undefined && Math.abs(args.lon) > 180) ||
+      (args.lat === 0 && args.lon === 0)
+    ) {
+      throw new Error("Coordonnées GPS invalides.");
+    }
+    const hasFix = args.lat !== undefined && args.lon !== undefined;
+    await ctx.db.patch(profile._id, {
+      ...(hasFix
+        ? {
+            lastLocation: {
+              lat: args.lat!,
+              lon: args.lon!,
+              ...(args.accuracy !== undefined
+                ? { accuracy: args.accuracy }
+                : {}),
+            },
+            lastLocationAt: Date.now(),
+          }
+        : {}),
+      ...(args.sharing !== undefined ? { locationSharing: args.sharing } : {}),
+    });
+    return { ok: true };
+  },
+});
+
+/** Désactive le partage GPS (position conservée mais marquée ancienne). */
+export const stopTechnicianLocationSharing = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const user = await requireUser(ctx);
+    const profile = (
+      await ctx.db
+        .query("technicianProfiles")
+        .withIndex("by_user", (q) => q.eq("userId", user._id))
+        .collect()
+    )[0];
+    if (!profile) throw new Error("Profil technicien introuvable.");
+    await ctx.db.patch(profile._id, { locationSharing: false });
+    return { ok: true };
+  },
+});
 
 export const myTechnicianProfile = query({
   args: {},
@@ -1798,6 +1898,11 @@ export const adminListAssignableTechnicians = query({
           subscriptionUntil: profile?.subscriptionUntil,
           active: profile ? active : true,
           verified: profile?.status === "verifie" || !profile,
+          gps: profile?.lastLocation
+            ? { lat: profile.lastLocation.lat, lon: profile.lastLocation.lon }
+            : undefined,
+          gpsAt: profile?.lastLocationAt,
+          sharing: profile?.locationSharing ?? false,
         };
       },
       ),

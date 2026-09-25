@@ -80,6 +80,12 @@ const schema = defineSchema(
       ),
       scheduledAt: v.optional(v.number()),
       cancellationReason: v.optional(v.string()),
+      /** GPS du chantier saisi par le client (degrés décimaux). */
+      coords: v.optional(
+        v.object({ lat: v.number(), lon: v.number(), accuracy: v.optional(v.number()) }),
+      ),
+      /** Date de la dernière position GPS client enregistrée. */
+      coordsAt: v.optional(v.number()),
     })
       .index("by_client", ["clientId"])
       .index("by_status", ["status"])
@@ -334,6 +340,15 @@ const schema = defineSchema(
       ),
       subscriptionUntil: v.optional(v.number()),
       subscriptionPrice: v.optional(v.number()),
+
+      /** Dernière position GPS connue du technicien (degrés décimaux). */
+      lastLocation: v.optional(
+        v.object({ lat: v.number(), lon: v.number(), accuracy: v.optional(v.number()) }),
+      ),
+      /** Horodatage de la dernière position GPS. */
+      lastLocationAt: v.optional(v.number()),
+      /** Partage GPS temps réel activé par le technicien. */
+      locationSharing: v.optional(v.boolean()),
     })
       .index("by_user", ["userId"])
       .index("by_status", ["status"]),

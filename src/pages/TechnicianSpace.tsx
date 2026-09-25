@@ -16,6 +16,7 @@ import {
   HardHat,
   Loader2,
   MapPin,
+  Navigation,
   Package,
   Plus,
   Send,
@@ -29,12 +30,19 @@ import {
   Wrench,
   XCircle,
 } from "lucide-react";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { api } from "@/convex/_generated/api";
 import { AppShell } from "@/components/gtec";
 import { PhoneVerifiedBadge } from "@/components/PhoneVerifiedBadge";
 import { ReportForm } from "@/components/ReportForm";
+import { useGeolocation } from "@/hooks/useGeolocation";
+import {
+  formatGps,
+  gmapsDirectionsUrl,
+  gmapsCoordsUrl,
+  type GpsCoords,
+} from "@/lib/gps";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -56,6 +64,7 @@ import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { useAuth } from "@/hooks/use-auth";
+import { NavigationOff } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { CITIES, fcfa, formatDate, formatDateTime, PAYMENT_METHODS } from "@/lib/gtec";
 import { Navigate } from "react-router";
@@ -442,6 +451,11 @@ export default function TechnicianSpace() {
   const collectCash = useMutation(api.gtec.technicianCollectCash);
   const completeVisit = useMutation(api.gtec.completeContractVisit);
 
+  // GPS : partage de position (temps réel optionnel) vers la console admin.
+  const updateLocation = useMutation(api.gtec.updateTechnicianLocation);
+  const stopSharing = useMutation(api.gtec.stopTechnicianLocationSharing);
+  const geo = useGeolocation({ watch: true });
+
   const pendingSubPayment = useQuery(api.gtec.myPendingSubscriptionPayment);
   const myCommissions = useQuery(api.gtec.myCommissions);
   const myWallet = useQuery(api.gtec.myWallet);
@@ -642,6 +656,61 @@ export default function TechnicianSpace() {
     (m) => m.assignment.status === "terminee" || m.request?.status === "terminee",
   );
 
+  // ---- GPS : envoi de la position dès qu'un fix arrive (si partage activé).
+  const sharing = profile?.locationSharing ?? false;
+  const lastGps = profile?.lastLocation
+    ? { lat: profile.lastLocation.lat, lon: profile.lastLocation.lon }
+    : null;
+  const lastGpsAt = profile?.lastLocationAt;
+  const fixKey = geo.position
+    ? `${geo.position.coords.lat},${geo.position.coords.lon}`
+    : "";
+  const lastSentRef = useRef<{ key: string; at: number }>({ key: "", at: 0 });
+  useEffect(() => {
+    if (!sharing || !geo.position || !fixKey) return;
+    // Throttle : max 1 écriture / 20 s, sauf si le déplacement est significatif.
+    const last = lastSentRef.current;
+    const moved = last.key
+      ? Math.abs(geo.position.coords.lat - Number(last.key.split(",")[0])) +
+          Math.abs(geo.position.coords.lon - Number(last.key.split(",")[1])) >
+        0.0003 // ~30 m
+      : true;
+    if (last.key === fixKey || (Date.now() - last.at < 20000 && !moved)) return;
+    lastSentRef.current = { key: fixKey, at: Date.now() };
+    updateLocation({
+      lat: geo.position.coords.lat,
+      lon: geo.position.coords.lon,
+      accuracy: Math.round(geo.position.accuracy),
+      sharing: true,
+    }).catch(() => {
+      /* silencieux : nouvelle tentative au prochain fix */
+    });
+    // Déclenché à chaque nouveau fix GPS pendant le partage.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fixKey, sharing]);
+
+  const startSharing = async () => {
+    try {
+      geo.locate(); // active watchPosition — la position partira au 1er fix
+      await updateLocation({ sharing: true });
+      toast.success(
+        "Partage GPS activé — votre position sera visible par GTEC PRO.",
+      );
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Erreur");
+    }
+  };
+
+  const stopSharingNow = async () => {
+    try {
+      geo.stop();
+      await stopSharing();
+      toast.info("Partage GPS désactivé.");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Erreur");
+    }
+  };
+
   // Cloisonnement : seuls les comptes techniciens (et l'admin) entrent ici.
   if (user && user.accountType === "client") {
     return <Navigate to="/dashboard" replace />;
@@ -666,6 +735,80 @@ export default function TechnicianSpace() {
           </div>
           {!userVerified && <PhoneVerifiedBadge variant="full" className="max-w-md" />}
         </div>
+
+        {/* Partage GPS (techniciens avec dossier) */}
+        {profile && verified && (
+          <Card className="card-layered border-primary/20 bg-gradient-to-br from-primary/[0.04] to-transparent">
+            <CardContent className="flex flex-col gap-3 py-4">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <span
+                    className={cn(
+                      "flex size-10 items-center justify-center rounded-xl",
+                      sharing
+                        ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+                        : "bg-muted text-muted-foreground",
+                    )}
+                  >
+                    <Navigation className="size-5" />
+                  </span>
+                  <div>
+                    <p className="text-sm font-semibold">
+                      Position GPS{" "}
+                      {sharing ? (
+                        <span className="ml-1 inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-xs font-semibold text-emerald-700 ring-1 ring-emerald-500/30 dark:text-emerald-400">
+                          <span className="relative flex size-2">
+                            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+                            <span className="relative inline-flex size-2 rounded-full bg-emerald-500" />
+                          </span>
+                          en direct
+                        </span>
+                      ) : (
+                        "désactivée"
+                      )}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {sharing
+                        ? "La console GTEC PRO suit votre position pour optimiser les affectations."
+                        : "Activez le partage pour être affecté aux chantiers les plus proches de vous."}
+                    </p>
+                  </div>
+                </div>
+                {sharing ? (
+                  <Button variant="outline" size="sm" onClick={stopSharingNow}>
+                    <NavigationOff className="mr-2 size-4" /> Arrêter le partage
+                  </Button>
+                ) : (
+                  <Button size="sm" className="halo-amber" onClick={startSharing}>
+                    <Navigation className="mr-2 size-4" /> Partager ma position
+                  </Button>
+                )}
+              </div>
+              {(geo.position || lastGps) && (
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                  <span className="font-mono text-foreground">
+                    {geo.position
+                      ? formatGps(geo.position.coords)
+                      : lastGps
+                        ? formatGps(lastGps)
+                        : ""}
+                  </span>
+                  {geo.position?.accuracy !== undefined && (
+                    <span>précision ± {Math.round(geo.position.accuracy)} m</span>
+                  )}
+                  {!geo.position && lastGpsAt && (
+                    <span>
+                      dernière position : {formatDateTime(lastGpsAt)}
+                    </span>
+                  )}
+                  {geo.error && (
+                    <span className="text-destructive">{geo.error}</span>
+                  )}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        )}
 
         {profile === undefined ? (
           <div className="h-64 animate-pulse rounded-xl bg-muted" />
@@ -1052,6 +1195,20 @@ export default function TechnicianSpace() {
                                     <CalendarClock className="size-3.5" />
                                     {formatDateTime(assignment.scheduledAt)}
                                   </span>
+                                  {request.coords && (
+                                    <a
+                                      className="flex items-center gap-1 text-primary hover:underline"
+                                      href={gmapsDirectionsUrl(
+                                        geo.position?.coords ?? lastGps,
+                                        request.coords as GpsCoords,
+                                      )}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                    >
+                                      <Navigation className="size-3.5" />
+                                      Itinéraire
+                                    </a>
+                                  )}
                                 </CardDescription>
                               </div>
                               <span

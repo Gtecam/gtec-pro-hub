@@ -34,6 +34,7 @@ import { useRef, useState } from "react";
 import { toast } from "sonner";
 import { api } from "@/convex/_generated/api";
 import { AppShell, StatusBadge } from "@/components/gtec";
+import { haversinePositions } from "@/lib/gtec";
 import { ReportForm } from "@/components/ReportForm";
 import ServicesCatalog from "@/pages/ServicesCatalog";
 import { Button } from "@/components/ui/button";
@@ -102,7 +103,12 @@ function AssignCrew({
   request,
   techs,
 }: {
-  request: { _id: string; serviceKey: string; city: string };
+  request: {
+    _id: string;
+    serviceKey: string;
+    city: string;
+    coords?: { lat: number; lon: number; accuracy?: number } | null;
+  };
   techs: {
     _id: Id<"users">;
     name: string;
@@ -113,11 +119,23 @@ function AssignCrew({
     experienceYears?: number;
     rating?: number;
     verified?: boolean;
+    gps?: { lat: number; lon: number };
+    gpsAt?: number;
+    sharing?: boolean;
   }[];
 }) {
   const assignCrew = useMutation(api.gtec.adminAssignCrew);
   // V6 : moteur géo — équipe ≥ 2 proche du chantier, chef choisi sur des
   // critères objectifs (expérience, note client, missions réalisées).
+  // GPS client présent : la distance réelle technicien↔chantier remplace la
+  // distance ville-à-ville pour les techniciens qui partagent leur position.
+  const requestGps = request.coords
+    ? { lat: request.coords.lat, lon: request.coords.lon }
+    : undefined;
+  const distanceOf = (t: (typeof techs)[number]) => {
+    if (requestGps && t.gps) return haversinePositions(requestGps, t.gps);
+    return null; // distance ville calculée en interne par suggestTeam
+  };
   const suggestion = suggestTeam(
     request.serviceKey,
     request.city,
@@ -131,8 +149,10 @@ function AssignCrew({
       rating: t.rating,
       active: t.active,
       verified: t.verified,
+      gps: t.gps,
     })),
     2,
+    requestGps,
   );
   const [leaderId, setLeaderId] = useState<Id<"users"> | null>(
     (suggestion.leaderId as Id<"users">) ?? null,
@@ -248,11 +268,30 @@ function AssignCrew({
                           </span>
                         )}
                       </span>
-                      {t.city && (
-                        <span className="block truncate text-xs text-muted-foreground">
-                          {t.city}
-                        </span>
-                      )}
+                      {(() => {
+                        const d = distanceOf(t);
+                        return (
+                          <span className="block truncate text-xs text-muted-foreground">
+                            {t.city}
+                            {d !== null && (
+                              <span
+                                className={
+                                  d <= 15
+                                    ? "ml-1.5 font-semibold text-emerald-600 dark:text-emerald-400"
+                                    : "ml-1.5 text-amber-600 dark:text-amber-400"
+                                }
+                              >
+                                · {d} km GPS
+                              </span>
+                            )}
+                            {t.gps && t.gpsAt && (
+                              <span className="ml-1 text-[10px]">
+                                (pos. {new Date(t.gpsAt).toLocaleDateString("fr-FR")})
+                              </span>
+                            )}
+                          </span>
+                        );
+                      })()}
                     </span>
                   </label>
                 ))}
@@ -569,6 +608,7 @@ function AdminRequestRow({
       address: string;
       city: string;
       scheduledAt?: number;
+      coords?: { lat: number; lon: number; accuracy?: number } | null;
     };
     client?: { name?: string; phone?: string; email?: string } | null;
     quote?: {

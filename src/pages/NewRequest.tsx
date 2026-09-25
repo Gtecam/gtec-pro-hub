@@ -3,17 +3,22 @@ import {
   ArrowLeft,
   ArrowRight,
   CheckCircle2,
+  Crosshair,
   ImagePlus,
+  Loader2,
   MapPin,
+  Navigation,
   Send,
   Trash2,
 } from "lucide-react";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useMutation, useQuery } from "convex/react";
 import { useNavigate } from "react-router";
 import { api } from "@/convex/_generated/api";
 import { AppShell } from "@/components/gtec";
+import { useGeolocation, type GeoFix } from "@/hooks/useGeolocation";
+import { formatGps, gmapsCoordsUrl, nearestCity } from "@/lib/gps";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -59,6 +64,14 @@ export default function NewRequest() {
   const [address, setAddress] = useState("");
   const [city, setCity] = useState<string>("Douala");
 
+  // GPS du chantier : position capturée au moment de la demande (facultative).
+  const geo = useGeolocation();
+  const [gpsCoords, setGpsCoords] = useState<GeoFix | null>(null);
+
+  const captureGps = () => {
+    geo.locate();
+  };
+
   const fileRef = useRef<HTMLInputElement>(null);
 
   // Vue d'affichage : données dynamiques dès qu'elles arrivent, sinon la
@@ -80,6 +93,28 @@ export default function NewRequest() {
           subcategories: [] as { key: string; label: string }[],
         }))
   );
+
+  // Dès qu'un fix GPS arrive (bouton « Ma position »), on l'enregistre et on
+  // propose automatiquement la ville GTEC la plus proche.
+  const lastFixKey = geo.position
+    ? `${geo.position.coords.lat},${geo.position.coords.lon}`
+    : "";
+  useEffect(() => {
+    if (!geo.position || geo.loading) return;
+    setGpsCoords(geo.position);
+    const near = nearestCity(geo.position.coords);
+    if (near && near.distanceKm <= 40) {
+      setCity((c) => {
+        if (c !== near.city) {
+          toast.info(`Ville détectée : ${near.city} (${near.distanceKm} km)`);
+          return near.city;
+        }
+        return c;
+      });
+    }
+    // Déclenché uniquement quand un nouveau fix GPS est reçu.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lastFixKey]);
 
   const canNext = () => {
     if (step === 0) return !!serviceKey;
@@ -124,6 +159,13 @@ export default function NewRequest() {
         address: address.trim(),
         city,
         photos,
+        coords: gpsCoords
+          ? {
+              lat: gpsCoords.coords.lat,
+              lon: gpsCoords.coords.lon,
+              accuracy: Math.round(gpsCoords.accuracy),
+            }
+          : undefined,
       });
       toast.success("Demande envoyée à GTEC PRO");
       navigate(`/dashboard/requests/${id}`);
@@ -340,6 +382,62 @@ export default function NewRequest() {
                     />
                   </div>
                 </div>
+
+                {/* Géolocalisation GPS du chantier */}
+                <div className="flex flex-col gap-2 rounded-xl border border-primary/25 bg-primary/[0.04] p-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p className="flex items-center gap-1.5 text-sm font-semibold">
+                      <Navigation className="size-4 text-primary" /> Position GPS
+                    </p>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant={gpsCoords ? "outline" : "default"}
+                      onClick={captureGps}
+                      disabled={geo.loading}
+                    >
+                      {geo.loading ? (
+                        <Loader2 className="mr-2 size-4 animate-spin" />
+                      ) : (
+                        <Crosshair className="mr-2 size-4" />
+                      )}
+                      {gpsCoords ? "Actualiser ma position" : "Utiliser ma position"}
+                    </Button>
+                  </div>
+                  {gpsCoords ? (
+                    <div className="flex flex-col gap-1 text-xs text-muted-foreground">
+                      <span>
+                        Chantier épinglé :{" "}
+                        <span className="font-mono text-foreground">
+                          {formatGps(gpsCoords.coords)}
+                        </span>{" "}
+                        (± {Math.round(gpsCoords.accuracy)} m)
+                      </span>
+                      <span>
+                        L'équipe recevra la position exacte — repérage et
+                        itinéraire facilités.
+                      </span>
+                    </div>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">
+                      Facultatif : un tap partage votre position GPS pour que
+                      l'équipe trouve le chantier sans appeler.{" "}
+                      {geo.error && (
+                        <span className="text-destructive">{geo.error}</span>
+                      )}
+                    </p>
+                  )}
+                  {gpsCoords && (
+                    <a
+                      href={gmapsCoordsUrl(gpsCoords.coords)}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-xs font-medium text-primary hover:underline"
+                    >
+                      Vérifier sur Google Maps ↗
+                    </a>
+                  )}
+                </div>
               </div>
             )}
 
@@ -379,6 +477,14 @@ export default function NewRequest() {
                         {address}, {city}
                       </dd>
                     </div>
+                    {gpsCoords && (
+                      <div className="flex justify-between gap-4">
+                        <dt className="text-muted-foreground">Position GPS</dt>
+                        <dd className="font-mono text-right font-medium">
+                          {formatGps(gpsCoords.coords)}
+                        </dd>
+                      </div>
+                    )}
                   </dl>
                 </motion.div>
               </div>

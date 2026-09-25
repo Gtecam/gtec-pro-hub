@@ -468,6 +468,22 @@ export const CITY_GEO: Record<string, { lat: number; lon: number }> = {
   Garoua: { lat: 9.3265, lon: 13.3981 },
 };
 
+/** Distance en km entre deux positions GPS brutes (haversine). */
+export function haversinePositions(
+  a: { lat: number; lon: number },
+  b: { lat: number; lon: number },
+): number {
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const dLat = toRad(b.lat - a.lat);
+  const dLon = toRad(b.lon - a.lon);
+  const lat1 = toRad(a.lat);
+  const lat2 = toRad(b.lat);
+  const h =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) ** 2;
+  return Math.round(2 * 6371 * Math.asin(Math.sqrt(h)) * 10) / 10;
+}
+
 /** Distance approximative en km entre deux villes (haversine). */
 export function cityDistanceKm(a: string, b: string): number {
   const A = CITY_GEO[a];
@@ -506,6 +522,8 @@ export type CrewCandidate = {
   active?: boolean;
   /** Dossier KYC vérifié par l'administration. */
   verified?: boolean;
+  /** Position GPS réelle du technicien (prioritaire sur la ville). */
+  gps?: { lat: number; lon: number };
 };
 
 /** Chef d'équipe : score = expérience pondérée + note client + ancienneté. */
@@ -533,6 +551,8 @@ export function suggestTeam(
   requestCity: string,
   techs: CrewCandidate[],
   minSize = 2,
+  /** GPS précis du chantier — active la distance réelle technicien↔chantier. */
+  requestGps?: { lat: number; lon: number },
 ): { leaderId: string | null; memberIds: string[]; total: number; reason: string } {
   const pool = techs.filter((t) => t.active !== false);
   if (pool.length === 0) {
@@ -545,13 +565,20 @@ export function suggestTeam(
     t.zones?.length ? t.zones : t.city ? [t.city] : [];
 
   // Score : proximité géo (dominant) + zone couverte + spécialité + KYC.
+  // Distance : GPS réel technicien→chantier si les deux sont connus, sinon
+  // repli sur la distance ville-à-ville déclarée.
   const scored = pool
     .map((t) => {
-      const zones = zoneOf(t);
-      const distances = zones
-        .map((c) => (c === requestCity ? 0 : cityDistanceKm(requestCity, c)))
-        .filter((d) => d < 9999);
-      const distance = distances.length ? Math.min(...distances) : 9999;
+      let distance: number;
+      if (requestGps && t.gps) {
+        distance = haversinePositions(requestGps, t.gps);
+      } else {
+        const zones = zoneOf(t);
+        const distances = zones
+          .map((c) => (c === requestCity ? 0 : cityDistanceKm(requestCity, c)))
+          .filter((d) => d < 9999);
+        distance = distances.length ? Math.min(...distances) : 9999;
+      }
       const specialtyFit = [rule.leaderHint, ...rule.members].some((hint) =>
         matches(t.specialty, hint),
       );
@@ -567,10 +594,11 @@ export function suggestTeam(
   const avgDistance = chosen.length
     ? Math.round(chosen.reduce((s, c) => s + c.distance, 0) / chosen.length)
     : 0;
+  const gpsUsed = !!requestGps && chosen.some((c) => c.tech.gps);
   const reason =
     chosen.length === 0
       ? "Aucun technicien disponible"
-      : `Équipe de ${chosen.length} · proximité ${requestCity}${avgDistance ? ` (${avgDistance} km)` : ""}${chosen.some((c) => matches(c.tech.specialty, rule.leaderHint)) ? " · spécialité" : ""}`;
+      : `Équipe de ${chosen.length} · proximité ${requestCity}${avgDistance ? ` (${avgDistance} km${gpsUsed ? ", GPS" : ""})` : ""}${chosen.some((c) => matches(c.tech.specialty, rule.leaderHint)) ? " · spécialité" : ""}`;
   return { leaderId, memberIds, total: memberIds.length + (leaderId ? 1 : 0), reason };
 }
 
