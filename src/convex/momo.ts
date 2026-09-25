@@ -162,6 +162,33 @@ export const settleMomoSuccess = internalMutation({
       requestId: payment.requestId,
       at: Date.now(),
     });
+    // V5 : met aussi l'e-mail de confirmation en file (Resend).
+    const clientUser = await ctx.db.get(payment.clientId);
+    if (clientUser?.email) {
+      await ctx.db.insert("emails", {
+        userId: payment.clientId,
+        to: clientUser.email,
+        kind: "paiement",
+        title: "Paiement confirmé",
+        body: `Votre paiement de ${payment.amount.toLocaleString("fr-FR")} FCFA est validé. L'équipe va être affectée.`,
+        requestId: payment.requestId,
+      });
+    }
+    // Alerte à l'administration pour lancer l'affectation de l'équipe.
+    const admins = await ctx.db
+      .query("users")
+      .withIndex("email", (q) => q.eq("email", "admin@gtecpro.cm"))
+      .collect();
+    for (const admin of admins) {
+      await ctx.db.insert("notifications", {
+        userId: admin._id,
+        kind: "paiement",
+        title: "Paiement Mobile Money reçu",
+        body: `Un paiement de ${payment.amount.toLocaleString("fr-FR")} FCFA a été confirmé automatiquement — affectez l'équipe.`,
+        requestId: payment.requestId,
+        at: Date.now(),
+      });
+    }
   },
 });
 
