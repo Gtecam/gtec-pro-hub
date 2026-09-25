@@ -20,6 +20,7 @@ import { toast } from "sonner";
 import { useNavigate } from "react-router";
 import { api } from "@/convex/_generated/api";
 import { AppShell, StatusBadge } from "@/components/gtec";
+import { PhoneVerifiedBadge } from "@/components/PhoneVerifiedBadge";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -92,6 +93,7 @@ export default function ClientDashboard() {
         companyName?: string;
         taxId?: string;
         idDocumentUrl?: string;
+        phoneVerified?: boolean;
       })
     | undefined;
   const identityComplete = !!(u?.firstName && u?.lastName && u?.nationalId);
@@ -223,6 +225,9 @@ export default function ClientDashboard() {
           </Button>
         </div>
 
+        {/* Numéro de téléphone vérifié */}
+        <PhoneVerifiedBadge variant="full" />
+
         {/* Identité client */}
         <Card
           className={cn(
@@ -242,10 +247,15 @@ export default function ClientDashboard() {
               <IdCard className="size-5" />
             </span>
             <div className="min-w-0 flex-1">
-              <p className="text-sm font-semibold">
+              <p className="flex flex-wrap items-center gap-2 text-sm font-semibold">
                 {identityComplete
                   ? `Identité vérifiée — ${u?.firstName} ${u?.lastName}`
                   : "Complétez votre identité"}
+                {u?.phoneVerified && (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-xs font-semibold text-emerald-700 ring-1 ring-emerald-500/30 dark:text-emerald-400">
+                    <ShieldCheck className="size-3.5" /> Numéro vérifié
+                  </span>
+                )}
               </p>
               <p className="truncate text-xs text-muted-foreground">
                 {identityComplete

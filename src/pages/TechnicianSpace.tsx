@@ -33,6 +33,7 @@ import { useRef, useState } from "react";
 import { toast } from "sonner";
 import { api } from "@/convex/_generated/api";
 import { AppShell } from "@/components/gtec";
+import { PhoneVerifiedBadge } from "@/components/PhoneVerifiedBadge";
 import { ReportForm } from "@/components/ReportForm";
 import { Button } from "@/components/ui/button";
 import {
@@ -429,6 +430,9 @@ function FieldQuoteRequestPicker({
 
 export default function TechnicianSpace() {
   const { user } = useAuth();
+  const userVerified = (
+    user as { phoneVerified?: boolean } | null | undefined
+  )?.phoneVerified ?? false;
   const profile = useQuery(api.gtec.myTechnicianProfile);
   const missions = useQuery(api.gtec.listMyMissions);
 
@@ -646,13 +650,21 @@ export default function TechnicianSpace() {
   return (
     <AppShell areaLabel="Espace technicien">
       <div className="flex flex-col gap-6">
-        <div>
-          <p className="text-sm font-medium text-muted-foreground">
-            Espace technicien
-          </p>
-          <h1 className="font-display mt-1 text-3xl font-bold tracking-tight">
-            Bonjour{user?.name ? `, ${user.name.split(" ")[0]}` : ""} 🛠️
-          </h1>
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <p className="text-sm font-medium text-muted-foreground">
+              Espace technicien
+            </p>
+            <h1 className="font-display mt-1 flex flex-wrap items-center gap-2 text-3xl font-bold tracking-tight">
+              Bonjour{user?.name ? `, ${user.name.split(" ")[0]}` : ""} 🛠️
+              {userVerified && (
+                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2.5 py-1 align-middle text-xs font-semibold text-emerald-700 ring-1 ring-emerald-500/30 dark:text-emerald-400">
+                  <BadgeCheck className="size-3.5" /> Numéro vérifié
+                </span>
+              )}
+            </h1>
+          </div>
+          {!userVerified && <PhoneVerifiedBadge variant="full" className="max-w-md" />}
         </div>
 
         {profile === undefined ? (
@@ -679,6 +691,7 @@ export default function TechnicianSpace() {
                   <p className="flex items-center gap-1.5 text-sm font-semibold">
                     <UserRound className="size-4 text-primary" /> Identité
                   </p>
+                  <PhoneVerifiedBadge variant="full" />
                   <div className="grid gap-3 sm:grid-cols-2">
                     <div className="flex flex-col gap-1.5">
                       <Label className="text-sm">Prénom *</Label>
