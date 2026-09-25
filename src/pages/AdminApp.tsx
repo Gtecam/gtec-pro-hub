@@ -39,7 +39,7 @@ import { CONTRACT_STATUS_META, contractFrequencyLabel, fcfa, formatDate } from "
 
 /**
  * Application web ADMIN — séparée de l'app clients/techniciens.
- * Connexion dédiée (email fixe admin@gtecpro.cm + code OTP),
+ * Connexion dédiée (email fixe + code OTP),
  * thème sombre distinct, aucune navigation croisée.
  */
 export default function AdminApp() {
@@ -92,7 +92,7 @@ export default function AdminApp() {
 
 function AdminSignIn() {
   const navigate = useNavigate();
-  const [email, setEmail] = useState("admin@gtecpro.cm");
+  const [email, setEmail] = useState("etsgreentech@yahoo.com");
   const [code, setCode] = useState("");
   const [step, setStep] = useState<"email" | "code">("email");
   const [loading, setLoading] = useState(false);
@@ -163,7 +163,7 @@ function AdminSignIn() {
                     className="border-slate-700 bg-slate-950/60 pl-9 text-slate-100 placeholder:text-slate-600"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    placeholder="admin@gtecpro.cm"
+                    placeholder="etsgreentech@yahoo.com"
                     type="email"
                     autoComplete="email"
                   />
@@ -224,7 +224,7 @@ function AdminSignIn() {
             </div>
           )}
           <p className="text-center text-xs text-slate-500">
-            Compte de démonstration : <span className="text-slate-400">admin@gtecpro.cm</span>
+            Compte administrateur : <span className="text-slate-400">etsgreentech@yahoo.com</span>
             {" "}— le code est envoyé sur la boîte configurée dans l'environnement Freebuff.
           </p>
         </CardContent>

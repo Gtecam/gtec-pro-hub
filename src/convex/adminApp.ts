@@ -12,7 +12,10 @@ import type { Doc } from "./_generated/dataModel";
  * rattache alors automatiquement la session à CE compte admin.
  */
 
-export const ADMIN_EMAIL = "admin@gtecpro.cm";
+export const ADMIN_EMAIL = "etsgreentech@yahoo.com";
+
+/** Anciens emails admin de démonstration, rétrogradés automatiquement. */
+const LEGACY_ADMIN_EMAILS = ["admin@gtecpro.cm"];
 
 const ADMIN_NAME = "Administration GTEC PRO";
 
@@ -35,6 +38,16 @@ async function requireAdmin(ctx: any): Promise<Doc<"users">> {
 export const ensureDemoAdmin = mutation({
   args: {},
   handler: async (ctx) => {
+    // Rétrograde les anciens comptes admin de démonstration.
+    for (const legacy of LEGACY_ADMIN_EMAILS) {
+      const old = await ctx.db
+        .query("users")
+        .withIndex("email", (q) => q.eq("email", legacy))
+        .unique();
+      if (old && old.role === "admin") {
+        await ctx.db.patch(old._id, { role: "user" });
+      }
+    }
     const existing = await ctx.db
       .query("users")
       .withIndex("email", (q) => q.eq("email", ADMIN_EMAIL))

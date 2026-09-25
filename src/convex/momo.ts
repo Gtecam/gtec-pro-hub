@@ -2,6 +2,7 @@ import { getAuthUserId } from "@convex-dev/auth/server";
 import { v } from "convex/values";
 import { action, internalMutation, mutation, query } from "./_generated/server";
 import { internal } from "./_generated/api";
+import { ADMIN_EMAIL } from "./adminApp";
 import type { Id } from "./_generated/dataModel";
 
 /**
@@ -177,7 +178,7 @@ export const settleMomoSuccess = internalMutation({
     // Alerte à l'administration pour lancer l'affectation de l'équipe.
     const admins = await ctx.db
       .query("users")
-      .withIndex("email", (q) => q.eq("email", "admin@gtecpro.cm"))
+      .withIndex("email", (q) => q.eq("email", ADMIN_EMAIL))
       .collect();
     for (const admin of admins) {
       await ctx.db.insert("notifications", {
