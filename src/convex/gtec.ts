@@ -2100,6 +2100,40 @@ export const adminListApplications = query({
 
 // ---------- réception client & facture ----------
 
+/**
+ * V6 : porte de réception — le PV ne peut être signé que si l'avance (50 %)
+ * ET le solde (50 %) sont encaissés. Tolérance legacy : une demande payée en
+ * une seule fois (avant le passage au 50/50) reste réceptionnable.
+ */
+export async function assertReceptionPaymentsAllowed(
+  ctx: any,
+  requestId: Id<"serviceRequests">,
+  quoteTotal: number,
+) {
+  const allPayments = await ctx.db
+    .query("payments")
+    .withIndex("by_request", (q: any) => q.eq("requestId", requestId))
+    .collect();
+  const validatedTotal = allPayments
+    .filter((p: any) => p.status === "valide")
+    .reduce((s: number, p: any) => s + p.amount, 0);
+  const hasLegacyFullPayment = validatedTotal >= quoteTotal && quoteTotal > 0;
+  const advanceValidated = allPayments.some(
+    (p: any) => p.milestone === "avance" && p.status === "valide",
+  );
+  const balanceValidated = allPayments.some(
+    (p: any) => p.milestone === "solde" && p.status === "valide",
+  );
+  if (!advanceValidated && !hasLegacyFullPayment) {
+    throw new Error("L'avance de 50 % doit être payée avant la réception.");
+  }
+  if (!balanceValidated && !hasLegacyFullPayment) {
+    throw new Error(
+      "Réglez d'abord le solde de 50 % (fin des travaux) pour signer le PV.",
+    );
+  }
+}
+
 export const clientReception = mutation({
   args: {
     requestId: v.id("serviceRequests"),
@@ -2139,32 +2173,8 @@ export const clientReception = mutation({
         .withIndex("by_request", (q) => q.eq("requestId", args.requestId))
         .collect()
     ).slice(-1)[0];
-    // V6 : le solde de 50 % doit être encaissé avant la signature du PV.
-    // Tolérance legacy : une demande payée en une seule fois (avant le
-    // passage au 50/50) reste réceptionnable.
-    const allPayments = await ctx.db
-      .query("payments")
-      .withIndex("by_request", (q) => q.eq("requestId", args.requestId))
-      .collect();
-    const validatedTotal = allPayments
-      .filter((p) => p.status === "valide")
-      .reduce((s, p) => s + p.amount, 0);
-    const hasLegacyFullPayment =
-      quote !== undefined && validatedTotal >= quote.total;
-    const advanceValidated = allPayments.some(
-      (p) => p.milestone === "avance" && p.status === "valide",
-    );
-    const balanceValidated = allPayments.some(
-      (p) => p.milestone === "solde" && p.status === "valide",
-    );
-    if (!advanceValidated && !hasLegacyFullPayment) {
-      throw new Error("L'avance de 50 % doit être payée avant la réception.");
-    }
-    if (!balanceValidated && !hasLegacyFullPayment) {
-      throw new Error(
-        "Réglez d'abord le solde de 50 % (fin des travaux) pour signer le PV.",
-      );
-    }
+    // V6 : porte de réception — avance ET solde doivent être encaissés.
+    await assertReceptionPaymentsAllowed(ctx, args.requestId, quote?.total ?? 0);
     const number = await nextRef(ctx, "invoices", "FAC");
     await ctx.db.insert("invoices", {
       requestId: args.requestId,
