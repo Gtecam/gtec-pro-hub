@@ -114,7 +114,7 @@ export const drainEmails = internalAction({
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
-            from: "GTEC PRO <onboarding@resend.dev>",
+            from: process.env.RESEND_FROM || "GTEC PRO <onboarding@resend.dev>",
             to: [email.to],
             subject: `[GTEC PRO] ${email.title}`,
             html: gtecEmailHtml(email.kind, email.title, email.body),
@@ -185,7 +185,7 @@ export const flushEmails = action({
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
-            from: "GTEC PRO <onboarding@resend.dev>",
+            from: process.env.RESEND_FROM || "GTEC PRO <onboarding@resend.dev>",
             to: [email.to],
             subject: `[GTEC PRO] ${email.title}`,
             html: gtecEmailHtml(email.kind, email.title, email.body),
