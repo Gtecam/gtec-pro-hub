@@ -656,14 +656,36 @@ export const refuseQuote = mutation({
 
 // ---------- helpers internes pour le paiement Mobile Money automatique ----------
 
-/** Interne : devis accepté et payable, vérifié côté client. */
+/** Interne : devis accepté et payable, vérifié côté client (tranche 50/50). */
 export const getAcceptedQuoteForPayment = internalQuery({
-  args: { quoteId: v.id("quotes"), clientId: v.id("users") },
+  args: {
+    quoteId: v.id("quotes"),
+    clientId: v.id("users"),
+    /** V6 : tranche demandée — l'ordre avance → solde est imposé. */
+    milestone: v.union(v.literal("avance"), v.literal("solde")),
+  },
   handler: async (ctx, args) => {
     const quote = await ctx.db.get(args.quoteId);
     if (!quote) return null;
     if (quote.clientId !== args.clientId) return null;
     if (quote.status !== "accepte") return null;
+    const payments = await ctx.db
+      .query("payments")
+      .withIndex("by_request", (q) => q.eq("requestId", quote.requestId))
+      .collect();
+    if (payments.some((p) => p.status === "en_attente")) return null;
+    const advanceValidated = payments.some(
+      (p) => p.milestone === "avance" && p.status === "valide",
+    );
+    // Ordre imposé : l'avance avant le solde ; chaque tranche une seule fois.
+    if (args.milestone === "solde" && !advanceValidated) return null;
+    if (
+      payments.some(
+        (p) => p.milestone === args.milestone && p.status === "valide",
+      )
+    ) {
+      return null;
+    }
     const { advance, balance } = splitFiftyFifty(quote.total);
     return {
       _id: quote._id,
@@ -2118,20 +2140,27 @@ export const clientReception = mutation({
         .collect()
     ).slice(-1)[0];
     // V6 : le solde de 50 % doit être encaissé avant la signature du PV.
+    // Tolérance legacy : une demande payée en une seule fois (avant le
+    // passage au 50/50) reste réceptionnable.
     const allPayments = await ctx.db
       .query("payments")
       .withIndex("by_request", (q) => q.eq("requestId", args.requestId))
       .collect();
+    const validatedTotal = allPayments
+      .filter((p) => p.status === "valide")
+      .reduce((s, p) => s + p.amount, 0);
+    const hasLegacyFullPayment =
+      quote !== undefined && validatedTotal >= quote.total;
     const advanceValidated = allPayments.some(
       (p) => p.milestone === "avance" && p.status === "valide",
     );
     const balanceValidated = allPayments.some(
       (p) => p.milestone === "solde" && p.status === "valide",
     );
-    if (!advanceValidated) {
+    if (!advanceValidated && !hasLegacyFullPayment) {
       throw new Error("L'avance de 50 % doit être payée avant la réception.");
     }
-    if (!balanceValidated) {
+    if (!balanceValidated && !hasLegacyFullPayment) {
       throw new Error(
         "Réglez d'abord le solde de 50 % (fin des travaux) pour signer le PV.",
       );

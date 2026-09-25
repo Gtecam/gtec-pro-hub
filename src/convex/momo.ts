@@ -253,6 +253,7 @@ export const startMomoPayment = action({
     const quote = (await ctx.runQuery(internal.gtec.getAcceptedQuoteForPayment, {
       quoteId: args.quoteId,
       clientId: userId,
+      milestone: args.milestone,
     })) as {
       _id: Id<"quotes">;
       requestId: Id<"serviceRequests">;
