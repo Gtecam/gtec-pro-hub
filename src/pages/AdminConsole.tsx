@@ -1106,6 +1106,59 @@ export default function AdminConsole() {
     );
     toast.success(`${allPayments.length} paiement(s) exporté(s).`);
   };
+
+  // Export comptable CSV des mensualités de contrats de maintenance.
+  const exportContractPaysCsv = () => {
+    if (!allContractPays || allContractPays.length === 0) {
+      toast.error("Aucune mensualité à exporter.");
+      return;
+    }
+    downloadCsv(
+      `mensualites-gtec-${todayStamp()}.csv`,
+      [
+        "Contrat",
+        "Intitulé",
+        "Pôle",
+        "Client",
+        "Échéance",
+        "Période début",
+        "Période fin",
+        "Montant (FCFA)",
+        "Moyen",
+        "Numéro payeur",
+        "Réf. externe",
+        "Statut",
+        "Encaissée le",
+        "Déclarée le",
+      ],
+      allContractPays.map(({ payment, contract, client }) => [
+        contract?.reference ?? "",
+        contract?.title ?? "",
+        contract
+          ? (SERVICES.find((sv) => sv.key === contract.serviceKey)?.label ??
+            contract.serviceKey)
+          : "",
+        client?.name ?? "",
+        payment.periodIndex,
+        formatDate(payment.periodStart),
+        formatDate(payment.periodEnd),
+        payment.amount,
+        methodShortLabel(payment.method),
+        payment.payerPhone,
+        payment.externalRef ?? "",
+        payment.status === "valide"
+          ? "Encaissée"
+          : payment.status === "echoue"
+            ? "Échouée"
+            : "En attente",
+        payment.validatedAt
+          ? new Date(payment.validatedAt).toLocaleString("fr-FR")
+          : "",
+        new Date(payment._creationTime).toLocaleString("fr-FR"),
+      ]),
+    );
+    toast.success(`${allContractPays.length} mensualité(s) exportée(s).`);
+  };
   const [wdAmount, setWdAmount] = useState("");
   const [wdMethod, setWdMethod] = useState("mtn_momo");
   const [wdDestination, setWdDestination] = useState("");
@@ -2403,8 +2456,19 @@ export default function AdminConsole() {
 
           {/* Mensualités des contrats de maintenance */}
           <TabsContent value="mensualites" className="mt-4">
-            {(allContractPays ?? []).some((p) => p.payment.status !== "en_attente") && (
-              <div className="mb-3 flex justify-end">
+            <div className="mb-3 flex justify-end gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={!allContractPays || allContractPays.length === 0}
+                onClick={exportContractPaysCsv}
+              >
+                <Download className="mr-1.5 size-4" />
+                Export CSV (mensualités)
+              </Button>
+              {(allContractPays ?? []).some(
+                (p) => p.payment.status !== "en_attente",
+              ) && (
                 <Button
                   variant="outline"
                   size="sm"
@@ -2413,8 +2477,8 @@ export default function AdminConsole() {
                   <Receipt className="mr-1.5 size-4" />
                   {receiptHistory ? "Masquer l'historique" : "Historique & reçus"}
                 </Button>
-              </div>
-            )}
+              )}
+            </div>
             {receiptHistory && (
               <div className="mb-4 flex flex-col gap-2">
                 <h3 className="font-display text-sm font-semibold text-muted-foreground">
