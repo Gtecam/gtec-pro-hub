@@ -14,6 +14,7 @@ import {
   Download,
   FileSignature,
   FileText,
+  FolderDown,
   ImagePlus,
   Lightbulb,
   Loader2,
@@ -36,7 +37,7 @@ import { toast } from "sonner";
 import { api } from "@/convex/_generated/api";
 import { AppShell, StatusBadge } from "@/components/gtec";
 import { haversinePositions } from "@/lib/gtec";
-import { openMaintenancePdf } from "@/lib/invoicePdf";
+import { openDossierPdf, openMaintenancePdf } from "@/lib/invoicePdf";
 import { ReportForm } from "@/components/ReportForm";
 import ServicesCatalog from "@/pages/ServicesCatalog";
 import { Button } from "@/components/ui/button";
@@ -629,6 +630,89 @@ function AdminRequestRow({
   const startIntervention = useMutation(api.gtec.adminStartIntervention);
   const { request, client, quote, payment } = entry;
 
+  // Dossier PDF (facture + PV) : chargé uniquement quand le panneau est ouvert.
+  const detail = useQuery(
+    api.gtec.getRequestDetail,
+    open ? ({ requestId: request._id as never }) : "skip",
+  );
+
+  const buildDossierPayload = () => {
+    if (!detail || !detail.invoice || !detail.report) return null;
+    const d = detail;
+    const serviceLabel =
+      SERVICES.find((s) => s.key === d.request.serviceKey)?.label ??
+      d.request.serviceKey;
+    const requestPdf = {
+      reference: d.request.reference,
+      title: d.request.title,
+      serviceLabel,
+      address: d.request.address,
+      city: d.request.city,
+      scheduledAt: d.request.scheduledAt,
+    };
+    const teamPdf = (d.members ?? [])
+      .filter((m): m is NonNullable<(typeof d.members)[number]> => !!m)
+      .map((m) => ({ name: m.name, role: m.role }));
+    const invoice = d.invoice;
+    const q = d.quote;
+    const report = d.report;
+    return {
+      invoice: {
+        invoiceNumber: invoice.number,
+        issuedAt: invoice.issuedAt,
+        invoiceStatus: invoice.status,
+        clientName: client?.name ?? "Client GTEC",
+        clientPhone: client?.phone,
+        clientEmail: client?.email,
+        clientCity: d.request.city,
+        request: requestPdf,
+        quote: q
+          ? {
+              number: q.number,
+              items: q.items,
+              subtotal: q.subtotal,
+              vatRate: q.vatRate,
+              total: q.total,
+            }
+          : undefined,
+        payments: ((d.payments ?? []) as Doc<"payments">[]).map((p) => ({
+          milestone: p.milestone,
+          amount: p.amount,
+          method: p.method,
+          status: p.status,
+          paidAt: p.paidAt,
+        })),
+        report: {
+          workDone: report.workDone,
+          warrantyMonths: report.warrantyMonths,
+          receivedAt: report.receivedAt,
+          clientSignature: report.clientSignature,
+        },
+        team: teamPdf,
+      },
+      reception: {
+        received: report.status === "receptionne",
+        clientName: client?.name ?? "Client GTEC",
+        clientPhone: client?.phone,
+        clientEmail: client?.email,
+        clientCity: d.request.city,
+        request: requestPdf,
+        team: teamPdf,
+        report: {
+          workDone: report.workDone,
+          partsUsed: report.partsUsed,
+          recommendations: report.recommendations,
+          beforePhotos: report.beforePhotos,
+          afterPhotos: report.afterPhotos,
+          warrantyMonths: report.warrantyMonths,
+          receivedAt: report.receivedAt,
+          receptionNote: report.receptionNote,
+          clientSignature: report.clientSignature,
+        },
+      },
+    };
+  };
+
   const actions: React.ReactNode[] = [];
   if (request.status === "nouvelle") actions.push(<FieldQuoteNotice key="q" />);
   if (request.status === "paye" && techs.length > 0)
@@ -735,6 +819,39 @@ function AdminRequestRow({
                 </span>
               </div>
             )}
+            <div className="flex justify-end">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={!detail?.invoice || !detail.report}
+                title={
+                  !detail?.invoice || !detail.report
+                    ? "Disponible dès que la facture est émise et le PV existe"
+                    : undefined
+                }
+                onClick={() => {
+                  const payload = buildDossierPayload();
+                  if (!payload) {
+                    toast.error(
+                      "Le dossier n\u00e9cessite une facture émise et un PV de réception.",
+                    );
+                    return;
+                  }
+                  try {
+                    openDossierPdf(payload);
+                  } catch (e) {
+                    toast.error(
+                      e instanceof Error
+                        ? e.message
+                        : "Impression impossible \u2014 r\u00e9essayez.",
+                    );
+                  }
+                }}
+              >
+                <FolderDown className="mr-1.5 size-4" />
+                Dossier complet (facture + PV)
+              </Button>
+            </div>
             <Separator />
             {actions.length > 0 ? (
               actions
