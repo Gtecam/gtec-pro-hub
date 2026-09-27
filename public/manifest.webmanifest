@@ -1,13 +1,18 @@
 {
+  "id": "/",
   "name": "GTEC PRO — Green Tech Energy Cameroon",
   "short_name": "GTEC PRO",
   "description": "Énergie, électricité & multi-services : demandes, devis, interventions et contrats de maintenance GTEC.",
   "start_url": "/",
+  "scope": "/",
   "display": "standalone",
+  "display_override": ["standalone", "minimal-ui"],
   "background_color": "#15803d",
   "theme_color": "#15803d",
   "lang": "fr",
+  "dir": "ltr",
   "orientation": "portrait",
+  "categories": ["business", "utilities", "productivity"],
   "icons": [
     {
       "src": "/icon-192.png",
@@ -19,7 +24,27 @@
       "src": "/icon-512.png",
       "sizes": "512x512",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Nouvelle demande",
+      "short_name": "Demande",
+      "url": "/dashboard/new",
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Espace technicien",
+      "short_name": "Technicien",
+      "url": "/technician",
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
     }
   ]
 }
