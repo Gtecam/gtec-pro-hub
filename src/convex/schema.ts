@@ -281,6 +281,41 @@ const schema = defineSchema(
     }).index("by_contract", ["contractId"])
       .index("by_leader", ["assignedTeamLeaderId"]),
 
+    /**
+     * Mensualité d'un contrat de maintenance (paiement vérifié par
+     * l'administration, même modèle que les paiements de devis).
+     */
+    contractPayments: defineTable({
+      contractId: v.id("maintenanceContracts"),
+      clientId: v.id("users"),
+      /** Numéro d'échéance (1 = première mensualité). */
+      periodIndex: v.number(),
+      /** Date de couverture de la mensualité (début de période). */
+      periodStart: v.number(),
+      periodEnd: v.number(),
+      amount: v.number(),
+      currency: v.string(),
+      method: v.union(
+        v.literal("mtn_momo"),
+        v.literal("orange_money"),
+        v.literal("especes"),
+        v.literal("virement"),
+      ),
+      payerPhone: v.string(),
+      proofPhotoUrl: v.optional(v.string()),
+      bankName: v.optional(v.string()),
+      bankRef: v.optional(v.string()),
+      status: v.union(
+        v.literal("en_attente"),
+        v.literal("valide"),
+        v.literal("echoue"),
+      ),
+      externalRef: v.optional(v.string()),
+      validatedAt: v.optional(v.number()),
+    }).index("by_contract", ["contractId"])
+      .index("by_client", ["clientId"])
+      .index("by_status", ["status"]),
+
     // ---- Espace technicien (V1.1) ----
 
     /** Profil de candidature technicien — un par utilisateur. */

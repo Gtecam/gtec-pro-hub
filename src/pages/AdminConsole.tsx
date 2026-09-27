@@ -875,6 +875,8 @@ export default function AdminConsole() {
   const stats = useQuery(api.gtec.adminStats);
   const requests = useQuery(api.gtec.adminListRequests);
   const payments = useQuery(api.gtec.adminPendingPayments);
+  const contractPays = useQuery(api.gtec.adminPendingContractPayments);
+  const validateContractPay = useMutation(api.gtec.adminValidateContractPayment);
   const allPayments = useQuery(api.gtec.adminListAllPayments);
   const techs = useQuery(api.gtec.adminListAssignableTechnicians);
   const adminExists = useQuery(api.gtec.adminExists);
@@ -1315,6 +1317,14 @@ export default function AdminConsole() {
                 </span>
               )}
             </TabsTrigger>
+              <TabsTrigger value="mensualites">
+                <FileSignature className="mr-1.5 size-4" /> Mensualités
+                {(contractPays?.length ?? 0) > 0 && (
+                  <span className="ml-1 rounded-full bg-amber-500/20 px-1.5 text-[11px] font-semibold text-amber-600 dark:text-amber-400">
+                    {contractPays?.length}
+                  </span>
+                )}
+              </TabsTrigger>
             <TabsTrigger value="materiel">
               <Package className="mr-1.5 size-4" /> Matériel
               {(materials?.length ?? 0) > 0 && (
@@ -2324,6 +2334,86 @@ export default function AdminConsole() {
                                 rejectSubPayment({
                                   paymentId: payment._id as never,
                                   reason: "Paiement non retrouvé",
+                                }),
+                              "Paiement marqué échoué",
+                            )
+                          }
+                        >
+                          <XCircle className="mr-1.5 size-4" /> Échec
+                        </Button>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            )}
+          </TabsContent>
+
+          {/* Mensualités des contrats de maintenance */}
+          <TabsContent value="mensualites" className="mt-4">
+            {contractPays === undefined ? (
+              <div className="h-32 animate-pulse rounded-xl bg-muted" />
+            ) : contractPays.length === 0 ? (
+              <Card className="card-layered">
+                <CardContent className="py-10 text-center text-sm text-muted-foreground">
+                  Aucune mensualité en attente de vérification.
+                </CardContent>
+              </Card>
+            ) : (
+              <div className="flex flex-col gap-2">
+                {contractPays.map(({ payment, contract, client }) => (
+                  <Card key={payment._id} className="card-layered">
+                    <CardContent className="flex flex-wrap items-center gap-4 py-4">
+                      <span className="flex size-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                        <FileSignature className="size-5" />
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-semibold">
+                          {fcfa(payment.amount)} · {contract?.reference} — échéance n°
+                          {payment.periodIndex}
+                        </p>
+                        <p className="truncate text-xs text-muted-foreground">
+                          {client?.name ?? "Client"} · {payment.method} ·{" "}
+                          {payment.payerPhone}
+                          {payment.bankRef ? ` · réf. ${payment.bankRef}` : ""}
+                        </p>
+                      </div>
+                      {payment.proofPhotoUrl && (
+                        <img
+                          src={payment.proofPhotoUrl}
+                          alt="Preuve"
+                          className="size-12 cursor-pointer rounded-lg border object-cover"
+                          onClick={() => setProofZoom(payment.proofPhotoUrl ?? null)}
+                        />
+                      )}
+                      <div className="flex items-center gap-2">
+                        <Button
+                          size="sm"
+                          className="halo-amber"
+                          onClick={() =>
+                            run(
+                              () =>
+                                validateContractPay({
+                                  paymentId: payment._id as never,
+                                  decision: "valide",
+                                }),
+                              "Mensualité validée",
+                            )
+                          }
+                        >
+                          <CheckCircle2 className="mr-1.5 size-4" /> Valider
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="text-destructive"
+                          onClick={() =>
+                            run(
+                              () =>
+                                validateContractPay({
+                                  paymentId: payment._id as never,
+                                  decision: "echoue",
+                                  note: "Paiement non retrouvé",
                                 }),
                               "Paiement marqué échoué",
                             )

@@ -2964,6 +2964,148 @@ export const adminStats = query({
   },
 });
 
+// ===================== V6 : mensualités des contrats =====================
+
+/** Échéancier + paiements de mensualités des contrats du client connecté. */
+export const listMyContractPayments = query({
+  args: {},
+  handler: async (ctx) => {
+    const user = await requireUser(ctx);
+    const contracts = await ctx.db
+      .query("maintenanceContracts")
+      .withIndex("by_client", (q) => q.eq("clientId", user._id))
+      .collect();
+    const out = [];
+    for (const contract of contracts) {
+      const pays = await ctx.db
+        .query("contractPayments")
+        .withIndex("by_contract", (q) => q.eq("contractId", contract._id))
+        .collect();
+      out.push({
+        contractId: contract._id,
+        reference: contract.reference,
+        monthlyAmount: contract.monthlyAmount,
+        payments: pays.sort((a, b) => a.periodIndex - b.periodIndex),
+      });
+    }
+    return out;
+  },
+});
+
+/** Le client déclare le paiement d'une mensualité (prochaine échéance due). */
+export const payContractMonthly = mutation({
+  args: {
+    contractId: v.id("maintenanceContracts"),
+    method: v.union(
+      v.literal("mtn_momo"),
+      v.literal("orange_money"),
+      v.literal("especes"),
+      v.literal("virement"),
+    ),
+    payerPhone: v.string(),
+    proofPhotoUrl: v.optional(v.string()),
+    bankName: v.optional(v.string()),
+    bankRef: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const user = await requireUser(ctx);
+    if (!/^[+0-9 ]{8,}$/.test(args.payerPhone.trim())) {
+      throw new Error("Numéro de téléphone invalide.");
+    }
+    const contract = await ctx.db.get(args.contractId);
+    if (!contract) throw new Error("Contrat introuvable.");
+    if (contract.clientId !== user._id)
+      throw new Error("Action non autorisée.");
+    if (contract.status !== "actif")
+      throw new Error("Le contrat doit être actif pour régler une mensualité.");
+    const previous = await ctx.db
+      .query("contractPayments")
+      .withIndex("by_contract", (q) => q.eq("contractId", contract._id))
+      .collect();
+    if (previous.some((p) => p.status === "en_attente"))
+      throw new Error(
+        "Une mensualité est déjà en attente de vérification par GTEC.",
+      );
+    const nextIndex =
+      previous.filter((p) => p.status === "valide").length + 1;
+    const monthMs = 30 * 24 * 3600 * 1000;
+    const periodStart = contract.startDate + (nextIndex - 1) * monthMs;
+    if (periodStart >= contract.endDate)
+      throw new Error("Toutes les mensualités de ce contrat sont déjà réglées.");
+    const id = await ctx.db.insert("contractPayments", {
+      contractId: contract._id,
+      clientId: user._id,
+      periodIndex: nextIndex,
+      periodStart,
+      periodEnd: Math.min(periodStart + monthMs, contract.endDate),
+      amount: contract.monthlyAmount,
+      currency: "FCFA",
+      method: args.method,
+      payerPhone: args.payerPhone.trim(),
+      proofPhotoUrl: args.proofPhotoUrl,
+      bankName: args.bankName,
+      bankRef: args.bankRef,
+      status: "en_attente",
+    });
+    await notifyAdmins(
+      ctx,
+      "paiement",
+      `Mensualité ${contract.reference} — échéance ${nextIndex}`,
+      `${user.name ?? "Le client"} a payé la mensualité ${nextIndex} (${contract.monthlyAmount.toLocaleString("fr-FR")} FCFA) — à vérifier.`,
+    );
+    return id;
+  },
+});
+
+/** Admin : valide ou rejette une mensualité en attente. */
+export const adminValidateContractPayment = mutation({
+  args: {
+    paymentId: v.id("contractPayments"),
+    decision: v.union(v.literal("valide"), v.literal("echoue")),
+    note: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    await requireAdmin(ctx);
+    const p = await ctx.db.get(args.paymentId);
+    if (!p) throw new Error("Paiement introuvable.");
+    if (p.status !== "en_attente")
+      throw new Error("Ce paiement a déjà été traité.");
+    await ctx.db.patch(args.paymentId, {
+      status: args.decision,
+      externalRef: args.note,
+      validatedAt: Date.now(),
+    });
+    if (args.decision === "valide") {
+      await notify(
+        ctx,
+        p.clientId,
+        "paiement",
+        "Mensualité validée",
+        "Votre mensualité de maintenance a été encaissée par GTEC. Merci !",
+      );
+    }
+  },
+});
+
+/** Admin : liste des mensualités en attente de vérification. */
+export const adminPendingContractPayments = query({
+  args: {},
+  handler: async (ctx) => {
+    await requireAdmin(ctx);
+    const rows = await ctx.db
+      .query("contractPayments")
+      .withIndex("by_status", (q) => q.eq("status", "en_attente"))
+      .collect();
+    const out = [];
+    for (const p of rows) {
+      const contract = await ctx.db.get(p.contractId);
+      const client = await ctx.db.get(p.clientId);
+      out.push({ payment: p, contract, client });
+    }
+    return out;
+  },
+});
+
 // ===================== V2 : contrats de maintenance =====================
 
 const VISIT_STEP_MS: Record<string, number> = {

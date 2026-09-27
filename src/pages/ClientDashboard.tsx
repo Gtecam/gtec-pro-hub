@@ -74,7 +74,71 @@ export default function ClientDashboard() {
   const navigate = useNavigate();
   const requests = useQuery(api.gtec.listMyRequests);
   const contracts = useQuery(api.gtec.listMyContracts);
+  const contractPays = useQuery(api.gtec.listMyContractPayments);
+  const payMonthly = useMutation(api.gtec.payContractMonthly);
   const cancelRequest = useMutation(api.gtec.cancelRequest);
+  const [payTarget, setPayTarget] = useState<string | null>(null);
+  const [payMethod, setPayMethod] = useState("mtn_momo");
+  const [payPhone, setPayPhone] = useState("");
+  const [payProof, setPayProof] = useState<string | null>(null);
+  const payProofRef = useRef<HTMLInputElement | null>(null);
+  const [payBusy, setPayBusy] = useState(false);
+  const [payError, setPayError] = useState<string | null>(null);
+
+  const payTargetContract = contracts?.find(
+    (c) => c.contract._id === payTarget,
+  )?.contract;
+  const payTargetDue = (() => {
+    if (!payTarget || !contractPays) return { paidCount: 0, pending: false };
+    const row = contractPays.find((p) => p.contractId === payTarget);
+    const pays = row?.payments ?? [];
+    return {
+      paidCount: pays.filter((p) => p.status === "valide").length,
+      pending: pays.some((p) => p.status === "en_attente"),
+    };
+  })();
+
+  const pickPayProof = (file: File | undefined) => {
+    if (!file) return;
+    if (file.size > 1.2 * 1024 * 1024) {
+      setPayError("Photo trop lourde — maximum 1,2 Mo.");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => setPayProof(String(reader.result));
+    reader.readAsDataURL(file);
+  };
+
+  const submitMonthlyPayment = async () => {
+    if (!payTargetContract) return;
+    if (!/^[+0-9 ]{8,}$/.test(payPhone.trim())) {
+      setPayError("Numéro de téléphone invalide.");
+      return;
+    }
+    if (payMethod === "especes" && !payProof) {
+      setPayError("Joignez la photo du reçu (paiement en espèces).");
+      return;
+    }
+    setPayBusy(true);
+    setPayError(null);
+    try {
+      await payMonthly({
+        contractId: payTargetContract._id as never,
+        method: payMethod as never,
+        payerPhone: payPhone.trim(),
+        proofPhotoUrl: payProof ?? undefined,
+      });
+      toast.success("Mensualité envoyée — vérification par GTEC en cours.");
+      setPayTarget(null);
+      setPayPhone("");
+      setPayProof(null);
+      setPayMethod("mtn_momo");
+    } catch (e) {
+      setPayError(e instanceof Error ? e.message : "Erreur");
+    } finally {
+      setPayBusy(false);
+    }
+  };
   const updateIdentity = useMutation(api.gtec.updateClientIdentity);
 
   const [cancelTarget, setCancelTarget] = useState<string | null>(null);
@@ -422,6 +486,19 @@ export default function ClientDashboard() {
                         {contract.title}
                       </CardTitle>
                       <div className="flex items-center gap-2">
+                        {contract.status === "actif" && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              setPayError(null);
+                              setPayTarget(contract._id);
+                            }}
+                          >
+                            <Wallet className="mr-1.5 size-4" />
+                            Payer la mensualité
+                          </Button>
+                        )}
                         <Button
                           variant="outline"
                           size="sm"
@@ -495,6 +572,13 @@ export default function ClientDashboard() {
                         <p className="text-xs text-muted-foreground">Visites faites</p>
                         <p className="font-medium">
                           {done} / {visits.length}
+                        </p>
+                      </div>
+                      <div className="rounded-lg bg-muted/60 px-3 py-2">
+                        <p className="text-xs text-muted-foreground">Mensualités payées</p>
+                        <p className="font-medium">
+                          {(contractPays ?? []).find((p) => p.contractId === contract._id)
+                            ?.payments.filter((p) => p.status === "valide").length ?? 0}
                         </p>
                       </div>
                       <div className="rounded-lg bg-muted/60 px-3 py-2">
@@ -753,6 +837,71 @@ export default function ClientDashboard() {
               onClick={saveIdentity}
             >
               {busyId ? "Enregistrement…" : "Enregistrer mon identité"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Paiement de mensualité */}
+      <Dialog open={!!payTarget} onOpenChange={(o) => !o && setPayTarget(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              Payer la mensualité{payTargetContract ? ` — ${payTargetContract.reference}` : ""}
+            </DialogTitle>
+            <DialogDescription>
+              {payTargetContract
+                ? `Échéance n°${payTargetDue.paidCount + 1} · ${payTargetContract.monthlyAmount.toLocaleString("fr-FR")} FCFA — vérifiée par GTEC après envoi.`
+                : ""}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-col gap-3">
+            <div className="flex flex-col gap-1.5">
+              <Label className="text-sm">Moyen de paiement</Label>
+              <Select value={payMethod} onValueChange={setPayMethod}>
+                <SelectTrigger className="cursor-pointer">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="mtn_momo">MTN MoMo</SelectItem>
+                  <SelectItem value="orange_money">Orange Money</SelectItem>
+                  <SelectItem value="virement">Virement bancaire</SelectItem>
+                  <SelectItem value="especes">Espèces (reçu photo)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label className="text-sm">Numéro payeur</Label>
+              <Input
+                value={payPhone}
+                onChange={(e) => setPayPhone(e.target.value)}
+                placeholder="6 XX XX XX XX"
+                inputMode="tel"
+              />
+            </div>
+            {payMethod === "especes" && (
+              <div className="flex flex-col gap-1.5">
+                <Label className="text-sm">Photo du reçu</Label>
+                <input
+                  ref={payProofRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(e) => pickPayProof(e.target.files?.[0])}
+                />
+                <Button variant="outline" size="sm" onClick={() => payProofRef.current?.click()}>
+                  {payProof ? "Remplacer la photo" : "Joindre une photo"}
+                </Button>
+              </div>
+            )}
+            {payError && <p className="text-xs text-destructive">{payError}</p>}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPayTarget(null)}>
+              Retour
+            </Button>
+            <Button className="halo-amber" disabled={payBusy} onClick={submitMonthlyPayment}>
+              {payBusy ? "Envoi…" : "Envoyer la mensualité"}
             </Button>
           </DialogFooter>
         </DialogContent>
