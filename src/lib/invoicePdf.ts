@@ -815,13 +815,47 @@ export function buildMaintenanceHtml(data: MaintenancePdfData): string {
 /**
  * Dossier complet : facture + PV de réception dans un seul document A4 —
  * page 1 la facture, page suivante le PV (saut de page automatique).
+ * Pagination : bandeau « Document 1/2 · 2/2 » sur chaque section + numéro
+ * de page physique en marge (Page X / Y, via les marges @page).
  */
+const DOSSIER_CSS = `
+  /* Numérotation physique des pages (marges de page — Chromium 131+). */
+  @page {
+    @bottom-center {
+      content: "Page " counter(page) " / " counter(pages) " — GTEC PRO";
+      font-family: "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      font-size: 9.5px;
+      color: #63756a;
+    }
+  }
+  /* Bandeau d'identification de chaque document du dossier. */
+  .dossier-band {
+    display: flex; justify-content: space-between; align-items: center; gap: 12px;
+    background: #f2f7f3; border: 1px solid #d5ded7; border-radius: 8px;
+    padding: 6px 12px; margin-bottom: 14px; font-size: 11px; color: #63756a;
+  }
+  .dossier-band strong { color: #15803d; font-size: 12px; }
+`;
+
 export function buildDossierHtml(data: DossierPdfData): string {
+  const ref = data.invoice.request.reference;
   return wrapDocument(
-    `Dossier ${data.invoice.request.reference} — GTEC PRO`,
-    `<div class="page">${buildInvoiceBody(data.invoice)}</div>
-<div class="page">${buildReceptionBody(data.reception)}</div>`,
-    INVOICE_CSS + RECEPTION_CSS,
+    `Dossier ${ref} — GTEC PRO`,
+    `<div class="page">
+  <div class="dossier-band">
+    <span>Dossier ${esc(ref)} — Document 1/2</span>
+    <strong>Facture ${esc(data.invoice.invoiceNumber)}</strong>
+  </div>
+  ${buildInvoiceBody(data.invoice)}
+</div>
+<div class="page">
+  <div class="dossier-band">
+    <span>Dossier ${esc(ref)} — Document 2/2</span>
+    <strong>PV de réception</strong>
+  </div>
+  ${buildReceptionBody(data.reception)}
+</div>`,
+    INVOICE_CSS + RECEPTION_CSS + DOSSIER_CSS,
   );
 }
 
