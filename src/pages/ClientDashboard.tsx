@@ -4,6 +4,7 @@ import {
   ArrowRight,
   CalendarCheck,
   CalendarClock,
+  Download,
   FileText,
   IdCard,
   MapPin,
@@ -58,6 +59,7 @@ import {
   SERVICES,
   statusMeta,
 } from "@/lib/gtec";
+import { openMaintenancePdf } from "@/lib/invoicePdf";
 
 function serviceIcon(key: string) {
   return SERVICES.find((s) => s.key === key)?.icon ?? Sparkles;
@@ -419,14 +421,59 @@ export default function ClientDashboard() {
                         <ShieldCheck className="size-4 text-primary" />
                         {contract.title}
                       </CardTitle>
-                      <span
-                        className={cn(
-                          "rounded-full px-2.5 py-1 text-xs font-medium ring-1 ring-inset",
-                          meta.className,
-                        )}
-                      >
-                        {meta.label}
-                      </span>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            try {
+                              openMaintenancePdf({
+                                contract: {
+                                  reference: contract.reference,
+                                  title: contract.title,
+                                  serviceLabel: serviceLabel(contract.serviceKey),
+                                  description: contract.description,
+                                  frequencyLabel: contractFrequencyLabel(contract.frequency),
+                                  city: contract.city,
+                                  address: contract.address,
+                                  monthlyAmount: contract.monthlyAmount,
+                                  status: contract.status,
+                                  startDate: contract.startDate,
+                                  endDate: contract.endDate,
+                                },
+                                clientName: user?.name ?? "Client GTEC",
+                                clientPhone: user?.phone ?? undefined,
+                                clientEmail: user?.email ?? undefined,
+                                clientAddress: user?.address ?? undefined,
+                                clientCity: user?.city ?? contract.city,
+                                visits: visits.map((v) => ({
+                                  scheduledAt: v.scheduledAt,
+                                  doneAt: v.doneAt,
+                                  status: v.status,
+                                  report: v.report,
+                                })),
+                              });
+                            } catch (e) {
+                              toast.error(
+                                e instanceof Error
+                                  ? e.message
+                                  : "Impression impossible — réessayez.",
+                              );
+                            }
+                          }}
+                        >
+                          <Download className="mr-1.5 size-4" />
+                          Facture PDF
+                        </Button>
+                        <span
+                          className={cn(
+                            "rounded-full px-2.5 py-1 text-xs font-medium ring-1 ring-inset",
+                            meta.className,
+                          )}
+                        >
+                          {meta.label}
+                        </span>
+                      </div>
                     </div>
                     <CardDescription>
                       {contract.reference} · {contractFrequencyLabel(contract.frequency)} ·{" "}

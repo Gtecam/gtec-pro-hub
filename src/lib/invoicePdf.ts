@@ -1,5 +1,6 @@
 import {
   fcfa,
+  formatDate,
   formatDateTime,
   MILESTONE_LABELS,
   PAYMENT_METHODS,
@@ -177,6 +178,16 @@ const RECEPTION_CSS = `
     padding: 8px; min-height: 96px; display: flex; align-items: center; justify-content: center; }
   .sigarea img { max-height: 84px; max-width: 100%; }
   .sigarea .hint { font-size: 10px; color: #63756a; margin: 4px 0 0; }
+`;
+
+const MAINTENANCE_CSS = `
+  .badge.wait { border-color: #b45309; color: #b45309; }
+  .client { border: 1px solid #d5ded7; border-radius: 8px; padding: 10px 12px; margin-bottom: 16px; }
+  .client h3 { margin: 0 0 4px; font-size: 10.5px; text-transform: uppercase;
+    letter-spacing: 0.08em; color: #15803d; }
+  .pv p { margin: 4px 0; }
+  .warranty { background: #f2f7f3; border-radius: 8px; padding: 10px 12px; margin: 12px 0; }
+  .muted { color: #63756a; }
 `;
 
 // ===================== Corps Facture =====================
@@ -493,10 +504,145 @@ export function buildReceptionHtml(data: ReceptionPdfData): string {
   );
 }
 
+// ===================== Contrat de maintenance =====================
+
+export type MaintenancePdfData = {
+  contract: {
+    reference: string;
+    title: string;
+    serviceLabel: string;
+    description?: string;
+    /** Libellé déjà formaté (ex. "Trimestriel"). */
+    frequencyLabel: string;
+    city: string;
+    address: string;
+    monthlyAmount: number;
+    status: string; // actif | suspendu | expire | resilie
+    startDate: number;
+    endDate: number;
+  };
+  clientName: string;
+  clientPhone?: string;
+  clientEmail?: string;
+  clientAddress?: string;
+  clientCity?: string;
+  visits: {
+    scheduledAt: number;
+    doneAt?: number;
+    status: string; // planifiee | faite | annulee
+    report?: string;
+  }[];
+};
+
+const MAINTENANCE_STATUS_LABEL: Record<string, string> = {
+  actif: "Actif",
+  suspendu: "Suspendu",
+  expire: "Expiré",
+  resilie: "Résilié",
+};
+
+function buildMaintenanceBody(data: MaintenancePdfData): string {
+  const c = data.contract;
+  const statusLabel = MAINTENANCE_STATUS_LABEL[c.status] ?? c.status;
+  const months = Math.max(
+    1,
+    Math.round((c.endDate - c.startDate) / (30 * 24 * 3600 * 1000)),
+  );
+  const contractTotal = c.monthlyAmount * months;
+  const done = data.visits.filter((v) => v.status === "faite").length;
+
+  const visitRows = data.visits
+    .map(
+      (v) => `
+      <tr>
+        <td>${formatDate(v.scheduledAt)}</td>
+        <td>${v.doneAt ? formatDate(v.doneAt) : "—"}</td>
+        <td class="${v.status === "faite" ? "ok" : ""}">${
+          v.status === "faite" ? "Réalisée" : v.status === "planifiee" ? "Planifiée" : "Annulée"
+        }</td>
+        <td>${v.report ? esc(v.report.length > 140 ? `${v.report.slice(0, 140)}…` : v.report) : "—"}</td>
+      </tr>`,
+    )
+    .join("");
+
+  return `
+  <div class="head">
+    <div class="brand">
+      <h1>GTEC PRO</h1>
+      <p>Green Tech Energy Cameroon — Sarl · Énergie, électricité &amp; multi-services</p>
+      <p>Service clientèle : 655 09 42 28 · etsgreentech@yahoo.com · Douala, Cameroun</p>
+    </div>
+    <div class="doc">
+      <p class="doc-title">CONTRAT DE MAINTENANCE</p>
+      <p class="doc-num">${esc(c.reference)}</p>
+      <span class="badge ${c.status === "actif" ? "ok" : "wait"}">${esc(statusLabel)}</span>
+    </div>
+  </div>
+
+  <div class="meta">
+    <div><div class="k">Contrat</div><div><strong>${esc(c.title)}</strong></div></div>
+    <div><div class="k">Prestation</div><div>${esc(c.serviceLabel)}</div></div>
+    <div><div class="k">Fréquence</div><div>${esc(c.frequencyLabel)}</div></div>
+    <div><div class="k">Lieu</div><div>${esc(c.address)}, ${esc(c.city)}</div></div>
+    <div><div class="k">Période</div><div>du ${formatDate(c.startDate)} au ${formatDate(c.endDate)}</div></div>
+  </div>
+
+  <div class="client">
+    <h3>Client</h3>
+    ${[data.clientName, data.clientAddress ?? c.address, data.clientCity ?? c.city, data.clientPhone ? `Tél. : ${data.clientPhone}` : "", data.clientEmail]
+      .filter((s): s is string => !!s)
+      .map(esc)
+      .join("<br/>")}
+  </div>
+
+  <h2>Détail de l'abonnement</h2>
+  <div class="pv">
+    <p><strong>Mensualité :</strong> ${fcfa(c.monthlyAmount)} · <strong>Fréquence :</strong> ${esc(c.frequencyLabel)}</p>
+    <p><strong>Durée :</strong> ${months} mois (du ${formatDate(c.startDate)} au ${formatDate(c.endDate)})</p>
+    <p><strong>Total du contrat :</strong> ${fcfa(contractTotal)}</p>
+    <p><strong>Visites réalisées :</strong> ${done} / ${data.visits.length}</p>
+    ${c.description ? `<p><strong>Objet du contrat :</strong> ${esc(c.description)}</p>` : ""}
+  </div>
+
+  <div class="warranty">
+    Ce contrat couvre les visites de maintenance préventive planifiées ci-dessous.
+    Les pièces et réparations hors périmètre font l'objet d'un devis séparé.
+  </div>
+
+  <h2>Visites de maintenance</h2>
+  ${
+    data.visits.length
+      ? `<table>
+    <thead><tr><th>Date prévue</th><th>Réalisée le</th><th>Statut</th><th>Compte rendu</th></tr></thead>
+    <tbody>${visitRows}</tbody>
+  </table>`
+      : `<p class="muted">Aucune visite planifiée pour ce contrat.</p>`
+  }
+
+  <div class="foot">
+    <div>
+      Règlement par virement : ${esc("Afriland First Bank")} — IBAN ${esc("CM21 1000 5000 1523 4567 8901 234")}<br/>
+      Mobile Money : Orange Money 655 54 76 49 · MTN MoMo 678 20 28 24
+    </div>
+    <div style="text-align:right">
+      Document généré électroniquement par GTEC PRO<br/>
+      ${new Date().toLocaleDateString("fr-FR", { dateStyle: "long" })}
+    </div>
+  </div>`;
+}
+
 export type DossierPdfData = {
   invoice: InvoicePdfData;
   reception: ReceptionPdfData;
 };
+
+export function buildMaintenanceHtml(data: MaintenancePdfData): string {
+  return wrapDocument(
+    `Contrat de maintenance ${data.contract.reference} — GTEC PRO`,
+    buildMaintenanceBody(data),
+    MAINTENANCE_CSS,
+  );
+}
 
 /**
  * Dossier complet : facture + PV de réception dans un seul document A4 —
@@ -549,4 +695,9 @@ export function openReceptionPdf(data: ReceptionPdfData): void {
 /** Dossier complet (facture + PV, deux pages). */
 export function openDossierPdf(data: DossierPdfData): void {
   openPrintWindow(buildDossierHtml(data));
+}
+
+/** Contrat de maintenance (facture-abonnement + visites). */
+export function openMaintenancePdf(data: MaintenancePdfData): void {
+  openPrintWindow(buildMaintenanceHtml(data));
 }
