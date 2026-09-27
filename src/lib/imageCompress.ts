@@ -50,15 +50,20 @@ export function dataUrlBytes(dataUrl: string): number {
 /**
  * Compresse si nécessaire, sinon renvoie le fichier inchangé.
  * - non image → inchangé (le refus de type reste de la responsabilité de l'appelant) ;
- * - image ≤ MAX_FILE_SIZE → inchangée ;
+ * - image ≤ maxBytes → inchangée ;
  * - image lourde → redimensionnement progressif + qualité dégressive,
  *   du mieux conservé au plus compact, jusqu'à passer sous la limite.
+ *
+ * `mode: "document"` (défaut : photo) privilégie la lisibilité du texte :
+ * largeur plafonnée à 1600 px, qualité plus haute — indispensable pour les
+ * CNI, diplômes et attestations transmis à l'administration GTEC.
  */
 export async function compressImageIfNeeded(
   file: File,
-  options?: { maxBytes?: number },
+  options?: { maxBytes?: number; mode?: "photo" | "document" },
 ): Promise<CompressResult> {
   const maxBytes = options?.maxBytes ?? MAX_FILE_SIZE;
+  const documentMode = options?.mode === "document";
   const isImage = file.type.startsWith("image/");
   if (!isImage || file.size <= maxBytes) {
     return { ok: true, dataUrl: "", compressed: false, originalSize: file.size };
@@ -85,15 +90,24 @@ export async function compressImageIfNeeded(
   }
 
   // Paliers : on préserve d'abord la résolution, puis on réduit.
-  const steps: { maxWidth: number; quality: number }[] = [
-    { maxWidth: img.naturalWidth, quality: 0.82 },
-    { maxWidth: img.naturalWidth, quality: 0.7 },
-    { maxWidth: 1920, quality: 0.8 },
-    { maxWidth: 1600, quality: 0.75 },
-    { maxWidth: 1280, quality: 0.72 },
-    { maxWidth: 1024, quality: 0.7 },
-    { maxWidth: 800, quality: 0.65 },
-  ];
+  // Mode document : plafond 1600 px et qualité plus haute (texte lisible).
+  const steps: { maxWidth: number; quality: number }[] = documentMode
+    ? [
+        { maxWidth: Math.min(img.naturalWidth, 1600), quality: 0.86 },
+        { maxWidth: Math.min(img.naturalWidth, 1400), quality: 0.8 },
+        { maxWidth: 1200, quality: 0.78 },
+        { maxWidth: 1000, quality: 0.72 },
+        { maxWidth: 800, quality: 0.68 },
+      ]
+    : [
+        { maxWidth: img.naturalWidth, quality: 0.82 },
+        { maxWidth: img.naturalWidth, quality: 0.7 },
+        { maxWidth: 1920, quality: 0.8 },
+        { maxWidth: 1600, quality: 0.75 },
+        { maxWidth: 1280, quality: 0.72 },
+        { maxWidth: 1024, quality: 0.7 },
+        { maxWidth: 800, quality: 0.65 },
+      ];
   let best = "";
   for (const step of steps) {
     best = encode(img, step.maxWidth, step.quality);

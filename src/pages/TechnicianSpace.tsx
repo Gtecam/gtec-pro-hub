@@ -135,33 +135,47 @@ function DocumentsUploader({
 
   const handlePick = async (file: File | undefined, index: number) => {
     if (!file || index < 0) return;
-    // Images lourdes : compression automatique au lieu d'un refus.
-    // PDF et fichiers déjà conformes : lecture directe.
-    const compressed = file.type.startsWith("image/") && file.size > MAX_DOC_SIZE;
-    if (compressed) {
-      const res = await compressImageIfNeeded(file, { maxBytes: MAX_DOC_SIZE });
-      if (!res.ok) {
-        toast.error(
-          `Document trop lourd même après compression (${humanSize(file.size)}) — maximum ${humanSize(MAX_DOC_SIZE)}.`,
-        );
+    // Images : compression automatique en mode document (texte lisible),
+    // ciblée sous 1 Mo pour garder le dossier complet sous la limite Convex.
+    if (file.type.startsWith("image/")) {
+      if (file.type === "image/gif" || file.type === "image/svg+xml") {
+        toast.error(`${file.name} : format non accepté (image ou PDF).`);
         return;
       }
-      setReading(true);
-      try {
-        onChange(
-          documents.map((d, j) => (j === index ? { ...d, url: res.dataUrl } : d)),
-        );
-        toast.success(
-          `Document compressé : ${humanSize(res.originalSize)} → ${humanSize(dataUrlBytes(res.dataUrl))}.`,
-        );
-      } finally {
-        setReading(false);
+      const target = 1024 * 1024; // ~1 Mo par pièce
+      // PNG/photo lourd : on compresse vers JPEG (gain x3 à x10 typique).
+      const needsCompress = file.size > target || file.type !== "image/jpeg";
+      if (needsCompress || file.size > MAX_DOC_SIZE) {
+        const res = await compressImageIfNeeded(file, {
+          maxBytes: target,
+          mode: "document",
+        });
+        if (!res.ok) {
+          toast.error(`Document illisible (${file.name}).`);
+          return;
+        }
+        setReading(true);
+        try {
+          onChange(
+            documents.map((d, j) => (j === index ? { ...d, url: res.dataUrl } : d)),
+          );
+          if (res.compressed) {
+            toast.success(
+              `${file.name} compressé : ${humanSize(res.originalSize)} → ${humanSize(dataUrlBytes(res.dataUrl))}.`,
+            );
+          } else {
+            toast.success("Document joint");
+          }
+        } finally {
+          setReading(false);
+        }
+        return;
       }
-      return;
     }
+    // PDF et autres : la limite stricte s'applique (pas de recompression possible).
     if (file.size > MAX_DOC_SIZE) {
       toast.error(
-        `Document trop lourd (${humanSize(file.size)}) — maximum ${humanSize(MAX_DOC_SIZE)}. Les images sont compressées automatiquement ; les PDF doivent respecter la limite.`,
+        `Document trop lourd (${humanSize(file.size)}) — maximum ${humanSize(MAX_DOC_SIZE)}. Les photos sont compressées automatiquement ; préférez une photo de votre document ou un PDF plus léger.`,
       );
       return;
     }
@@ -560,6 +574,18 @@ export default function TechnicianSpace() {
       );
       return;
     }
+    // Documents réellement joints (on écarte les emplacements vides).
+    const filledDocs = documents.filter((d) => d.url);
+    // Garde de poids : Convex limite chaque mutation (documents inclus) à 8 Mio.
+    const totalBytes = filledDocs.reduce((s, d) => s + dataUrlBytes(d.url), 0);
+    const TOTAL_LIMIT = 6 * 1024 * 1024; // marge de sécurité sous la limite Convex
+    if (totalBytes > TOTAL_LIMIT) {
+      toast.error(
+        `Dossier trop volumineux (${humanSize(totalBytes)} de documents, maximum ${humanSize(TOTAL_LIMIT)}). Les photos sont compressées automatiquement — retirez un document ou utilisez des PDF plus légers.`,
+      );
+      setBusy(false);
+      return;
+    }
     setBusy(true);
     try {
       await apply({
@@ -583,7 +609,7 @@ export default function TechnicianSpace() {
         fieldOfStudy: fieldOfStudy.trim() || undefined,
         school: school.trim() || undefined,
         graduationYear: graduationYear || undefined,
-        documents,
+        documents: filledDocs,
       });
       toast.success("Candidature envoyée — GTEC va vérifier votre dossier");
     } catch (e) {
