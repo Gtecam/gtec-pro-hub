@@ -59,7 +59,7 @@ import {
   SERVICES,
   statusMeta,
 } from "@/lib/gtec";
-import { openMaintenancePdf } from "@/lib/invoicePdf";
+import { openMaintenancePdf, openMaintenanceReceiptPdf } from "@/lib/invoicePdf";
 
 function serviceIcon(key: string) {
   return SERVICES.find((s) => s.key === key)?.icon ?? Sparkles;
@@ -84,6 +84,7 @@ export default function ClientDashboard() {
   const payProofRef = useRef<HTMLInputElement | null>(null);
   const [payBusy, setPayBusy] = useState(false);
   const [payError, setPayError] = useState<string | null>(null);
+  const [receiptTarget, setReceiptTarget] = useState<string | null>(null);
 
   const payTargetContract = contracts?.find(
     (c) => c.contract._id === payTarget,
@@ -139,6 +140,61 @@ export default function ClientDashboard() {
       setPayBusy(false);
     }
   };
+  const openContractReceipt = (contractId: string, periodIndex?: number) => {
+    const contract = contracts?.find((c) => c.contract._id === contractId)?.contract;
+    const row = (contractPays ?? []).find((p) => p.contractId === contractId);
+    const pays = (row?.payments ?? [])
+      .filter((p) => p.status === "valide")
+      .sort((a, b) =>
+        periodIndex ? a.periodIndex - b.periodIndex : b.periodIndex - a.periodIndex,
+      );
+    const p = periodIndex ? pays.find((x) => x.periodIndex === periodIndex) : pays[0];
+    if (!contract || !p) {
+      toast.info(
+        "Aucune mensualité réglée — le reçu est disponible après validation par GTEC.",
+      );
+      return;
+    }
+    try {
+      openMaintenanceReceiptPdf({
+        payment: {
+          periodIndex: p.periodIndex,
+          periodStart: p.periodStart,
+          periodEnd: p.periodEnd,
+          amount: p.amount,
+          method: p.method,
+          payerPhone: p.payerPhone,
+          status: p.status,
+          validatedAt: p.validatedAt,
+          externalRef: p.externalRef,
+          bankRef: p.bankRef,
+          bankName: p.bankName,
+        },
+        contract: {
+          reference: contract.reference,
+          title: contract.title,
+          serviceLabel: serviceLabel(contract.serviceKey),
+          frequencyLabel: contractFrequencyLabel(contract.frequency),
+          city: contract.city,
+          address: contract.address,
+          monthlyAmount: contract.monthlyAmount,
+          startDate: contract.startDate,
+          endDate: contract.endDate,
+        },
+        clientName: user?.name ?? "Client GTEC",
+        clientPhone: user?.phone ?? undefined,
+        clientEmail: user?.email ?? undefined,
+        clientAddress: user?.address ?? undefined,
+        clientCity: user?.city ?? contract.city,
+        paidCount: pays.length,
+      });
+    } catch (e) {
+      toast.error(
+        e instanceof Error ? e.message : "Impression impossible — réessayez.",
+      );
+    }
+  };
+
   const updateIdentity = useMutation(api.gtec.updateClientIdentity);
 
   const [cancelTarget, setCancelTarget] = useState<string | null>(null);
@@ -542,6 +598,31 @@ export default function ClientDashboard() {
                           <Download className="mr-1.5 size-4" />
                           Facture PDF
                         </Button>
+                        {contract.status === "actif" && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              const pays = ((contractPays ?? []).find(
+                                (p) => p.contractId === contract._id,
+                              )?.payments ?? []).filter((p) => p.status === "valide");
+                              if (pays.length === 0) {
+                                toast.info(
+                                  "Aucune mensualité réglée — le reçu est disponible après validation par GTEC.",
+                                );
+                                return;
+                              }
+                              if (pays.length === 1) {
+                                openContractReceipt(contract._id);
+                              } else {
+                                setReceiptTarget(contract._id);
+                              }
+                            }}
+                          >
+                            <Receipt className="mr-1.5 size-4" />
+                            Reçu PDF
+                          </Button>
+                        )}
                         <span
                           className={cn(
                             "rounded-full px-2.5 py-1 text-xs font-medium ring-1 ring-inset",
@@ -839,6 +920,58 @@ export default function ClientDashboard() {
               {busyId ? "Enregistrement…" : "Enregistrer mon identité"}
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Choix de l'échéance pour le reçu */}
+      <Dialog
+        open={!!receiptTarget}
+        onOpenChange={(o) => !o && setReceiptTarget(null)}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Reçu de mensualité</DialogTitle>
+            <DialogDescription>
+              Choisissez l'échéance à imprimer.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-col gap-2">
+            {(() => {
+              const row = (contractPays ?? []).find(
+                (p) => p.contractId === receiptTarget,
+              );
+              const pays = (row?.payments ?? [])
+                .filter((p) => p.status === "valide")
+                .sort((a, b) => b.periodIndex - a.periodIndex);
+              return pays.map((p) => (
+                <div
+                  key={p._id}
+                  className="flex items-center justify-between gap-3 rounded-lg border border-border/70 px-3 py-2"
+                >
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium">
+                      Échéance n°{p.periodIndex} · {fcfa(p.amount)}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {formatDate(p.periodStart)} → {formatDate(p.periodEnd)}
+                      {p.validatedAt ? ` · encaissée le ${formatDate(p.validatedAt)}` : ""}
+                    </p>
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      openContractReceipt(receiptTarget as string, p.periodIndex);
+                      setReceiptTarget(null);
+                    }}
+                  >
+                    <Receipt className="mr-1.5 size-4" />
+                    Reçu
+                  </Button>
+                </div>
+              ));
+            })()}
+          </div>
         </DialogContent>
       </Dialog>
 

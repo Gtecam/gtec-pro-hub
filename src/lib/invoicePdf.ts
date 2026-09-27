@@ -995,3 +995,163 @@ export function openDossierPdf(data: DossierPdfData, options?: DossierOptions): 
 export function openMaintenancePdf(data: MaintenancePdfData): void {
   openPrintWindow(buildMaintenanceHtml(data));
 }
+
+// ===================== Reçu de mensualité =====================
+
+export type MaintenanceReceiptPdfData = {
+  payment: {
+    /** Numéro d'échéance (1 = première mensualité). */
+    periodIndex: number;
+    periodStart: number;
+    periodEnd: number;
+    amount: number;
+    method: string;
+    payerPhone: string;
+    status: string; // valide | en_attente | echoue
+    validatedAt?: number;
+    externalRef?: string;
+    bankRef?: string;
+    bankName?: string;
+  };
+  contract: {
+    reference: string;
+    title: string;
+    serviceLabel: string;
+    frequencyLabel: string;
+    city: string;
+    address: string;
+    monthlyAmount: number;
+    startDate: number;
+    endDate: number;
+  };
+  clientName: string;
+  clientPhone?: string;
+  clientEmail?: string;
+  clientAddress?: string;
+  clientCity?: string;
+  /** Numéro d'échéances déjà réglées au moment de l'impression (pour le suivi). */
+  paidCount?: number;
+};
+
+const RECEIPT_STATUS_LABEL: Record<string, string> = {
+  valide: "Encaissé",
+  en_attente: "En cours de vérification",
+  echoue: "Paiement non abouti",
+};
+
+const methodDetail = (key: string, p: MaintenanceReceiptPdfData["payment"]) => {
+  if (key === "mtn_momo" || key === "orange_money") {
+    return `${methodLabel(key)} — ${p.payerPhone}${p.externalRef ? ` · réf. ${esc(p.externalRef)}` : ""}`;
+  }
+  if (key === "virement") {
+    return `${methodLabel(key)} — ${p.bankName ? `${esc(p.bankName)} · ` : ""}${p.bankRef ? `réf. ${esc(p.bankRef)}` : "référence bancaire à préciser"}`;
+  }
+  if (key === "especes") {
+    return `Espèces — encaissé par l'agent GTEC${p.externalRef ? ` · réf. ${esc(p.externalRef)}` : ""}`;
+  }
+  return methodLabel(key);
+};
+
+export function buildMaintenanceReceiptHtml(data: MaintenanceReceiptPdfData): string {
+  const p = data.payment;
+  const c = data.contract;
+  const isPaid = p.status === "valide";
+  const statusLabel = RECEIPT_STATUS_LABEL[p.status] ?? p.status;
+  const settled = p.validatedAt ?? Date.now();
+
+  return wrapDocument(
+    `Reçu mensualité ${c.reference} n°${p.periodIndex} — GTEC PRO`,
+    `
+  ${isPaid ? watermarkHtml("Payé") : ""}
+  <div class="head">
+    <div class="head-left">
+    <div class="logo">${gtecLogoSvg}</div>
+    <div class="brand">
+      <h1>GTEC PRO</h1>
+      <p>Green Tech Energy Cameroon — Sarl · Énergie, électricité &amp; multi-services</p>
+      <p>Service clientèle : 655 09 42 28 · etsgreentech@yahoo.com · Douala, Cameroun</p>
+    </div>
+    </div>
+    <div class="doc">
+      <p class="doc-title">REÇU DE MENSUALITÉ</p>
+      <p class="doc-num">${esc(c.reference)}-N${p.periodIndex}</p>
+      <span class="badge ${isPaid ? "payee" : "wait"}">${esc(statusLabel)}</span>
+    </div>
+  </div>
+
+  <div class="grid">
+    <div class="box">
+      <h3>Émetteur</h3>
+      <strong>GTEC PRO Sarl</strong><br/>
+      Green Tech Energy Cameroon<br/>
+      Douala — Cameroun<br/>
+      Tél. : 655 09 42 28
+    </div>
+    <div class="box">
+      <h3>Client</h3>
+      ${[data.clientName, data.clientAddress, data.clientCity, data.clientPhone ? `Tél. : ${esc(data.clientPhone)}` : "", data.clientEmail]
+        .filter((s): s is string => !!s)
+        .map(esc)
+        .join("<br/>")}
+    </div>
+  </div>
+
+  <div class="meta">
+    <div><div class="k">Contrat</div><div><strong>${esc(c.title)}</strong> — ${esc(c.reference)}</div></div>
+    <div><div class="k">Prestation</div><div>${esc(c.serviceLabel)}</div></div>
+    <div><div class="k">Fréquence</div><div>${esc(c.frequencyLabel)}</div></div>
+    <div><div class="k">Lieu</div><div>${esc(c.address)}, ${esc(c.city)}</div></div>
+    <div><div class="k">Échéance</div><div>n°${p.periodIndex} — période du ${formatDate(p.periodStart)} au ${formatDate(p.periodEnd)}</div></div>
+    ${data.paidCount ? `<div><div class="k">Suivi du contrat</div><div>${data.paidCount} mensualité${data.paidCount > 1 ? "s" : ""} réglée${data.paidCount > 1 ? "s" : ""} · contrat jusqu'au ${formatDate(c.endDate)}</div></div>` : ""}
+  </div>
+
+  <h2>Détail du règlement</h2>
+  <table class="totals">
+    <tr><td>Mensualité (${esc(c.frequencyLabel)})</td><td class="r">${fcfa(p.amount)}</td></tr>
+    <tr><td>Moyen de paiement</td><td class="r">${methodDetail(p.method, p)}</td></tr>
+    ${p.validatedAt ? `<tr><td>Encaissé le</td><td class="r">${formatDateTime(p.validatedAt)}</td></tr>` : ""}
+    <tr class="grand"><td>Total réglé</td><td class="r">${fcfa(p.amount)}</td></tr>
+  </table>
+
+  <div class="warranty">
+    ${
+      isPaid
+        ? `Cette mensualité couvre la période du ${formatDate(p.periodStart)} au ${formatDate(p.periodEnd)}.
+    Les visites de maintenance préventive prévues sur cette période sont incluses —
+    les pièces hors périmètre font l'objet d'un devis séparé.`
+        : `Ce reçu devient valable dès l'encaissement vérifié par GTEC PRO.`
+    }
+  </div>
+
+  <div class="sigarea">
+    <div class="sig-box">
+      <p style="margin:0 0 4px"><strong>Payé par</strong></p>
+      <div class="frame">${esc(data.clientName)} — ${esc(p.payerPhone)}</div>
+    </div>
+    <div class="sig-box">
+      <p style="margin:0 0 4px"><strong>Encaissé par GTEC PRO</strong></p>
+      <div class="frame"><span class="hint">${isPaid ? `Vérifié le ${formatDateTime(settled)}` : "En attente de vérification"}</span></div>
+    </div>
+  </div>
+
+  <div class="foot">
+    <div>
+      Règlement par virement : ${esc("Afriland First Bank")} — IBAN ${esc("CM21 1000 5000 1523 4567 8901 234")}<br/>
+      Mobile Money : Orange Money 655 54 76 49 · MTN MoMo 678 20 28 24
+    </div>
+    <div style="text-align:right">
+      Document généré électroniquement par GTEC PRO<br/>
+      ${new Date().toLocaleDateString("fr-FR", { dateStyle: "long" })}
+    </div>
+  </div>`,
+    INVOICE_CSS +
+      RECEPTION_CSS +
+      `
+  .warranty { background: #f2f7f3; border-radius: 8px; padding: 10px 12px; margin: 12px 0; }`,
+  );
+}
+
+/** Reçu de mensualité de contrat de maintenance. */
+export function openMaintenanceReceiptPdf(data: MaintenanceReceiptPdfData): void {
+  openPrintWindow(buildMaintenanceReceiptHtml(data));
+}
