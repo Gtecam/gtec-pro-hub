@@ -6,6 +6,7 @@ import {
   PAYMENT_METHODS,
   splitFiftyFifty,
 } from "./gtec";
+import gtecLogoSvg from "@/assets/logo.svg?raw";
 
 /**
  * Documents PDF GTEC PRO — générés côté navigateur en HTML A4 imprimable
@@ -111,6 +112,9 @@ const BASE_CSS = `
     display: flex; justify-content: space-between; align-items: flex-start;
     border-bottom: 3px solid #15803d; padding-bottom: 14px; margin-bottom: 18px;
   }
+  .head-left { display: flex; align-items: flex-start; gap: 12px; }
+  .logo { flex: none; }
+  .logo svg { width: 54px; height: 54px; display: block; }
   .brand h1 { margin: 0; font-size: 22px; color: #15803d; letter-spacing: -0.02em; }
   .brand p { margin: 2px 0 0; color: #4b5c51; font-size: 11px; }
   .doc { text-align: right; }
@@ -298,10 +302,13 @@ function buildInvoiceBody(data: InvoicePdfData): string {
 
   return `
   <div class="head">
+    <div class="head-left">
+    <div class="logo">${gtecLogoSvg}</div>
     <div class="brand">
       <h1>GTEC PRO</h1>
       <p>Green Tech Energy Cameroon — Sarl · Énergie, électricité &amp; multi-services</p>
       <p>Service clientèle : 655 09 42 28 · etsgreentech@yahoo.com · Douala, Cameroun</p>
+    </div>
     </div>
     <div class="doc">
       <p class="doc-title">FACTURE</p>
@@ -403,10 +410,13 @@ function buildReceptionBody(data: ReceptionPdfData): string {
 
   return `
   <div class="head">
+    <div class="head-left">
+    <div class="logo">${gtecLogoSvg}</div>
     <div class="brand">
       <h1>GTEC PRO</h1>
       <p>Green Tech Energy Cameroon — Sarl · Énergie, électricité &amp; multi-services</p>
       <p>Service clientèle : 655 09 42 28 · etsgreentech@yahoo.com · Douala, Cameroun</p>
+    </div>
     </div>
     <div class="doc">
       <p class="doc-title">PROCÈS-VERBAL DE RÉCEPTION</p>
@@ -567,10 +577,13 @@ function buildMaintenanceBody(data: MaintenancePdfData): string {
 
   return `
   <div class="head">
+    <div class="head-left">
+    <div class="logo">${gtecLogoSvg}</div>
     <div class="brand">
       <h1>GTEC PRO</h1>
       <p>Green Tech Energy Cameroon — Sarl · Énergie, électricité &amp; multi-services</p>
       <p>Service clientèle : 655 09 42 28 · etsgreentech@yahoo.com · Douala, Cameroun</p>
+    </div>
     </div>
     <div class="doc">
       <p class="doc-title">CONTRAT DE MAINTENANCE</p>
@@ -678,10 +691,13 @@ export function buildQuoteHtml(data: QuotePdfData): string {
     `Devis ${data.quoteNumber} — GTEC PRO`,
     `
   <div class="head">
+    <div class="head-left">
+    <div class="logo">${gtecLogoSvg}</div>
     <div class="brand">
       <h1>GTEC PRO</h1>
       <p>Green Tech Energy Cameroon — Sarl · Énergie, électricité &amp; multi-services</p>
       <p>Service clientèle : 655 09 42 28 · etsgreentech@yahoo.com · Douala, Cameroun</p>
+    </div>
     </div>
     <div class="doc">
       <p class="doc-title">DEVIS</p>
