@@ -37,7 +37,8 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
-import { CITIES, MAX_FILE_SIZE, MAX_FILE_SIZE_LABEL, SERVICES, categoryIcon, type ServiceKey } from "@/lib/gtec";
+import { CITIES, MAX_FILE_SIZE_LABEL, SERVICES, categoryIcon, type ServiceKey } from "@/lib/gtec";
+import { compressImageIfNeeded, dataUrlBytes, humanSize } from "@/lib/imageCompress";
 
 const STEPS = [
   { key: "service", label: "Service" },
@@ -124,27 +125,36 @@ export default function NewRequest() {
     return true;
   };
 
-  const handleFiles = (files: FileList | null) => {
+  const handleFiles = async (files: FileList | null) => {
     if (!files) return;
     const remaining = 4 - photos.length;
-    Array.from(files)
-      .slice(0, remaining)
-      .forEach((file) => {
-        if (!file.type.startsWith("image/")) {
-          toast.error(`${file.name} : seules les images sont acceptées en V1`);
-          return;
-        }
-        if (file.size > MAX_FILE_SIZE) {
-          toast.error(`${file.name} : fichier trop lourd (max ${MAX_FILE_SIZE_LABEL})`);
-          return;
-        }
-        const reader = new FileReader();
-        reader.onload = () => {
-          const result = reader.result as string;
-          setPhotos((p) => (p.length < 4 ? [...p, result] : p));
-        };
-        reader.readAsDataURL(file);
-      });
+    for (const file of Array.from(files).slice(0, remaining)) {
+      if (!file.type.startsWith("image/")) {
+        toast.error(`${file.name} : seules les images sont acceptées en V1`);
+        continue;
+      }
+      // Compression automatique : une image lourde est réduite au lieu d'être refusée.
+      const res = await compressImageIfNeeded(file);
+      if (!res.ok) {
+        toast.error(
+          `${file.name} : trop lourd même après compression (max ${MAX_FILE_SIZE_LABEL}).`,
+        );
+        continue;
+      }
+      const dataUrl = res.compressed
+        ? res.dataUrl
+        : await new Promise<string>((resolve) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(String(reader.result));
+            reader.readAsDataURL(file);
+          });
+      if (res.compressed) {
+        toast.success(
+          `${file.name} compressée : ${humanSize(res.originalSize)} → ${humanSize(dataUrlBytes(dataUrl))}.`,
+        );
+      }
+      setPhotos((p) => (p.length < 4 ? [...p, dataUrl] : p));
+    }
   };
 
   const submit = async () => {

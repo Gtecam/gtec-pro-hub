@@ -67,6 +67,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { NavigationOff } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { CITIES, fcfa, formatDate, formatDateTime, MAX_FILE_SIZE, MAX_FILE_SIZE_LABEL, PAYMENT_METHODS } from "@/lib/gtec";
+import { compressImageIfNeeded, dataUrlBytes, humanSize } from "@/lib/imageCompress";
 import { Navigate } from "react-router";
 
 const PLANS = [
@@ -134,9 +135,33 @@ function DocumentsUploader({
 
   const handlePick = async (file: File | undefined, index: number) => {
     if (!file || index < 0) return;
+    // Images lourdes : compression automatique au lieu d'un refus.
+    // PDF et fichiers déjà conformes : lecture directe.
+    const compressed = file.type.startsWith("image/") && file.size > MAX_DOC_SIZE;
+    if (compressed) {
+      const res = await compressImageIfNeeded(file, { maxBytes: MAX_DOC_SIZE });
+      if (!res.ok) {
+        toast.error(
+          `Document trop lourd même après compression (${humanSize(file.size)}) — maximum ${humanSize(MAX_DOC_SIZE)}.`,
+        );
+        return;
+      }
+      setReading(true);
+      try {
+        onChange(
+          documents.map((d, j) => (j === index ? { ...d, url: res.dataUrl } : d)),
+        );
+        toast.success(
+          `Document compressé : ${humanSize(res.originalSize)} → ${humanSize(dataUrlBytes(res.dataUrl))}.`,
+        );
+      } finally {
+        setReading(false);
+      }
+      return;
+    }
     if (file.size > MAX_DOC_SIZE) {
       toast.error(
-        `Document trop lourd (${Math.round(file.size / 1024)} Ko) — maximum ${Math.round(MAX_DOC_SIZE / 1024)} Ko.`,
+        `Document trop lourd (${humanSize(file.size)}) — maximum ${humanSize(MAX_DOC_SIZE)}. Les images sont compressées automatiquement ; les PDF doivent respecter la limite.`,
       );
       return;
     }
@@ -606,10 +631,20 @@ export default function TechnicianSpace() {
     }
   };
 
-  const pickCashProof = (file: File | undefined) => {
+  const pickCashProof = async (file: File | undefined) => {
     if (!file) return;
-    if (file.size > MAX_FILE_SIZE) {
-      toast.error(`Photo trop lourde — maximum ${MAX_FILE_SIZE_LABEL}.`);
+    if (!file.type.startsWith("image/")) {
+      toast.error("Seule une photo du reçu est acceptée.");
+      return;
+    }
+    const res = await compressImageIfNeeded(file);
+    if (!res.ok) {
+      toast.error(`Photo trop lourde même après compression (max ${MAX_FILE_SIZE_LABEL}).`);
+      return;
+    }
+    if (res.compressed) {
+      toast.success(`Photo compressée : ${humanSize(res.originalSize)} → ${humanSize(dataUrlBytes(res.dataUrl))}.`);
+      setCashProof(res.dataUrl);
       return;
     }
     const reader = new FileReader();

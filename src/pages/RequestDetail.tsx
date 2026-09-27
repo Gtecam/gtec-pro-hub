@@ -70,6 +70,7 @@ import {
   statusMeta,
 } from "@/lib/gtec";
 import { openDossierPdf, openInvoicePdf, openQuotePdf, openReceptionPdf } from "@/lib/invoicePdf";
+import { compressImageIfNeeded, dataUrlBytes, humanSize } from "@/lib/imageCompress";
 
 function serviceMeta(key: string) {
   return SERVICES.find((s) => s.key === key);
@@ -276,10 +277,20 @@ export default function RequestDetail() {
     }
   };
 
-  const pickProof = (file: File | undefined) => {
+  const pickProof = async (file: File | undefined) => {
     if (!file) return;
-    if (file.size > MAX_FILE_SIZE) {
-      toast.error(`Photo trop lourde — maximum ${MAX_FILE_SIZE_LABEL}.`);
+    if (!file.type.startsWith("image/")) {
+      toast.error("Seule une photo du reçu est acceptée.");
+      return;
+    }
+    const res = await compressImageIfNeeded(file);
+    if (!res.ok) {
+      toast.error(`Photo trop lourde même après compression (max ${MAX_FILE_SIZE_LABEL}).`);
+      return;
+    }
+    if (res.compressed) {
+      toast.success(`Photo compressée : ${humanSize(res.originalSize)} → ${humanSize(dataUrlBytes(res.dataUrl))}.`);
+      setProofUrl(res.dataUrl);
       return;
     }
     const reader = new FileReader();

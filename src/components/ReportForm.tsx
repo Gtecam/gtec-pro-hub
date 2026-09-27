@@ -12,7 +12,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { MAX_FILE_SIZE, MAX_FILE_SIZE_LABEL } from "@/lib/gtec";
+import { MAX_FILE_SIZE_LABEL } from "@/lib/gtec";
+import { compressImageIfNeeded, dataUrlBytes, humanSize } from "@/lib/imageCompress";
 
 type Part = { label: string; qty: number; unitPrice: number };
 
@@ -43,23 +44,38 @@ export function ReportForm({
   const beforeRef = useRef<HTMLInputElement>(null);
   const afterRef = useRef<HTMLInputElement>(null);
 
-  const readImages = (
+  const readImages = async (
     files: FileList | null,
     setter: (fn: (p: string[]) => string[]) => void,
   ) => {
     if (!files) return;
-    Array.from(files)
-      .slice(0, 4)
-      .forEach((file) => {
-        if (!file.type.startsWith("image/") || file.size > MAX_FILE_SIZE) {
-          toast.error(`${file.name} : image de ${MAX_FILE_SIZE_LABEL} max`);
-          return;
-        }
-        const reader = new FileReader();
-        reader.onload = () =>
-          setter((p) => (p.length < 4 ? [...p, reader.result as string] : p));
-        reader.readAsDataURL(file);
-      });
+    for (const file of Array.from(files).slice(0, 4)) {
+      if (!file.type.startsWith("image/")) {
+        toast.error(`${file.name} : seules les images sont acceptées.`);
+        continue;
+      }
+      // Compression automatique des images lourdes (photos de chantier).
+      const res = await compressImageIfNeeded(file);
+      if (!res.ok) {
+        toast.error(
+          `${file.name} : trop lourde même après compression (max ${MAX_FILE_SIZE_LABEL}).`,
+        );
+        continue;
+      }
+      const dataUrl = res.compressed
+        ? res.dataUrl
+        : await new Promise<string>((resolve) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(String(reader.result));
+            reader.readAsDataURL(file);
+          });
+      if (res.compressed) {
+        toast.success(
+          `${file.name} compressée : ${humanSize(res.originalSize)} → ${humanSize(dataUrlBytes(dataUrl))}.`,
+        );
+      }
+      setter((p) => (p.length < 4 ? [...p, dataUrl] : p));
+    }
   };
 
   const submit = async () => {

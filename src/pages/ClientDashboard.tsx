@@ -62,6 +62,7 @@ import {
   statusMeta,
 } from "@/lib/gtec";
 import { openMaintenancePdf, openMaintenanceReceiptPdf } from "@/lib/invoicePdf";
+import { compressImageIfNeeded, dataUrlBytes, humanSize } from "@/lib/imageCompress";
 
 function serviceIcon(key: string) {
   return SERVICES.find((s) => s.key === key)?.icon ?? Sparkles;
@@ -101,10 +102,20 @@ export default function ClientDashboard() {
     };
   })();
 
-  const pickPayProof = (file: File | undefined) => {
+  const pickPayProof = async (file: File | undefined) => {
     if (!file) return;
-    if (file.size > MAX_FILE_SIZE) {
-      setPayError(`Photo trop lourde — maximum ${MAX_FILE_SIZE_LABEL}.`);
+    if (!file.type.startsWith("image/")) {
+      setPayError("Seule une photo du reçu est acceptée.");
+      return;
+    }
+    const res = await compressImageIfNeeded(file);
+    if (!res.ok) {
+      setPayError(`Photo trop lourde même après compression (max ${MAX_FILE_SIZE_LABEL}).`);
+      return;
+    }
+    if (res.compressed) {
+      toast.success(`Photo compressée : ${humanSize(res.originalSize)} → ${humanSize(dataUrlBytes(res.dataUrl))}.`);
+      setPayProof(res.dataUrl);
       return;
     }
     const reader = new FileReader();
@@ -257,11 +268,21 @@ export default function ClientDashboard() {
     setShowIdentity(true);
   };
 
-  const pickIdDoc = () => {
+  const pickIdDoc = async () => {
     const file = idInputRef.current?.files?.[0];
     if (!file) return;
-    if (file.size > MAX_FILE_SIZE) {
-      toast.error(`Photo trop lourde — maximum ${MAX_FILE_SIZE_LABEL}.`);
+    if (!file.type.startsWith("image/")) {
+      toast.error("Seule une photo de la pièce d'identité est acceptée.");
+      return;
+    }
+    const res = await compressImageIfNeeded(file);
+    if (!res.ok) {
+      toast.error(`Photo trop lourde même après compression (max ${MAX_FILE_SIZE_LABEL}).`);
+      return;
+    }
+    if (res.compressed) {
+      toast.success(`Photo compressée : ${humanSize(res.originalSize)} → ${humanSize(dataUrlBytes(res.dataUrl))}.`);
+      setIdDocUrl(res.dataUrl);
       return;
     }
     const reader = new FileReader();
