@@ -11,6 +11,7 @@ import {
   ChevronDown,
   ClipboardCheck,
   Crown,
+  Download,
   FileSignature,
   FileText,
   ImagePlus,
@@ -35,6 +36,7 @@ import { toast } from "sonner";
 import { api } from "@/convex/_generated/api";
 import { AppShell, StatusBadge } from "@/components/gtec";
 import { haversinePositions } from "@/lib/gtec";
+import { openMaintenancePdf } from "@/lib/invoicePdf";
 import { ReportForm } from "@/components/ReportForm";
 import ServicesCatalog from "@/pages/ServicesCatalog";
 import { Button } from "@/components/ui/button";
@@ -1484,14 +1486,60 @@ export default function AdminConsole() {
                               {contract.city}
                             </p>
                           </div>
-                          <span
-                            className={cn(
-                              "rounded-full px-2.5 py-1 text-xs font-medium ring-1 ring-inset",
-                              meta.className,
-                            )}
-                          >
-                            {meta.label}
-                          </span>
+                          <div className="flex items-center gap-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => {
+                                try {
+                                  openMaintenancePdf({
+                                    contract: {
+                                      reference: contract.reference,
+                                      title: contract.title,
+                                      serviceLabel:
+                                        SERVICES.find((s) => s.key === contract.serviceKey)
+                                          ?.label ?? contract.serviceKey,
+                                      description: contract.description,
+                                      frequencyLabel: contractFrequencyLabel(contract.frequency),
+                                      city: contract.city,
+                                      address: contract.address,
+                                      monthlyAmount: contract.monthlyAmount,
+                                      status: contract.status,
+                                      startDate: contract.startDate,
+                                      endDate: contract.endDate,
+                                    },
+                                    clientName,
+                                    clientPhone,
+                                    clientAddress: contract.address,
+                                    clientCity: contract.city,
+                                    visits: visits.map((v) => ({
+                                      scheduledAt: v.scheduledAt,
+                                      doneAt: v.doneAt,
+                                      status: v.status,
+                                      report: v.report,
+                                    })),
+                                  });
+                                } catch (e) {
+                                  toast.error(
+                                    e instanceof Error
+                                      ? e.message
+                                      : "Impression impossible \u2014 r\u00e9essayez.",
+                                  );
+                                }
+                              }}
+                            >
+                              <Download className="mr-1.5 size-4" />
+                              Facture PDF
+                            </Button>
+                            <span
+                              className={cn(
+                                "rounded-full px-2.5 py-1 text-xs font-medium ring-1 ring-inset",
+                                meta.className,
+                              )}
+                            >
+                              {meta.label}
+                            </span>
+                          </div>
                         </div>
                         <div className="grid gap-2 text-xs sm:grid-cols-4">
                           <div className="rounded-lg bg-muted/60 px-3 py-2">
