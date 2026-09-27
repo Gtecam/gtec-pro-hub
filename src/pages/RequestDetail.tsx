@@ -60,6 +60,8 @@ import {
   BANK_DETAILS,
   fcfa,
   formatDateTime,
+  MAX_FILE_SIZE,
+  MAX_FILE_SIZE_LABEL,
   MERCHANT_NUMBERS,
   MILESTONE_LABELS,
   PAYMENT_METHODS,
@@ -276,8 +278,8 @@ export default function RequestDetail() {
 
   const pickProof = (file: File | undefined) => {
     if (!file) return;
-    if (file.size > 1.2 * 1024 * 1024) {
-      toast.error("Photo trop lourde — maximum 1,2 Mo.");
+    if (file.size > MAX_FILE_SIZE) {
+      toast.error(`Photo trop lourde — maximum ${MAX_FILE_SIZE_LABEL}.`);
       return;
     }
     const reader = new FileReader();

@@ -66,7 +66,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useAuth } from "@/hooks/use-auth";
 import { NavigationOff } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { CITIES, fcfa, formatDate, formatDateTime, PAYMENT_METHODS } from "@/lib/gtec";
+import { CITIES, fcfa, formatDate, formatDateTime, MAX_FILE_SIZE, MAX_FILE_SIZE_LABEL, PAYMENT_METHODS } from "@/lib/gtec";
 import { Navigate } from "react-router";
 
 const PLANS = [
@@ -96,7 +96,7 @@ const DOC_KINDS = [
   { value: "other", label: "Autre justificatif" },
 ] as const;
 
-const MAX_DOC_SIZE = 1.2 * 1024 * 1024; // 1,2 Mo par document (data URL)
+const MAX_DOC_SIZE = MAX_FILE_SIZE; // 5 Mo par document (data URL)
 
 function docKindLabel(kind: string): string {
   return DOC_KINDS.find((k) => k.value === kind)?.label ?? kind;
@@ -608,8 +608,8 @@ export default function TechnicianSpace() {
 
   const pickCashProof = (file: File | undefined) => {
     if (!file) return;
-    if (file.size > 1.2 * 1024 * 1024) {
-      toast.error("Photo trop lourde — maximum 1,2 Mo.");
+    if (file.size > MAX_FILE_SIZE) {
+      toast.error(`Photo trop lourde — maximum ${MAX_FILE_SIZE_LABEL}.`);
       return;
     }
     const reader = new FileReader();
@@ -1049,7 +1049,7 @@ export default function TechnicianSpace() {
                   <p className="text-xs text-muted-foreground">
                     Obligatoire : pièce d'identité ET au moins un diplôme ou
                     certificat/attestation d'expérience. Formats acceptés : PDF,
-                    images (max 1,2 Mo par fichier).
+                    images (max {MAX_FILE_SIZE_LABEL} par fichier).
                   </p>
                   <DocumentsUploader
                     documents={documents}

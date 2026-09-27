@@ -37,7 +37,7 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
-import { CITIES, SERVICES, categoryIcon, type ServiceKey } from "@/lib/gtec";
+import { CITIES, MAX_FILE_SIZE, MAX_FILE_SIZE_LABEL, SERVICES, categoryIcon, type ServiceKey } from "@/lib/gtec";
 
 const STEPS = [
   { key: "service", label: "Service" },
@@ -134,8 +134,8 @@ export default function NewRequest() {
           toast.error(`${file.name} : seules les images sont acceptées en V1`);
           return;
         }
-        if (file.size > 2 * 1024 * 1024) {
-          toast.error(`${file.name} : fichier trop lourd (max 2 Mo)`);
+        if (file.size > MAX_FILE_SIZE) {
+          toast.error(`${file.name} : fichier trop lourd (max ${MAX_FILE_SIZE_LABEL})`);
           return;
         }
         const reader = new FileReader();
@@ -222,7 +222,7 @@ export default function NewRequest() {
             <CardDescription>
               {step === 0 && "Choisissez le type d'intervention souhaité."}
               {step === 1 && "Un titre court et quelques détails suffisent."}
-              {step === 2 && "Ajoutez jusqu'à 4 images (max 2 Mo chacune) — optionnel mais recommandé."}
+              {step === 2 && `Ajoutez jusqu'à 4 images (max ${MAX_FILE_SIZE_LABEL} chacune) — optionnel mais recommandé.`}
               {step === 3 && "Où l'équipe doit-elle intervenir ?"}
               {step === 4 && "Un technicien GTEC prendra le relais et préparera votre devis."}
             </CardDescription>

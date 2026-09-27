@@ -249,6 +249,11 @@ export const ENTERPRISE_SERVICES = [
 
 export const CITIES = ["Douala", "Yaoundé", "Bafoussam", "Buea", "Garoua"] as const;
 
+/** Taille maximale d'un document ou photo soumis (5 Mo par fichier). */
+export const MAX_FILE_SIZE = 5 * 1024 * 1024;
+/** Libellé lisible de la limite (messages UI). */
+export const MAX_FILE_SIZE_LABEL = "5 Mo";
+
 /**
  * Types de clients officiels GTEC (cahier des charges §5) — 7 profils.
  * Types « organisés » : champs raison sociale / NUI affichés au formulaire.

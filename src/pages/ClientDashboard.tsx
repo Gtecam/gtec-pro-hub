@@ -56,6 +56,8 @@ import {
   contractFrequencyLabel,
   fcfa,
   formatDate,
+  MAX_FILE_SIZE,
+  MAX_FILE_SIZE_LABEL,
   SERVICES,
   statusMeta,
 } from "@/lib/gtec";
@@ -101,8 +103,8 @@ export default function ClientDashboard() {
 
   const pickPayProof = (file: File | undefined) => {
     if (!file) return;
-    if (file.size > 1.2 * 1024 * 1024) {
-      setPayError("Photo trop lourde — maximum 1,2 Mo.");
+    if (file.size > MAX_FILE_SIZE) {
+      setPayError(`Photo trop lourde — maximum ${MAX_FILE_SIZE_LABEL}.`);
       return;
     }
     const reader = new FileReader();
@@ -258,8 +260,8 @@ export default function ClientDashboard() {
   const pickIdDoc = () => {
     const file = idInputRef.current?.files?.[0];
     if (!file) return;
-    if (file.size > 1.2 * 1024 * 1024) {
-      toast.error("Photo trop lourde — maximum 1,2 Mo.");
+    if (file.size > MAX_FILE_SIZE) {
+      toast.error(`Photo trop lourde — maximum ${MAX_FILE_SIZE_LABEL}.`);
       return;
     }
     const reader = new FileReader();
@@ -895,7 +897,7 @@ export default function ClientDashboard() {
                 )}
               </div>
               <p className="text-xs text-muted-foreground">
-                Optionnelle mais recommandée (max 1,2 Mo) — utilisée uniquement
+                Optionnelle mais recommandée (max {MAX_FILE_SIZE_LABEL}) — utilisée uniquement
                 par l'administration GTEC.
               </p>
             </div>

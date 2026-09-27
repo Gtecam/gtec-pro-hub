@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { MAX_FILE_SIZE, MAX_FILE_SIZE_LABEL } from "@/lib/gtec";
 
 type Part = { label: string; qty: number; unitPrice: number };
 
@@ -50,8 +51,8 @@ export function ReportForm({
     Array.from(files)
       .slice(0, 4)
       .forEach((file) => {
-        if (!file.type.startsWith("image/") || file.size > 2 * 1024 * 1024) {
-          toast.error(`${file.name} : image de 2 Mo max`);
+        if (!file.type.startsWith("image/") || file.size > MAX_FILE_SIZE) {
+          toast.error(`${file.name} : image de ${MAX_FILE_SIZE_LABEL} max`);
           return;
         }
         const reader = new FileReader();
