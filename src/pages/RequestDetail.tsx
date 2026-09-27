@@ -54,6 +54,7 @@ import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/hooks/use-auth";
 import {
   BANK_DETAILS,
   fcfa,
@@ -65,6 +66,7 @@ import {
   SERVICES,
   statusMeta,
 } from "@/lib/gtec";
+import { openInvoicePdf } from "@/lib/invoicePdf";
 
 function serviceMeta(key: string) {
   return SERVICES.find((s) => s.key === key);
@@ -73,6 +75,7 @@ function serviceMeta(key: string) {
 export default function RequestDetail() {
   const { requestId } = useParams<{ requestId: string }>();
   const navigate = useNavigate();
+  const { user } = useAuth();
 
   const detail = useQuery(api.gtec.getRequestDetail, {
     requestId: requestId as never,
@@ -875,9 +878,71 @@ export default function RequestDetail() {
                   <span className="font-display text-xl font-bold">
                     {fcfa(invoice.amount)}
                   </span>
-                  <Button variant="outline" size="sm" disabled>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      try {
+                        openInvoicePdf({
+                          invoiceNumber: invoice.number,
+                          issuedAt: invoice.issuedAt,
+                          invoiceStatus: invoice.status,
+                          clientName: user?.name ?? "Client GTEC",
+                          clientPhone: user?.phone ?? undefined,
+                          clientEmail: user?.email ?? undefined,
+                          clientAddress: user?.address ?? undefined,
+                          clientCity: user?.city ?? request.city,
+                          companyName: user?.companyName ?? undefined,
+                          taxId: user?.taxId ?? undefined,
+                          nationalId: user?.nationalId ?? undefined,
+                          request: {
+                            reference: request.reference,
+                            title: request.title,
+                            serviceLabel: service?.label ?? request.serviceKey,
+                            address: request.address,
+                            city: request.city,
+                            scheduledAt: request.scheduledAt,
+                          },
+                          quote: quote
+                            ? {
+                                number: quote.number,
+                                items: quote.items,
+                                subtotal: quote.subtotal,
+                                vatRate: quote.vatRate,
+                                total: quote.total,
+                              }
+                            : undefined,
+                          payments: (payments ?? []).map((p) => ({
+                            milestone: p.milestone,
+                            amount: p.amount,
+                            method: p.method,
+                            status: p.status,
+                            paidAt: p.paidAt,
+                          })),
+                          report: report
+                            ? {
+                                workDone: report.workDone,
+                                warrantyMonths: report.warrantyMonths,
+                                receivedAt: report.receivedAt,
+                                clientSignature: report.clientSignature,
+                              }
+                            : undefined,
+                          team: members.map((m) => ({
+                            name: m.name,
+                            role: m.role,
+                          })),
+                        });
+                      } catch (e) {
+                        toast.error(
+                          e instanceof Error
+                            ? e.message
+                            : "Impression impossible — réessayez.",
+                        );
+                      }
+                    }}
+                  >
                     <Download className="mr-1.5 size-4" />
-                    PDF (bientôt)
+                    Facture PDF
                   </Button>
                 </CardContent>
               </Card>
