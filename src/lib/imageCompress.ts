@@ -57,13 +57,16 @@ export function dataUrlBytes(dataUrl: string): number {
  * `mode: "document"` (défaut : photo) privilégie la lisibilité du texte :
  * largeur plafonnée à 1600 px, qualité plus haute — indispensable pour les
  * CNI, diplômes et attestations transmis à l'administration GTEC.
+ * `mode: "document-tight"` : paliers plus resserrés (cible ~350 Ko/pièce)
+ * pour respecter le plafond Convex de 1 Mio par champ sur un dossier complet.
  */
 export async function compressImageIfNeeded(
   file: File,
-  options?: { maxBytes?: number; mode?: "photo" | "document" },
+  options?: { maxBytes?: number; mode?: "photo" | "document" | "document-tight" },
 ): Promise<CompressResult> {
   const maxBytes = options?.maxBytes ?? MAX_FILE_SIZE;
   const documentMode = options?.mode === "document";
+  const tightMode = options?.mode === "document-tight";
   const isImage = file.type.startsWith("image/");
   if (!isImage || file.size <= maxBytes) {
     return { ok: true, dataUrl: "", compressed: false, originalSize: file.size };
@@ -91,7 +94,16 @@ export async function compressImageIfNeeded(
 
   // Paliers : on préserve d'abord la résolution, puis on réduit.
   // Mode document : plafond 1600 px et qualité plus haute (texte lisible).
-  const steps: { maxWidth: number; quality: number }[] = documentMode
+  const steps: { maxWidth: number; quality: number }[] = tightMode
+    ? [
+        { maxWidth: 1200, quality: 0.8 },
+        { maxWidth: 1000, quality: 0.74 },
+        { maxWidth: 850, quality: 0.7 },
+        { maxWidth: 700, quality: 0.66 },
+        { maxWidth: 600, quality: 0.62 },
+        { maxWidth: 480, quality: 0.58 },
+      ]
+    : documentMode
     ? [
         { maxWidth: Math.min(img.naturalWidth, 1600), quality: 0.86 },
         { maxWidth: Math.min(img.naturalWidth, 1400), quality: 0.8 },

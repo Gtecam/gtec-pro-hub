@@ -135,20 +135,21 @@ function DocumentsUploader({
 
   const handlePick = async (file: File | undefined, index: number) => {
     if (!file || index < 0) return;
-    // Images : compression automatique en mode document (texte lisible),
-    // ciblée sous 1 Mo pour garder le dossier complet sous la limite Convex.
+    // Images : compression automatique en mode document (texte lisible).
+    // Convex plafonne chaque champ à 1 Mio : on cible ~350 Ko par pièce pour
+    // que le dossier complet (plusieurs pièces) reste sous la limite.
     if (file.type.startsWith("image/")) {
       if (file.type === "image/gif" || file.type === "image/svg+xml") {
         toast.error(`${file.name} : format non accepté (image ou PDF).`);
         return;
       }
-      const target = 1024 * 1024; // ~1 Mo par pièce
+      const target = 350 * 1024; // ~350 Ko par pièce (plafond champ Convex : 1 Mio)
       // PNG/photo lourd : on compresse vers JPEG (gain x3 à x10 typique).
       const needsCompress = file.size > target || file.type !== "image/jpeg";
       if (needsCompress || file.size > MAX_DOC_SIZE) {
         const res = await compressImageIfNeeded(file, {
           maxBytes: target,
-          mode: "document",
+          mode: "document-tight",
         });
         if (!res.ok) {
           toast.error(`Document illisible (${file.name}).`);
@@ -576,9 +577,10 @@ export default function TechnicianSpace() {
     }
     // Documents réellement joints (on écarte les emplacements vides).
     const filledDocs = documents.filter((d) => d.url);
-    // Garde de poids : Convex limite chaque mutation (documents inclus) à 8 Mio.
+    // Garde de poids : Convex limite chaque champ à 1 Mio — le tableau
+    // `documents` entier compte comme une seule valeur. On garde une marge.
     const totalBytes = filledDocs.reduce((s, d) => s + dataUrlBytes(d.url), 0);
-    const TOTAL_LIMIT = 6 * 1024 * 1024; // marge de sécurité sous la limite Convex
+    const TOTAL_LIMIT = 800 * 1024; // marge sous le plafond Convex de 1 Mio/champ
     if (totalBytes > TOTAL_LIMIT) {
       toast.error(
         `Dossier trop volumineux (${humanSize(totalBytes)} de documents, maximum ${humanSize(TOTAL_LIMIT)}). Les photos sont compressées automatiquement — retirez un document ou utilisez des PDF plus légers.`,
