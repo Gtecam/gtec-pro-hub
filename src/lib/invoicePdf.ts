@@ -200,6 +200,29 @@ const RECEPTION_CSS = `
   .sigarea .hint { font-size: 10px; color: #63756a; margin: 4px 0 0; }
 `;
 
+const COVER_CSS = `
+  .cover-page { min-height: 255mm; display: flex; flex-direction: column;
+    align-items: center; justify-content: space-between; text-align: center;
+    padding-top: 8mm; }
+  .cover-logo svg { width: 110px; height: 110px; }
+  .cover-top h1 { margin: 8px 0 0; font-size: 34px; color: #15803d; letter-spacing: -0.02em; }
+  .cover-top p { margin: 3px 0 0; color: #4b5c51; font-size: 12px; }
+  .cover-title h2 { font-size: 27px; letter-spacing: 0.16em; color: #1c2b22; margin: 0; }
+  .cover-ref { font-family: "Courier New", monospace; font-size: 17px; color: #15803d;
+    letter-spacing: 0.1em; margin: 6px 0 0; }
+  table.cover-summary { width: 82%; margin: 0 auto; border-collapse: collapse; }
+  table.cover-summary td { border-bottom: 1px solid #e2eae4; padding: 7px 10px;
+    text-align: left; }
+  table.cover-summary td.k { width: 40%; font-size: 10px; text-transform: uppercase;
+    letter-spacing: 0.07em; color: #63756a; }
+  .cover-contents { width: 82%; margin: 0 auto; border: 1px solid #d5ded7;
+    border-radius: 10px; padding: 12px 16px; font-size: 12px; }
+  .cover-contents p { margin: 3px 0; text-align: left; }
+  .cover-contents .contents-title { text-transform: uppercase; letter-spacing: 0.08em;
+    font-size: 10.5px; color: #15803d; margin-bottom: 6px; }
+  .cover-foot { font-size: 10.5px; color: #63756a; }
+`;
+
 const MAINTENANCE_CSS = `
   .badge.wait { border-color: #b45309; color: #b45309; }
   .client { border: 1px solid #d5ded7; border-radius: 8px; padding: 10px 12px; margin-bottom: 16px; }
@@ -212,18 +235,23 @@ const MAINTENANCE_CSS = `
 
 // ===================== Corps Facture =====================
 
+/** Payée si le statut le dit ou si les tranches validées couvrent le TTC. */
+function invoiceIsPaid(data: InvoicePdfData): boolean {
+  const validatedTotal = data.payments
+    .filter((p) => p.status === "valide")
+    .reduce((s, p) => s + p.amount, 0);
+  return (
+    data.invoiceStatus === "payee" ||
+    (data.quote ? validatedTotal >= data.quote.total : validatedTotal > 0)
+  );
+}
+
 function buildInvoiceBody(data: InvoicePdfData): string {
   const q = data.quote;
   const { advance, balance } = splitFiftyFifty(q?.total ?? 0);
   const advancePaid = data.payments.find((p) => p.milestone === "avance");
   const balancePaid = data.payments.find((p) => p.milestone === "solde");
-  // Payée si la facture est marquée payée ou si les tranches validées
-  // couvrent le total TTC (règlement 50/50 complet).
-  const validatedTotal = data.payments
-    .filter((p) => p.status === "valide")
-    .reduce((s, p) => s + p.amount, 0);
-  const isPaid =
-    data.invoiceStatus === "payee" || (q ? validatedTotal >= q.total : validatedTotal > 0);
+  const isPaid = invoiceIsPaid(data);
 
   const clientBlock = [
     data.companyName ? `<strong>${esc(data.companyName)}</strong>` : "",
@@ -839,9 +867,49 @@ const DOSSIER_CSS = `
 
 export function buildDossierHtml(data: DossierPdfData): string {
   const ref = data.invoice.request.reference;
+  const req = data.invoice.request;
+  const total =
+    data.invoice.quote?.total ??
+    data.invoice.payments.reduce((s, p) => s + p.amount, 0);
+  const summaryRow = (k: string, v?: string) =>
+    v ? `<tr><td class="k">${esc(k)}</td><td>${esc(v)}</td></tr>` : "";
+  const coverBody = `
+  <div class="cover-logo">${gtecLogoSvg}</div>
+  <div class="cover-top">
+    <h1>GTEC PRO</h1>
+    <p>Green Tech Energy Cameroon — Sarl · Énergie, électricité &amp; multi-services</p>
+    <p>Service clientèle : 655 09 42 28 · etsgreentech@yahoo.com · Douala, Cameroun</p>
+  </div>
+  <div class="cover-title">
+    <h2>DOSSIER D'INTERVENTION</h2>
+    <p class="cover-ref">${esc(ref)}</p>
+  </div>
+  <table class="cover-summary">
+    ${summaryRow("Client", [data.invoice.companyName, data.invoice.clientName].filter(Boolean).join(" — "))}
+    ${summaryRow("Intervention", req.title)}
+    ${summaryRow("Prestation", req.serviceLabel)}
+    ${summaryRow("Lieu", `${req.address}, ${req.city}`)}
+    ${summaryRow("Intervention", req.scheduledAt ? formatDateTime(req.scheduledAt) : undefined)}
+    ${summaryRow("Réception", data.reception.report.receivedAt ? formatDateTime(data.reception.report.receivedAt) : undefined)}
+    ${summaryRow("Garantie", `${data.reception.report.warrantyMonths} mois`)}
+    ${summaryRow("Montant TTC", fcfa(total))}
+    ${summaryRow("Équipe", data.invoice.team?.length ? data.invoice.team.map((m) => m.name).join(" · ") : undefined)}
+  </table>
+  <div class="cover-contents">
+    <p class="contents-title">Contenu du dossier</p>
+    <p><strong>Document 1/2</strong> — Facture ${esc(data.invoice.invoiceNumber)}${invoiceIsPaid(data.invoice) ? " (payée)" : ""}</p>
+    <p><strong>Document 2/2</strong> — PV de réception${data.reception.received ? " (signé)" : " (en attente de signature)"}</p>
+  </div>
+  <p class="cover-foot">
+    Document généré électroniquement par GTEC PRO —
+    ${new Date().toLocaleDateString("fr-FR", { dateStyle: "long" })}
+  </p>`;
   return wrapDocument(
     `Dossier ${ref} — GTEC PRO`,
-    `<div class="page">
+    `<div class="page cover-page">
+  ${coverBody}
+</div>
+<div class="page">
   <div class="dossier-band">
     <span>Dossier ${esc(ref)} — Document 1/2</span>
     <strong>Facture ${esc(data.invoice.invoiceNumber)}</strong>
@@ -855,7 +923,7 @@ export function buildDossierHtml(data: DossierPdfData): string {
   </div>
   ${buildReceptionBody(data.reception)}
 </div>`,
-    INVOICE_CSS + RECEPTION_CSS + DOSSIER_CSS,
+    INVOICE_CSS + RECEPTION_CSS + DOSSIER_CSS + COVER_CSS,
   );
 }
 
