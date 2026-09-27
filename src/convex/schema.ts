@@ -52,7 +52,8 @@ const schema = defineSchema(
       companyName: v.optional(v.string()),
       taxId: v.optional(v.string()), // NUI / contribuable
       idDocumentUrl: v.optional(v.string()), // photo CNI (data URL)
-    }).index("email", ["email"]), // index for the email. do not remove or modify
+    }).index("email", ["email"]) // index for the email. do not remove or modify
+      .index("phone", ["phone"]), // requis par Convex Auth (provider Phone / phone-otp)
 
     // ---- GTEC PRO V1 : one end-to-end client journey ----
     // demande -> devis -> paiement -> affectation -> intervention -> rapport -> réception -> facture
