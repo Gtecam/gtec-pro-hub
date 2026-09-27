@@ -310,15 +310,14 @@ export function buildInvoiceHtml(data: InvoicePdfData): string {
 }
 
 /**
- * Ouvre la facture dans un onglet isolé et déclenche l'impression
+ * Ouvre un document HTML dans un onglet isolé et déclenche l'impression
  * (« Enregistrer au format PDF »). Lève une erreur si les pop-ups sont bloqués.
  */
-export function openInvoicePdf(data: InvoicePdfData): void {
-  const html = buildInvoiceHtml(data);
+function openPrintWindow(html: string): void {
   const win = window.open("", "_blank", "width=920,height=1200");
   if (!win) {
     throw new Error(
-      "Le navigateur a bloqué la fenêtre d'impression. Autorisez les pop-ups pour télécharger la facture.",
+      "Le navigateur a bloqué la fenêtre d'impression. Autorisez les pop-ups pour télécharger le document.",
     );
   }
   win.document.open();
@@ -333,4 +332,197 @@ export function openInvoicePdf(data: InvoicePdfData): void {
     }
   };
   setTimeout(trigger, 400);
+}
+
+/**
+ * Ouvre la facture dans un onglet isolé et déclenche l'impression
+ * (« Enregistrer au format PDF »). Lève une erreur si les pop-ups sont bloqués.
+ */
+export function openInvoicePdf(data: InvoicePdfData): void {
+  openPrintWindow(buildInvoiceHtml(data));
+}
+
+// ===================== PV de réception (document séparé) =====================
+
+export type ReceptionPdfData = {
+  /** La réception est-elle effective (PV signé) ? */
+  received: boolean;
+  clientName: string;
+  clientPhone?: string;
+  clientEmail?: string;
+  clientAddress?: string;
+  clientCity?: string;
+  request: InvoicePdfData["request"];
+  team?: { name: string; role: string }[];
+  report: {
+    workDone: string;
+    partsUsed: { label: string; qty: number }[];
+    recommendations?: string;
+    beforePhotos: string[];
+    afterPhotos: string[];
+    warrantyMonths: number;
+    receivedAt?: number;
+    receptionNote?: string;
+    clientSignature?: string;
+  };
+};
+
+export function buildReceptionHtml(data: ReceptionPdfData): string {
+  const r = data.report;
+  const parts = r.partsUsed.length
+    ? `<p><strong>Matériel utilisé :</strong> ${r.partsUsed
+        .map((p) => `${esc(p.label)} × ${p.qty.toLocaleString("fr-FR")}`)
+        .join(" · ")}</p>`
+    : "";
+  const recos = r.recommendations
+    ? `<p><strong>Recommandations :</strong> ${esc(r.recommendations)}</p>`
+    : "";
+  const photoGrid = (label: string, photos: string[]) =>
+    photos.length
+      ? `<p class="ph-label">${label}</p><div class="photos">${photos
+          .map((src) => `<img src="${esc(src)}" alt="${label}"/>`)
+          .join("")}</div>`
+      : "";
+  const team = (data.team ?? []).length
+    ? `<table>
+      <thead><tr><th>Intervenant</th><th>Fonction</th></tr></thead>
+      <tbody>${data
+        .team!.map((m) => `<tr><td>${esc(m.name)}</td><td>${esc(m.role)}</td></tr>`)
+        .join("")}</tbody>
+    </table>`
+    : "";
+
+  return `<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8"/>
+<title>PV de réception ${esc(data.request.reference)} — GTEC PRO</title>
+<style>
+  @page { size: A4; margin: 12mm; }
+  * { box-sizing: border-box; }
+  body { font-family: "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    color: #1c2b22; margin: 0; font-size: 12.5px; line-height: 1.55; }
+  .head { display: flex; justify-content: space-between; align-items: flex-start;
+    border-bottom: 3px solid #15803d; padding-bottom: 14px; margin-bottom: 18px; }
+  .brand h1 { margin: 0; font-size: 22px; color: #15803d; letter-spacing: -0.02em; }
+  .brand p { margin: 2px 0 0; color: #4b5c51; font-size: 11px; }
+  .doc { text-align: right; }
+  .doc .doc-title { font-size: 19px; font-weight: 700; letter-spacing: 0.04em; margin: 0; }
+  .doc .doc-num { font-family: "Courier New", monospace; color: #4b5c51; margin: 2px 0 0; }
+  .badge { display: inline-block; margin-top: 6px; padding: 2px 10px; border-radius: 999px;
+    font-size: 10.5px; font-weight: 600; border: 1px solid #b45309; color: #b45309; }
+  .badge.ok { border-color: #15803d; background: #15803d; color: #fff; }
+  h2 { font-size: 13px; margin: 18px 0 6px; color: #15803d; }
+  table { width: 100%; border-collapse: collapse; margin: 4px 0 10px; }
+  th { text-align: left; font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.05em;
+    color: #63756a; border-bottom: 2px solid #15803d; padding: 5px 6px; }
+  td { border-bottom: 1px solid #e2eae4; padding: 6px; vertical-align: top; }
+  .meta { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 16px;
+    background: #f2f7f3; border-radius: 8px; padding: 10px 12px; }
+  .meta div { min-width: 140px; }
+  .meta .k { font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; color: #63756a; }
+  .client { border: 1px solid #d5ded7; border-radius: 8px; padding: 10px 12px; margin-bottom: 16px; }
+  .client h3 { margin: 0 0 4px; font-size: 10.5px; text-transform: uppercase;
+    letter-spacing: 0.08em; color: #15803d; }
+  .pv { border: 1px solid #d5ded7; border-radius: 8px; padding: 10px 12px; }
+  .pv p { margin: 4px 0; }
+  .warranty { background: #f2f7f3; border-radius: 8px; padding: 10px 12px; margin: 12px 0; }
+  .warranty strong { color: #15803d; }
+  .ph-label { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.05em;
+    color: #63756a; margin: 10px 0 4px; }
+  .photos { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+  .photos img { width: 100%; border-radius: 6px; border: 1px solid #e2eae4; }
+  .sig { margin-top: 14px; display: flex; justify-content: space-between; gap: 16px; }
+  .sig .sig-box { flex: 1; }
+  .sig .sig-box .frame { border: 1px dashed #9db3a4; border-radius: 8px;
+    padding: 8px; min-height: 96px; display: flex; align-items: center; justify-content: center; }
+  .sig img { max-height: 84px; max-width: 100%; }
+  .sig .hint { font-size: 10px; color: #63756a; margin: 4px 0 0; }
+  .foot { margin-top: 22px; border-top: 1px solid #d5ded7; padding-top: 8px;
+    font-size: 10.5px; color: #63756a; display: flex; justify-content: space-between; gap: 16px; }
+</style>
+</head>
+<body>
+  <div class="head">
+    <div class="brand">
+      <h1>GTEC PRO</h1>
+      <p>Green Tech Energy Cameroon — Sarl · Énergie, électricité &amp; multi-services</p>
+      <p>Service clientèle : 655 09 42 28 · etsgreentech@yahoo.com · Douala, Cameroun</p>
+    </div>
+    <div class="doc">
+      <p class="doc-title">PROCÈS-VERBAL DE RÉCEPTION</p>
+      <p class="doc-num">${esc(data.request.reference)}</p>
+      <span class="badge ${data.received ? "ok" : ""}">
+        ${data.received ? "Réceptionné" : "En attente de signature"}
+      </span>
+    </div>
+  </div>
+
+  <div class="meta">
+    <div><div class="k">Intervention</div><div><strong>${esc(data.request.title)}</strong></div></div>
+    <div><div class="k">Prestation</div><div>${esc(data.request.serviceLabel)}</div></div>
+    <div><div class="k">Lieu</div><div>${esc(data.request.address)}, ${esc(data.request.city)}</div></div>
+    ${data.request.scheduledAt ? `<div><div class="k">Intervention planifiée</div><div>${formatDateTime(data.request.scheduledAt)}</div></div>` : ""}
+    ${r.receivedAt ? `<div><div class="k">Réception le</div><div>${formatDateTime(r.receivedAt)}</div></div>` : ""}
+  </div>
+
+  <div class="client">
+    <h3>Client</h3>
+    ${[data.clientName, data.clientAddress, data.clientCity, data.clientPhone ? `Tél. : ${data.clientPhone}` : "", data.clientEmail]
+      .filter((s): s is string => !!s)
+      .map(esc)
+      .join("<br/>")}
+  </div>
+
+  <h2>Constat des travaux</h2>
+  <div class="pv">
+    <p><strong>Travaux réalisés :</strong> ${esc(r.workDone)}</p>
+    ${parts}
+    ${recos}
+    ${r.receptionNote ? `<p><strong>Remarque du client :</strong> ${esc(r.receptionNote)}</p>` : ""}
+  </div>
+
+  ${photoGrid("Photos avant intervention", r.beforePhotos)}
+  ${photoGrid("Photos après intervention", r.afterPhotos)}
+
+  <div class="warranty">
+    Garantie GTEC : <strong>${r.warrantyMonths} mois</strong> sur les travaux réalisés —
+    toute réclamation dans ce délai est prise en charge par nos équipes.
+  </div>
+
+  ${team}
+
+  <div class="sig">
+    <div class="sig-box">
+      <p style="margin:0 0 4px"><strong>Signature du client</strong></p>
+      <div class="frame">
+        ${r.clientSignature ? `<img src="${esc(r.clientSignature)}" alt="Signature du client"/>` : `<span class="hint">En attente de signature</span>`}
+      </div>
+      <p class="hint">La signature vaut reconnaissance des travaux conformes et déclenche la facturation.</p>
+    </div>
+    <div class="sig-box">
+      <p style="margin:0 0 4px"><strong>Pour GTEC PRO</strong></p>
+      <div class="frame"><span class="hint">Chef d'équipe / Administration</span></div>
+    </div>
+  </div>
+
+  <div class="foot">
+    <div>
+      Document généré électroniquement par GTEC PRO — ${esc(data.request.reference)}<br/>
+      Service clientèle : 655 09 42 28 · etsgreentech@yahoo.com
+    </div>
+    <div style="text-align:right">
+      ${new Date().toLocaleDateString("fr-FR", { dateStyle: "long" })}
+    </div>
+  </div>
+</body>
+</html>`;
+}
+
+/**
+ * Ouvre le PV de réception (document séparé de la facture) et déclenche
+ * l'impression — « Enregistrer au format PDF ».
+ */
+export function openReceptionPdf(data: ReceptionPdfData): void {
+  openPrintWindow(buildReceptionHtml(data));
 }

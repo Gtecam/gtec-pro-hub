@@ -66,7 +66,7 @@ import {
   SERVICES,
   statusMeta,
 } from "@/lib/gtec";
-import { openInvoicePdf } from "@/lib/invoicePdf";
+import { openInvoicePdf, openReceptionPdf } from "@/lib/invoicePdf";
 
 function serviceMeta(key: string) {
   return SERVICES.find((s) => s.key === key);
@@ -770,16 +770,66 @@ export default function RequestDetail() {
                         </CardDescription>
                       </div>
                     </div>
-                    <span
-                      className={cn(
-                        "rounded-full px-2.5 py-1 text-xs font-medium ring-1 ring-inset",
-                        report.status === "receptionne"
-                          ? "bg-emerald-500/10 text-emerald-600 ring-emerald-500/20 dark:text-emerald-400"
-                          : "bg-primary/10 text-primary ring-primary/20",
-                      )}
-                    >
-                      {report.status === "receptionne" ? "Réceptionné" : "À réceptionner"}
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          try {
+                            openReceptionPdf({
+                              received: report.status === "receptionne",
+                              clientName: user?.name ?? "Client GTEC",
+                              clientPhone: user?.phone ?? undefined,
+                              clientEmail: user?.email ?? undefined,
+                              clientAddress: user?.address ?? undefined,
+                              clientCity: user?.city ?? request.city,
+                              request: {
+                                reference: request.reference,
+                                title: request.title,
+                                serviceLabel: service?.label ?? request.serviceKey,
+                                address: request.address,
+                                city: request.city,
+                                scheduledAt: request.scheduledAt,
+                              },
+                              team: members.map((m) => ({
+                                name: m.name,
+                                role: m.role,
+                              })),
+                              report: {
+                                workDone: report.workDone,
+                                partsUsed: report.partsUsed,
+                                recommendations: report.recommendations,
+                                beforePhotos: report.beforePhotos,
+                                afterPhotos: report.afterPhotos,
+                                warrantyMonths: report.warrantyMonths,
+                                receivedAt: report.receivedAt,
+                                receptionNote: report.receptionNote,
+                                clientSignature: report.clientSignature,
+                              },
+                            });
+                          } catch (e) {
+                            toast.error(
+                              e instanceof Error
+                                ? e.message
+                                : "Impression impossible — réessayez.",
+                            );
+                          }
+                        }}
+                      >
+                        <Download className="mr-1.5 size-4" />
+                        PV PDF
+                      </Button>
+                      <span
+                        className={cn(
+                          "rounded-full px-2.5 py-1 text-xs font-medium ring-1 ring-inset",
+                          report.status === "receptionne"
+                            ? "bg-emerald-500/10 text-emerald-600 ring-emerald-500/20 dark:text-emerald-400"
+                            : "bg-primary/10 text-primary ring-primary/20",
+                        )}
+                      >
+                        {report.status === "receptionne" ? "Réceptionné" : "À réceptionner"}
+                      </span>
+                    </div>
                   </div>
                 </CardHeader>
                 <CardContent className="flex flex-col gap-4">
