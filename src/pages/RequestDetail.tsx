@@ -67,7 +67,7 @@ import {
   SERVICES,
   statusMeta,
 } from "@/lib/gtec";
-import { openDossierPdf, openInvoicePdf, openReceptionPdf } from "@/lib/invoicePdf";
+import { openDossierPdf, openInvoicePdf, openQuotePdf, openReceptionPdf } from "@/lib/invoicePdf";
 
 function serviceMeta(key: string) {
   return SERVICES.find((s) => s.key === key);
@@ -530,6 +530,41 @@ export default function RequestDetail() {
                       {quote.status === "refuse" && "Refusé"}
                       {quote.status === "expire" && "Expiré"}
                     </span>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        try {
+                          openQuotePdf({
+                            quoteNumber: quote.number,
+                            emittedAt: quote._creationTime,
+                            validUntil: quote.validUntil,
+                            status: quote.status,
+                            clientName: user?.name ?? "Client GTEC",
+                            clientPhone: user?.phone ?? undefined,
+                            clientEmail: user?.email ?? undefined,
+                            clientAddress: user?.address ?? undefined,
+                            clientCity: user?.city ?? request.city,
+                            companyName: user?.companyName ?? undefined,
+                            taxId: user?.taxId ?? undefined,
+                            request: requestPdf,
+                            items: quote.items,
+                            subtotal: quote.subtotal,
+                            vatRate: quote.vatRate,
+                            total: quote.total,
+                          });
+                        } catch (e) {
+                          toast.error(
+                            e instanceof Error
+                              ? e.message
+                              : "Impression impossible — réessayez.",
+                          );
+                        }
+                      }}
+                    >
+                      <Download className="mr-1.5 size-4" />
+                      Devis PDF
+                    </Button>
                   </div>
                 </CardHeader>
                 <CardContent className="flex flex-col gap-4">

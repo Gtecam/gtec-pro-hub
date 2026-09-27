@@ -631,6 +631,136 @@ function buildMaintenanceBody(data: MaintenancePdfData): string {
   </div>`;
 }
 
+// ===================== Devis (document séparé) =====================
+
+export type QuotePdfData = {
+  quoteNumber: string;
+  emittedAt: number;
+  validUntil: number;
+  /** emis | accepte | refuse | expire */
+  status: string;
+  clientName: string;
+  clientPhone?: string;
+  clientEmail?: string;
+  clientAddress?: string;
+  clientCity?: string;
+  companyName?: string;
+  taxId?: string;
+  request: InvoicePdfData["request"];
+  items: { label: string; qty: number; unitPrice: number }[];
+  subtotal: number;
+  vatRate: number;
+  total: number;
+};
+
+const QUOTE_STATUS_LABEL: Record<string, string> = {
+  emis: "À valider",
+  accepte: "Accepté",
+  refuse: "Refusé",
+  expire: "Expiré",
+};
+
+export function buildQuoteHtml(data: QuotePdfData): string {
+  const lines = data.items
+    .map(
+      (it) => `
+      <tr>
+        <td>${esc(it.label)}</td>
+        <td class="c">${it.qty.toLocaleString("fr-FR")}</td>
+        <td class="r">${fcfa(it.unitPrice)}</td>
+        <td class="r">${fcfa(it.qty * it.unitPrice)}</td>
+      </tr>`,
+    )
+    .join("");
+  const statusLabel = QUOTE_STATUS_LABEL[data.status] ?? data.status;
+
+  return wrapDocument(
+    `Devis ${data.quoteNumber} — GTEC PRO`,
+    `
+  <div class="head">
+    <div class="brand">
+      <h1>GTEC PRO</h1>
+      <p>Green Tech Energy Cameroon — Sarl · Énergie, électricité &amp; multi-services</p>
+      <p>Service clientèle : 655 09 42 28 · etsgreentech@yahoo.com · Douala, Cameroun</p>
+    </div>
+    <div class="doc">
+      <p class="doc-title">DEVIS</p>
+      <p class="doc-num">${esc(data.quoteNumber)}</p>
+      <span class="badge ${data.status === "accepte" ? "ok" : "wait"}">${esc(statusLabel)}</span>
+    </div>
+  </div>
+
+  <div class="grid">
+    <div class="box">
+      <h3>Émetteur</h3>
+      <strong>GTEC PRO Sarl</strong><br/>
+      Green Tech Energy Cameroon<br/>
+      Douala — Cameroun<br/>
+      Tél. : 655 09 42 28
+    </div>
+    <div class="box">
+      <h3>Client</h3>
+      ${[
+        data.companyName ? `<strong>${esc(data.companyName)}</strong>` : "",
+        data.clientName,
+        data.taxId ? `NUI : ${esc(data.taxId)}` : "",
+        data.clientAddress,
+        data.clientCity,
+        data.clientPhone ? `Tél. : ${esc(data.clientPhone)}` : "",
+        data.clientEmail,
+      ]
+        .filter((s): s is string => !!s)
+        .map((s, i) => (i === 1 ? esc(s) : s))
+        .join("<br/>")}
+    </div>
+  </div>
+
+  <div class="meta">
+    <div><div class="k">Demande</div><div><strong>${esc(data.request.reference)}</strong> — ${esc(data.request.title)}</div></div>
+    <div><div class="k">Prestation</div><div>${esc(data.request.serviceLabel)}</div></div>
+    <div><div class="k">Lieu</div><div>${esc(data.request.address)}, ${esc(data.request.city)}</div></div>
+    <div><div class="k">Émis le</div><div>${formatDate(data.emittedAt)}</div></div>
+    <div><div class="k">Valable jusqu'au</div><div>${formatDate(data.validUntil)}</div></div>
+  </div>
+
+  <h2>Détail de la proposition</h2>
+  <table>
+    <thead><tr><th>Désignation</th><th class="c">Qté</th><th class="r">P.U. HT</th><th class="r">Total HT</th></tr></thead>
+    <tbody>${lines}</tbody>
+  </table>
+  <table class="totals">
+    <tr><td>Sous-total</td><td class="r">${fcfa(data.subtotal)}</td></tr>
+    <tr><td>TVA ${data.vatRate.toLocaleString("fr-FR")} %</td><td class="r">${fcfa(data.total - data.subtotal)}</td></tr>
+    <tr class="grand"><td>Total TTC</td><td class="r">${fcfa(data.total)}</td></tr>
+  </table>
+
+  <div class="warranty">
+    Après acceptation, le règlement s'effectue en deux tranches de 50 % :
+    l'avance avant le démarrage des travaux, le solde à la fin de l'intervention.
+    Ce devis est valable jusqu'au ${formatDate(data.validUntil)}.
+  </div>
+
+  <div class="foot">
+    <div>
+      Règlement par virement : ${esc("Afriland First Bank")} — IBAN ${esc("CM21 1000 5000 1523 4567 8901 234")}<br/>
+      Mobile Money : Orange Money 655 54 76 49 · MTN MoMo 678 20 28 24
+    </div>
+    <div style="text-align:right">
+      Document généré électroniquement par GTEC PRO<br/>
+      ${new Date().toLocaleDateString("fr-FR", { dateStyle: "long" })}
+    </div>
+  </div>`,
+    INVOICE_CSS +
+      `
+  .badge.wait { border-color: #b45309; color: #b45309; }
+  .warranty { background: #f2f7f3; border-radius: 8px; padding: 10px 12px; margin: 12px 0; }`,
+  );
+}
+
+export function openQuotePdf(data: QuotePdfData): void {
+  openPrintWindow(buildQuoteHtml(data));
+}
+
 export type DossierPdfData = {
   invoice: InvoicePdfData;
   reception: ReceptionPdfData;

@@ -646,6 +646,10 @@ export const acceptQuote = mutation({
     if (!quote) throw new Error("Devis introuvable.");
     if (quote.clientId !== user._id) throw new Error("Action non autorisée.");
     if (quote.status !== "emis") throw new Error("Ce devis n'est plus valable.");
+    if (quote.validUntil < Date.now()) {
+      await ctx.db.patch(args.quoteId, { status: "expire" });
+      throw new Error("Ce devis a expir\u00e9 \u2014 demandez une nouvelle proposition.");
+    }
     await ctx.db.patch(args.quoteId, { status: "accepte" });
     await ctx.db.patch(quote.requestId, { status: "devis_accepte" });
     await addEvent(ctx, quote.requestId, "devis", `Devis ${quote.number} accepté`);
@@ -667,6 +671,10 @@ export const refuseQuote = mutation({
     if (!quote) throw new Error("Devis introuvable.");
     if (quote.clientId !== user._id) throw new Error("Action non autorisée.");
     if (quote.status !== "emis") throw new Error("Ce devis n'est plus valable.");
+    if (quote.validUntil < Date.now()) {
+      await ctx.db.patch(args.quoteId, { status: "expire" });
+      throw new Error("Ce devis a expir\u00e9 \u2014 demandez une nouvelle proposition.");
+    }
     await ctx.db.patch(args.quoteId, { status: "refuse" });
     await ctx.db.patch(quote.requestId, { status: "nouvelle" });
     await addEvent(
