@@ -2923,6 +2923,26 @@ export const adminPendingPayments = query({
   },
 });
 
+/** Tous les paiements (export comptable admin). */
+export const adminListAllPayments = query({
+  args: {},
+  handler: async (ctx) => {
+    await requireAdmin(ctx);
+    const payments = await ctx.db.query("payments").order("desc").collect();
+    const out: {
+      payment: Doc<"payments">;
+      request: Doc<"serviceRequests"> | null;
+      client: Doc<"users"> | null;
+    }[] = [];
+    for (const p of payments) {
+      const request = await ctx.db.get(p.requestId);
+      const client = await ctx.db.get(p.clientId);
+      out.push({ payment: p, request, client });
+    }
+    return out;
+  },
+});
+
 export const adminStats = query({
   args: {},
   handler: async (ctx) => {

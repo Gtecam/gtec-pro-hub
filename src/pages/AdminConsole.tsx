@@ -875,6 +875,7 @@ export default function AdminConsole() {
   const stats = useQuery(api.gtec.adminStats);
   const requests = useQuery(api.gtec.adminListRequests);
   const payments = useQuery(api.gtec.adminPendingPayments);
+  const allPayments = useQuery(api.gtec.adminListAllPayments);
   const techs = useQuery(api.gtec.adminListAssignableTechnicians);
   const adminExists = useQuery(api.gtec.adminExists);
 
@@ -994,6 +995,112 @@ export default function AdminConsole() {
       ]),
     );
     toast.success(`${withdrawals.length} retrait(s) exporté(s).`);
+  };
+
+  const missionStatusLabel = (s: string) =>
+    ({
+      nouvelle: "Nouvelle",
+      devis_emis: "Devis émis",
+      devis_accepte: "Devis accepté",
+      paye: "Payée",
+      affectee: "Affectée",
+      en_intervention: "En intervention",
+      rapport_emis: "Rapport transmis",
+      terminee: "Terminée",
+      annulee: "Annulée",
+    })[s] ?? s;
+
+  const methodShortLabel = (m: string) =>
+    ({
+      mtn_momo: "MTN MoMo",
+      orange_money: "Orange Money",
+      especes: "Espèces",
+      virement: "Virement",
+      carte_visa: "Carte Visa",
+    })[m] ?? m;
+
+  const exportMissionsCsv = () => {
+    if (!requests || requests.length === 0) {
+      toast.error("Aucune mission à exporter.");
+      return;
+    }
+    downloadCsv(
+      `missions-gtec-${todayStamp()}.csv`,
+      [
+        "Référence",
+        "Titre",
+        "Client",
+        "Téléphone client",
+        "Ville",
+        "Adresse",
+        "Pôle",
+        "Statut",
+        "Devis n°",
+        "Total TTC (FCFA)",
+        "Dernier paiement",
+        "Affectation",
+        "Créée le",
+      ],
+      requests.map(({ request, client, quote, payment, assignment }) => [
+        request.reference,
+        request.title,
+        client?.name ?? "",
+        client?.phone ?? "",
+        request.city,
+        request.address,
+        SERVICES.find((s) => s.key === request.serviceKey)?.label ?? request.serviceKey,
+        missionStatusLabel(request.status),
+        quote?.number ?? "",
+        quote?.total ?? "",
+        payment ? `${methodShortLabel(payment.method)} · ${fcfa(payment.amount)}` : "",
+        assignment?.status ?? "",
+        new Date(request._creationTime).toLocaleString("fr-FR"),
+      ]),
+    );
+    toast.success(`${requests.length} mission(s) exportée(s).`);
+  };
+
+  const exportPaymentsCsv = () => {
+    if (!allPayments || allPayments.length === 0) {
+      toast.error("Aucun paiement à exporter.");
+      return;
+    }
+    downloadCsv(
+      `paiements-gtec-${todayStamp()}.csv`,
+      [
+        "Tranche",
+        "Demande",
+        "Client",
+        "Montant (FCFA)",
+        "Moyen",
+        "Numéro payeur",
+        "Statut",
+        "Réf. externe",
+        "Encaissé le",
+        "Créé le",
+      ],
+      allPayments.map(({ payment, request, client }) => [
+        payment.milestone === "avance"
+          ? "Avance (50 %)"
+          : payment.milestone === "solde"
+            ? "Solde (50 %)"
+            : "Complet",
+        request?.reference ?? "",
+        client?.name ?? "",
+        payment.amount,
+        methodShortLabel(payment.method),
+        payment.payerPhone,
+        payment.status === "valide"
+          ? "Validé"
+          : payment.status === "echoue"
+            ? "Échoué"
+            : "En attente",
+        payment.externalRef ?? "",
+        payment.paidAt ? new Date(payment.paidAt).toLocaleString("fr-FR") : "",
+        new Date(payment._creationTime).toLocaleString("fr-FR"),
+      ]),
+    );
+    toast.success(`${allPayments.length} paiement(s) exporté(s).`);
   };
   const [wdAmount, setWdAmount] = useState("");
   const [wdMethod, setWdMethod] = useState("mtn_momo");
@@ -1237,6 +1344,17 @@ export default function AdminConsole() {
 
           {/* Missions */}
           <TabsContent value="missions" className="mt-4">
+            <div className="mb-3 flex justify-end">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={(requests?.length ?? 0) === 0}
+                onClick={exportMissionsCsv}
+              >
+                <Download className="mr-1.5 size-4" />
+                Export CSV (missions)
+              </Button>
+            </div>
             {requests === undefined ? (
               <div className="flex flex-col gap-2">
                 {[0, 1, 2].map((i) => (
@@ -1277,6 +1395,17 @@ export default function AdminConsole() {
 
           {/* Paiements */}
           <TabsContent value="paiements" className="mt-4">
+            <div className="mb-3 flex justify-end">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={(allPayments?.length ?? 0) === 0}
+                onClick={exportPaymentsCsv}
+              >
+                <Download className="mr-1.5 size-4" />
+                Export CSV (tous les paiements)
+              </Button>
+            </div>
             {payments === undefined ? (
               <div className="h-32 animate-pulse rounded-xl bg-muted" />
             ) : payments.length === 0 ? (
