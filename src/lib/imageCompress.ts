@@ -1,10 +1,8 @@
-import { MAX_FILE_SIZE } from "./gtec";
-
 /**
  * Compression d'images côté navigateur avant envoi (data URL JPEG).
  *
  * Les fichiers image lourds sont redimensionnés puis ré-encodés en JPEG par
- * paliers de qualité croissante jusqu'à passer sous MAX_FILE_SIZE. Les fichiers
+ * paliers de qualité dégressive jusqu'à passer sous la cible. Les fichiers
  * déjà conformes (ou non image : PDF des documents KYC) sont renvoyés tels
  * quels — on ne refuse plus jamais une image pour sa taille si elle est
  * compressible.
@@ -62,9 +60,12 @@ export function dataUrlBytes(dataUrl: string): number {
  */
 export async function compressImageIfNeeded(
   file: File,
-  options?: { maxBytes?: number; mode?: "photo" | "document" | "document-tight" },
+  options?: {
+    maxBytes?: number;
+    mode?: "photo" | "document" | "document-tight";
+  },
 ): Promise<CompressResult> {
-  const maxBytes = options?.maxBytes ?? MAX_FILE_SIZE;
+  const maxBytes = options?.maxBytes ?? 1024 * 1024; // plafond Convex par défaut
   const documentMode = options?.mode === "document";
   const tightMode = options?.mode === "document-tight";
   const isImage = file.type.startsWith("image/");
@@ -131,6 +132,7 @@ export async function compressImageIfNeeded(
   return { ok: true, dataUrl: best, compressed: true, originalSize: file.size };
 }
 
+/** Taille lisible pour les toasts (Ko / Mo). */
 /** Taille lisible pour les toasts (Ko / Mo). */
 export function humanSize(bytes: number): string {
   return bytes >= 1024 * 1024

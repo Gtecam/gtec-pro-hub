@@ -254,6 +254,11 @@ export const updateClientIdentity = mutation({
     if (args.customerType === "entreprise" && !args.companyName?.trim()) {
       throw new Error("Indiquez la raison sociale de l'entreprise.");
     }
+    if (args.idDocumentUrl && dataUrlsBytes([args.idDocumentUrl]) > 900 * 1024) {
+      throw new Error(
+        "Photo de la pi\u00e8ce d'identit\u00e9 trop volumineuse \u2014 elle est compress\u00e9e automatiquement, r\u00e9essayez.",
+      );
+    }
     await ctx.db.patch(user._id, {
       name: `${args.firstName.trim()} ${args.lastName.trim()}`.trim(),
       firstName: args.firstName.trim(),
@@ -378,6 +383,18 @@ export const createRequest = mutation({
   },
   handler: async (ctx, args) => {
     const user = await requireUser(ctx);
+    // Garde de taille : le champ `photos` (data URLs) est limité par Convex
+    // (~1 Mio par valeur). Les images sont compressées côté navigateur —
+    // cette garde n'attrape que les cas anormaux avec un message clair.
+    const photosBytes = args.photos.reduce(
+      (s, url) => s + Math.round(((url.length - (url.indexOf(",") + 1)) * 3) / 4),
+      0,
+    );
+    if (photosBytes > 900 * 1024) {
+      throw new Error(
+        "Photos trop volumineuses pour la demande — réduisez leur nombre ou réessayez (elles sont compressées automatiquement).",
+      );
+    }
     const reference = await nextRef(ctx, "serviceRequests", "GTC");
     const id = await ctx.db.insert("serviceRequests", {
       clientId: user._id,
@@ -851,6 +868,11 @@ export const initiatePayment = mutation({
     if (quote.clientId !== user._id) throw new Error("Action non autorisée.");
     if (quote.status !== "accepte") {
       throw new Error("Acceptez d'abord le devis avant de payer.");
+    }
+    if (args.proofPhotoUrl && dataUrlsBytes([args.proofPhotoUrl]) > 900 * 1024) {
+      throw new Error(
+        "Photo du reçu trop volumineuse \u2014 elle est compress\u00e9e automatiquement, r\u00e9essayez.",
+      );
     }
     const existing = await ctx.db
       .query("payments")
@@ -1358,6 +1380,17 @@ export const adminStartIntervention = mutation({
   },
 });
 
+/**
+ * Taille approximative d'un tableau de data URLs (octets binaires).
+ * Utilisé par les gardes de taille serveur (limite Convex ~1 Mio/valeur).
+ */
+function dataUrlsBytes(urls: string[]): number {
+  return urls.reduce(
+    (s, url) => s + Math.round(((url.length - (url.indexOf(",") + 1)) * 3) / 4),
+    0,
+  );
+}
+
 export const adminSubmitReport = mutation({
   args: {
     requestId: v.id("serviceRequests"),
@@ -1370,6 +1403,11 @@ export const adminSubmitReport = mutation({
   },
   handler: async (ctx, args) => {
     await requireAdmin(ctx);
+    if (dataUrlsBytes([...args.beforePhotos, ...args.afterPhotos]) > 900 * 1024) {
+      throw new Error(
+        "Photos du rapport trop volumineuses — elles sont compressées automatiquement côté application, réessayez.",
+      );
+    }
     const request = await ctx.db.get(args.requestId);
     if (!request || request.status !== "en_intervention") {
       throw new Error("Aucune intervention en cours pour cette demande.");
@@ -2083,6 +2121,11 @@ export const technicianSubmitReport = mutation({
   },
   handler: async (ctx, args) => {
     const user = await requireUser(ctx);
+    if (dataUrlsBytes([...args.beforePhotos, ...args.afterPhotos]) > 900 * 1024) {
+      throw new Error(
+        "Photos du rapport trop volumineuses \u2014 elles sont compress\u00e9es automatiquement c\u00f4t\u00e9 application, r\u00e9essayez.",
+      );
+    }
     const request = await ctx.db.get(args.requestId);
     if (!request || request.status !== "en_intervention") {
       throw new Error("Aucune intervention en cours pour cette mission.");
@@ -3018,6 +3061,11 @@ export const payContractMonthly = mutation({
       throw new Error("Action non autorisée.");
     if (contract.status !== "actif")
       throw new Error("Le contrat doit être actif pour régler une mensualité.");
+    if (args.proofPhotoUrl && dataUrlsBytes([args.proofPhotoUrl]) > 900 * 1024) {
+      throw new Error(
+        "Photo du reçu trop volumineuse \u2014 elle est compress\u00e9e automatiquement, r\u00e9essayez.",
+      );
+    }
     const previous = await ctx.db
       .query("contractPayments")
       .withIndex("by_contract", (q) => q.eq("contractId", contract._id))
