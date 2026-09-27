@@ -21,6 +21,7 @@ import {
   Mail,
   Package,
   Plus,
+  Receipt,
   RefreshCw,
   ShieldCheck,
   Sparkles,
@@ -37,7 +38,7 @@ import { toast } from "sonner";
 import { api } from "@/convex/_generated/api";
 import { AppShell, StatusBadge } from "@/components/gtec";
 import { haversinePositions } from "@/lib/gtec";
-import { openDossierPdf, openMaintenancePdf } from "@/lib/invoicePdf";
+import { openDossierPdf, openMaintenancePdf, openMaintenanceReceiptPdf } from "@/lib/invoicePdf";
 import { downloadCsv, todayStamp } from "@/lib/csv";
 import { ReportForm } from "@/components/ReportForm";
 import ServicesCatalog from "@/pages/ServicesCatalog";
@@ -876,6 +877,7 @@ export default function AdminConsole() {
   const requests = useQuery(api.gtec.adminListRequests);
   const payments = useQuery(api.gtec.adminPendingPayments);
   const contractPays = useQuery(api.gtec.adminPendingContractPayments);
+  const allContractPays = useQuery(api.gtec.adminListContractPayments);
   const validateContractPay = useMutation(api.gtec.adminValidateContractPayment);
   const allPayments = useQuery(api.gtec.adminListAllPayments);
   const techs = useQuery(api.gtec.adminListAssignableTechnicians);
@@ -1144,6 +1146,56 @@ export default function AdminConsole() {
   const [techPhone, setTechPhone] = useState("");
   const [busy, setBusy] = useState(false);
   const [proofZoom, setProofZoom] = useState<string | null>(null);
+  const [receiptHistory, setReceiptHistory] = useState(false);
+
+  const openAdminReceipt = (index: number) => {
+    const row = (allContractPays ?? [])[index];
+    if (!row) return;
+    const { payment, contract, client } = row;
+    if (!contract || !client) {
+      toast.error("Contrat ou client introuvable pour cette mensualité.");
+      return;
+    }
+    try {
+      openMaintenanceReceiptPdf({
+        payment: {
+          periodIndex: payment.periodIndex,
+          periodStart: payment.periodStart,
+          periodEnd: payment.periodEnd,
+          amount: payment.amount,
+          method: payment.method,
+          payerPhone: payment.payerPhone,
+          status: payment.status,
+          validatedAt: payment.validatedAt,
+          externalRef: payment.externalRef,
+          bankRef: payment.bankRef,
+          bankName: payment.bankName,
+        },
+        contract: {
+          reference: contract.reference,
+          title: contract.title,
+          serviceLabel:
+            SERVICES.find((sv) => sv.key === contract.serviceKey)?.label ??
+            contract.serviceKey,
+          frequencyLabel: contractFrequencyLabel(contract.frequency),
+          city: contract.city,
+          address: contract.address,
+          monthlyAmount: contract.monthlyAmount,
+          startDate: contract.startDate,
+          endDate: contract.endDate,
+        },
+        clientName: client.companyName ?? client.name ?? "Client GTEC",
+        clientPhone: client.phone ?? undefined,
+        clientEmail: client.email ?? undefined,
+        clientAddress: client.address ?? undefined,
+        clientCity: client.city ?? contract.city,
+      });
+    } catch (e) {
+      toast.error(
+        e instanceof Error ? e.message : "Impression impossible — réessayez.",
+      );
+    }
+  };
   const [showContractForm, setShowContractForm] = useState(false);
   const [ctrClient, setCtrClient] = useState("");
   const [ctrService, setCtrService] = useState("solaire");
@@ -2351,6 +2403,75 @@ export default function AdminConsole() {
 
           {/* Mensualités des contrats de maintenance */}
           <TabsContent value="mensualites" className="mt-4">
+            {(allContractPays ?? []).some((p) => p.payment.status !== "en_attente") && (
+              <div className="mb-3 flex justify-end">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setReceiptHistory((v) => !v)}
+                >
+                  <Receipt className="mr-1.5 size-4" />
+                  {receiptHistory ? "Masquer l'historique" : "Historique & reçus"}
+                </Button>
+              </div>
+            )}
+            {receiptHistory && (
+              <div className="mb-4 flex flex-col gap-2">
+                <h3 className="font-display text-sm font-semibold text-muted-foreground">
+                  Mensualités traitées
+                </h3>
+                {(allContractPays ?? [])
+                  .filter((p) => p.payment.status !== "en_attente")
+                  .map((row, idx) => {
+                    const index = (allContractPays ?? []).indexOf(row);
+                    return (
+                      <div
+                        key={row.payment._id}
+                        className="flex flex-wrap items-center gap-3 rounded-xl border border-border/70 bg-card px-4 py-3"
+                      >
+                        <span className="flex size-9 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                          <Receipt className="size-4" />
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-medium">
+                            {fcfa(row.payment.amount)} · {row.contract?.reference} —
+                            échéance n°{row.payment.periodIndex}
+                            {row.client ? ` · ${row.client.name ?? "Client"}` : ""}
+                          </p>
+                          <p className="truncate text-xs text-muted-foreground">
+                            {row.payment.status === "valide"
+                              ? row.payment.validatedAt
+                                ? `Encaissée le ${formatDateTime(row.payment.validatedAt)}`
+                                : "Encaissée"
+                              : "Paiement non abouti"}
+                            {` · ${row.payment.method}`}
+                            {row.payment.externalRef ? ` · réf. ${row.payment.externalRef}` : ""}
+                          </p>
+                        </div>
+                        <span
+                          className={
+                            row.payment.status === "valide"
+                              ? "rounded-full bg-emerald-500/10 px-2.5 py-1 text-xs font-medium text-emerald-600 ring-1 ring-inset ring-emerald-500/20 dark:text-emerald-400"
+                              : "rounded-full bg-amber-500/10 px-2.5 py-1 text-xs font-medium text-amber-600 ring-1 ring-inset ring-amber-500/20 dark:text-amber-400"
+                          }
+                        >
+                          {row.payment.status === "valide" ? "Encaissée" : "Échouée"}
+                        </span>
+                        {row.payment.status === "valide" && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => openAdminReceipt(index)}
+                          >
+                            <Receipt className="mr-1.5 size-4" />
+                            Reçu PDF
+                          </Button>
+                        )}
+                      </div>
+                    );
+                  })}
+              </div>
+            )}
             {contractPays === undefined ? (
               <div className="h-32 animate-pulse rounded-xl bg-muted" />
             ) : contractPays.length === 0 ? (
@@ -2387,6 +2508,20 @@ export default function AdminConsole() {
                         />
                       )}
                       <div className="flex items-center gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() =>
+                            openAdminReceipt(
+                              (allContractPays ?? []).findIndex(
+                                (r) => r.payment._id === payment._id,
+                              ),
+                            )
+                          }
+                        >
+                          <Receipt className="mr-1.5 size-4" />
+                          Reçu PDF
+                        </Button>
                         <Button
                           size="sm"
                           className="halo-amber"

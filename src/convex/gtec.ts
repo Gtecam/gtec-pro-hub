@@ -3087,6 +3087,29 @@ export const adminValidateContractPayment = mutation({
   },
 });
 
+/** Admin : toutes les mensualités (en attente + réglées), contrat et client joints. */
+export const adminListContractPayments = query({
+  args: {},
+  handler: async (ctx) => {
+    await requireAdmin(ctx);
+    const rows = await ctx.db
+      .query("contractPayments")
+      .order("desc")
+      .collect();
+    const out: {
+      payment: Doc<"contractPayments">;
+      contract: Doc<"maintenanceContracts"> | null;
+      client: Doc<"users"> | null;
+    }[] = [];
+    for (const p of rows) {
+      const contract = await ctx.db.get(p.contractId);
+      const client = await ctx.db.get(p.clientId);
+      out.push({ payment: p, contract, client });
+    }
+    return out;
+  },
+});
+
 /** Admin : liste des mensualités en attente de vérification. */
 export const adminPendingContractPayments = query({
   args: {},
