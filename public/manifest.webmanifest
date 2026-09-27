@@ -1,17 +1,25 @@
 {
-  "name": "freebuff.com application",
-  "short_name": "freebuff.com",
-  "description": "freebuff.com application",
+  "name": "GTEC PRO — Green Tech Energy Cameroon",
+  "short_name": "GTEC PRO",
+  "description": "Énergie, électricité & multi-services : demandes, devis, interventions et contrats de maintenance GTEC.",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#ffffff",
-  "theme_color": "#2e7d3a",
+  "background_color": "#15803d",
+  "theme_color": "#15803d",
+  "lang": "fr",
+  "orientation": "portrait",
   "icons": [
     {
-      "src": "/logo.svg",
-      "sizes": "any",
-      "type": "image/svg+xml",
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
       "purpose": "any"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
     }
   ]
 }
