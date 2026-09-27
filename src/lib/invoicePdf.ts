@@ -106,7 +106,7 @@ const BASE_CSS = `
     color: #1c2b22; margin: 0; font-size: 12.5px; line-height: 1.5;
   }
   /* Dossier : chaque document commence sur une nouvelle page. */
-  .page { page-break-after: always; }
+  .page { page-break-after: always; position: relative; }
   .page:last-child { page-break-after: auto; }
   .head {
     display: flex; justify-content: space-between; align-items: flex-start;
@@ -161,6 +161,22 @@ const INVOICE_CSS = `
   .tranche-status.ok { color: #15803d; }
   .muted { color: #63756a; }
   .sig img { height: 56px; display: block; margin-top: 4px; }
+  /* Filigrane PAYÉE — facture réglée (texte seul : imprimé même sans
+     « graphiques d'arrière-plan », pointer-events off, au-dessus du contenu). */
+  .watermark {
+    position: absolute; top: 42%; left: 0; right: 0;
+    display: flex; align-items: center; justify-content: center;
+    pointer-events: none; z-index: 5;
+    -webkit-print-color-adjust: exact; print-color-adjust: exact;
+  }
+  .watermark span {
+    transform: rotate(-30deg);
+    font-size: 108px; font-weight: 800; letter-spacing: 0.14em;
+    text-transform: uppercase; white-space: nowrap;
+    color: rgba(21, 128, 61, 0.16);
+    border: 5px solid rgba(21, 128, 61, 0.18);
+    border-radius: 18px; padding: 6px 42px;
+  }
 `;
 
 const RECEPTION_CSS = `
@@ -301,6 +317,7 @@ function buildInvoiceBody(data: InvoicePdfData): string {
     : "";
 
   return `
+  ${isPaid ? `<div class="watermark" aria-hidden="true"><span>Payée</span></div>` : ""}
   <div class="head">
     <div class="head-left">
     <div class="logo">${gtecLogoSvg}</div>
@@ -503,7 +520,12 @@ ${body}
 }
 
 export function buildInvoiceHtml(data: InvoicePdfData): string {
-  return wrapDocument(`Facture ${data.invoiceNumber} — GTEC PRO`, buildInvoiceBody(data), INVOICE_CSS);
+  // .page sert d'ancrage positionné au filigrane (facture seule).
+  return wrapDocument(
+    `Facture ${data.invoiceNumber} — GTEC PRO`,
+    `<div class="page">${buildInvoiceBody(data)}</div>`,
+    INVOICE_CSS,
+  );
 }
 
 export function buildReceptionHtml(data: ReceptionPdfData): string {
