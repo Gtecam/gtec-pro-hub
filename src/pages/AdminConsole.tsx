@@ -838,7 +838,7 @@ function AdminRequestRow({
                     return;
                   }
                   try {
-                    openDossierPdf(payload);
+                    openDossierPdf(payload, { adminCopy: true });
                   } catch (e) {
                     toast.error(
                       e instanceof Error

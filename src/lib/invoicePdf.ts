@@ -86,6 +86,11 @@ export type ReceptionPdfData = {
 const esc = (s: string) =>
   s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
+/** Filigrane diagonal (PAYÉE, DOUBLON…) — `.dup .upper` pour la variante admin. */
+function watermarkHtml(text: string, cls = ""): string {
+  return `<div class="watermark ${cls}" aria-hidden="true"><span>${esc(text)}</span></div>`;
+}
+
 const methodLabel = (key: string) =>
   PAYMENT_METHODS.find((m) => m.key === key)?.label ?? key;
 
@@ -176,6 +181,16 @@ const INVOICE_CSS = `
     color: rgba(21, 128, 61, 0.16);
     border: 5px solid rgba(21, 128, 61, 0.18);
     border-radius: 18px; padding: 6px 42px;
+  }
+  /* DOUBLON — exemplaire administration : ambre, angle opposé, zone haute
+     pour ne jamais chevaucher le filigrane PAYÉE (vert, zone médiane). */
+  .watermark.upper { top: 12%; }
+  .watermark.dup span {
+    transform: rotate(12deg);
+    font-size: 62px; letter-spacing: 0.18em;
+    color: rgba(180, 83, 9, 0.15);
+    border: 4px solid rgba(180, 83, 9, 0.17);
+    padding: 4px 30px;
   }
 `;
 
@@ -345,7 +360,7 @@ function buildInvoiceBody(data: InvoicePdfData): string {
     : "";
 
   return `
-  ${isPaid ? `<div class="watermark" aria-hidden="true"><span>Payée</span></div>` : ""}
+  ${isPaid ? watermarkHtml("Payée") : ""}
   <div class="head">
     <div class="head-left">
     <div class="logo">${gtecLogoSvg}</div>
@@ -865,7 +880,13 @@ const DOSSIER_CSS = `
   .dossier-band strong { color: #15803d; font-size: 12px; }
 `;
 
-export function buildDossierHtml(data: DossierPdfData): string {
+export type DossierOptions = {
+  /** Exemplaire administration : filigrane DOUBLON + mention sur les bandeaux. */
+  adminCopy?: boolean;
+};
+
+export function buildDossierHtml(data: DossierPdfData, options?: DossierOptions): string {
+  const adminCopy = options?.adminCopy === true;
   const ref = data.invoice.request.reference;
   const req = data.invoice.request;
   const total =
@@ -907,18 +928,21 @@ export function buildDossierHtml(data: DossierPdfData): string {
   return wrapDocument(
     `Dossier ${ref} — GTEC PRO`,
     `<div class="page cover-page">
+  ${adminCopy ? watermarkHtml("Doublon", "dup upper") : ""}
   ${coverBody}
 </div>
 <div class="page">
+  ${adminCopy ? watermarkHtml("Doublon", "dup upper") : ""}
   <div class="dossier-band">
-    <span>Dossier ${esc(ref)} — Document 1/2</span>
+    <span>Dossier ${esc(ref)} — Document 1/2${adminCopy ? " · Doublon administration" : ""}</span>
     <strong>Facture ${esc(data.invoice.invoiceNumber)}</strong>
   </div>
   ${buildInvoiceBody(data.invoice)}
 </div>
 <div class="page">
+  ${adminCopy ? watermarkHtml("Doublon", "dup upper") : ""}
   <div class="dossier-band">
-    <span>Dossier ${esc(ref)} — Document 2/2</span>
+    <span>Dossier ${esc(ref)} — Document 2/2${adminCopy ? " · Doublon administration" : ""}</span>
     <strong>PV de réception</strong>
   </div>
   ${buildReceptionBody(data.reception)}
@@ -963,8 +987,8 @@ export function openReceptionPdf(data: ReceptionPdfData): void {
 }
 
 /** Dossier complet (facture + PV, deux pages). */
-export function openDossierPdf(data: DossierPdfData): void {
-  openPrintWindow(buildDossierHtml(data));
+export function openDossierPdf(data: DossierPdfData, options?: DossierOptions): void {
+  openPrintWindow(buildDossierHtml(data, options));
 }
 
 /** Contrat de maintenance (facture-abonnement + visites). */
