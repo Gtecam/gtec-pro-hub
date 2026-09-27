@@ -10,6 +10,7 @@ import {
   ClipboardCheck,
   Download,
   FileText,
+  FolderDown,
   ImagePlus,
   Loader2,
   MapPin,
@@ -66,7 +67,7 @@ import {
   SERVICES,
   statusMeta,
 } from "@/lib/gtec";
-import { openInvoicePdf, openReceptionPdf } from "@/lib/invoicePdf";
+import { openDossierPdf, openInvoicePdf, openReceptionPdf } from "@/lib/invoicePdf";
 
 function serviceMeta(key: string) {
   return SERVICES.find((s) => s.key === key);
@@ -231,6 +232,33 @@ export default function RequestDetail() {
   const service = serviceMeta(request.serviceKey);
   const ServiceIcon = service?.icon ?? Wrench;
   const canCancel = !["terminee", "annulee"].includes(request.status);
+
+  // Données partagées des documents PDF (facture, PV, dossier complet).
+  const teamPdf = members.map((m) => ({ name: m.name, role: m.role }));
+  const requestPdf = {
+    reference: request.reference,
+    title: request.title,
+    serviceLabel: service?.label ?? request.serviceKey,
+    address: request.address,
+    city: request.city,
+    scheduledAt: request.scheduledAt,
+  };
+  const quotePdf = quote
+    ? {
+        number: quote.number,
+        items: quote.items,
+        subtotal: quote.subtotal,
+        vatRate: quote.vatRate,
+        total: quote.total,
+      }
+    : undefined;
+  const paymentsPdf = (payments ?? []).map((p) => ({
+    milestone: p.milestone,
+    amount: p.amount,
+    method: p.method,
+    status: p.status,
+    paidAt: p.paidAt,
+  }));
 
   const run = async (fn: () => Promise<unknown>, ok: string) => {
     setBusy(true);
@@ -783,18 +811,8 @@ export default function RequestDetail() {
                               clientEmail: user?.email ?? undefined,
                               clientAddress: user?.address ?? undefined,
                               clientCity: user?.city ?? request.city,
-                              request: {
-                                reference: request.reference,
-                                title: request.title,
-                                serviceLabel: service?.label ?? request.serviceKey,
-                                address: request.address,
-                                city: request.city,
-                                scheduledAt: request.scheduledAt,
-                              },
-                              team: members.map((m) => ({
-                                name: m.name,
-                                role: m.role,
-                              })),
+                              request: requestPdf,
+                              team: teamPdf,
                               report: {
                                 workDone: report.workDone,
                                 partsUsed: report.partsUsed,
@@ -928,72 +946,116 @@ export default function RequestDetail() {
                   <span className="font-display text-xl font-bold">
                     {fcfa(invoice.amount)}
                   </span>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => {
-                      try {
-                        openInvoicePdf({
-                          invoiceNumber: invoice.number,
-                          issuedAt: invoice.issuedAt,
-                          invoiceStatus: invoice.status,
-                          clientName: user?.name ?? "Client GTEC",
-                          clientPhone: user?.phone ?? undefined,
-                          clientEmail: user?.email ?? undefined,
-                          clientAddress: user?.address ?? undefined,
-                          clientCity: user?.city ?? request.city,
-                          companyName: user?.companyName ?? undefined,
-                          taxId: user?.taxId ?? undefined,
-                          nationalId: user?.nationalId ?? undefined,
-                          request: {
-                            reference: request.reference,
-                            title: request.title,
-                            serviceLabel: service?.label ?? request.serviceKey,
-                            address: request.address,
-                            city: request.city,
-                            scheduledAt: request.scheduledAt,
-                          },
-                          quote: quote
-                            ? {
-                                number: quote.number,
-                                items: quote.items,
-                                subtotal: quote.subtotal,
-                                vatRate: quote.vatRate,
-                                total: quote.total,
-                              }
-                            : undefined,
-                          payments: (payments ?? []).map((p) => ({
-                            milestone: p.milestone,
-                            amount: p.amount,
-                            method: p.method,
-                            status: p.status,
-                            paidAt: p.paidAt,
-                          })),
-                          report: report
-                            ? {
-                                workDone: report.workDone,
-                                warrantyMonths: report.warrantyMonths,
-                                receivedAt: report.receivedAt,
-                                clientSignature: report.clientSignature,
-                              }
-                            : undefined,
-                          team: members.map((m) => ({
-                            name: m.name,
-                            role: m.role,
-                          })),
-                        });
-                      } catch (e) {
-                        toast.error(
-                          e instanceof Error
-                            ? e.message
-                            : "Impression impossible — réessayez.",
-                        );
-                      }
-                    }}
-                  >
-                    <Download className="mr-1.5 size-4" />
-                    Facture PDF
-                  </Button>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        try {
+                          openInvoicePdf({
+                            invoiceNumber: invoice.number,
+                            issuedAt: invoice.issuedAt,
+                            invoiceStatus: invoice.status,
+                            clientName: user?.name ?? "Client GTEC",
+                            clientPhone: user?.phone ?? undefined,
+                            clientEmail: user?.email ?? undefined,
+                            clientAddress: user?.address ?? undefined,
+                            clientCity: user?.city ?? request.city,
+                            companyName: user?.companyName ?? undefined,
+                            taxId: user?.taxId ?? undefined,
+                            nationalId: user?.nationalId ?? undefined,
+                            request: requestPdf,
+                            quote: quotePdf,
+                            payments: paymentsPdf,
+                            report: report
+                              ? {
+                                  workDone: report.workDone,
+                                  warrantyMonths: report.warrantyMonths,
+                                  receivedAt: report.receivedAt,
+                                  clientSignature: report.clientSignature,
+                                }
+                              : undefined,
+                            team: teamPdf,
+                          });
+                        } catch (e) {
+                          toast.error(
+                            e instanceof Error
+                              ? e.message
+                              : "Impression impossible — réessayez.",
+                          );
+                        }
+                      }}
+                    >
+                      <Download className="mr-1.5 size-4" />
+                      Facture PDF
+                    </Button>
+                    {report && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="border-emerald-500/40 text-emerald-600 hover:bg-emerald-500/10 dark:text-emerald-400"
+                        onClick={() => {
+                          try {
+                            openDossierPdf({
+                              invoice: {
+                                invoiceNumber: invoice.number,
+                                issuedAt: invoice.issuedAt,
+                                invoiceStatus: invoice.status,
+                                clientName: user?.name ?? "Client GTEC",
+                                clientPhone: user?.phone ?? undefined,
+                                clientEmail: user?.email ?? undefined,
+                                clientAddress: user?.address ?? undefined,
+                                clientCity: user?.city ?? request.city,
+                                companyName: user?.companyName ?? undefined,
+                                taxId: user?.taxId ?? undefined,
+                                nationalId: user?.nationalId ?? undefined,
+                                request: requestPdf,
+                                quote: quotePdf,
+                                payments: paymentsPdf,
+                                report: {
+                                  workDone: report.workDone,
+                                  warrantyMonths: report.warrantyMonths,
+                                  receivedAt: report.receivedAt,
+                                  clientSignature: report.clientSignature,
+                                },
+                                team: teamPdf,
+                              },
+                              reception: {
+                                received: report.status === "receptionne",
+                                clientName: user?.name ?? "Client GTEC",
+                                clientPhone: user?.phone ?? undefined,
+                                clientEmail: user?.email ?? undefined,
+                                clientAddress: user?.address ?? undefined,
+                                clientCity: user?.city ?? request.city,
+                                request: requestPdf,
+                                team: teamPdf,
+                                report: {
+                                  workDone: report.workDone,
+                                  partsUsed: report.partsUsed,
+                                  recommendations: report.recommendations,
+                                  beforePhotos: report.beforePhotos,
+                                  afterPhotos: report.afterPhotos,
+                                  warrantyMonths: report.warrantyMonths,
+                                  receivedAt: report.receivedAt,
+                                  receptionNote: report.receptionNote,
+                                  clientSignature: report.clientSignature,
+                                },
+                              },
+                            });
+                          } catch (e) {
+                            toast.error(
+                              e instanceof Error
+                                ? e.message
+                                : "Impression impossible — réessayez.",
+                            );
+                          }
+                        }}
+                      >
+                        <FolderDown className="mr-1.5 size-4" />
+                        Dossier complet (facture + PV)
+                      </Button>
+                    )}
+                  </div>
                 </CardContent>
               </Card>
             )}

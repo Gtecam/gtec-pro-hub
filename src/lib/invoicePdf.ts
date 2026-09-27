@@ -7,11 +7,14 @@ import {
 } from "./gtec";
 
 /**
- * Facture PDF — générée côté navigateur en HTML A4 imprimable (Ctrl+P →
- * « Enregistrer au format PDF »), sans dépendance externe. La facture
- * reprend : devis détaillé (TVA 19,25 %), tranches 50/50, équipe, PV de
- * réception signé et coordonnées de règlement GTEC.
+ * Documents PDF GTEC PRO — générés côté navigateur en HTML A4 imprimable
+ * (Ctrl+P → « Enregistrer au format PDF »), sans dépendance externe :
+ *  - la facture (devis détaillé TVA 19,25 %, tranches 50/50, équipe, PV) ;
+ *  - le PV de réception (constat, photos, garantie, signatures) ;
+ *  - le dossier complet : facture + PV dans un seul document, une page
+ *    de saut entre chaque (`page-break-after`).
  */
+
 export type InvoicePdfData = {
   invoiceNumber: string;
   issuedAt: number;
@@ -55,6 +58,29 @@ export type InvoicePdfData = {
   team?: { name: string; role: string }[];
 };
 
+export type ReceptionPdfData = {
+  /** La réception est-elle effective (PV signé) ? */
+  received: boolean;
+  clientName: string;
+  clientPhone?: string;
+  clientEmail?: string;
+  clientAddress?: string;
+  clientCity?: string;
+  request: InvoicePdfData["request"];
+  team?: { name: string; role: string }[];
+  report: {
+    workDone: string;
+    partsUsed: { label: string; qty: number }[];
+    recommendations?: string;
+    beforePhotos: string[];
+    afterPhotos: string[];
+    warrantyMonths: number;
+    receivedAt?: number;
+    receptionNote?: string;
+    clientSignature?: string;
+  };
+};
+
 const esc = (s: string) =>
   s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
@@ -64,7 +90,98 @@ const methodLabel = (key: string) =>
 const paymentStatus = (status: string) =>
   status === "valide" ? "Validé" : status === "echoue" ? "Échoué" : "En attente";
 
-export function buildInvoiceHtml(data: InvoicePdfData): string {
+// ===================== CSS =====================
+// BASE : règles communes facture / PV / dossier (mêmes valeurs pour les deux
+// documents). Les extras INVOICE_/RECEPTION_ n'utilisent que des classes
+// propres à chaque document (ou des surcharges ciblées) pour éviter toute
+// collision quand les deux corps sont assemblés dans le dossier.
+
+const BASE_CSS = `
+  @page { size: A4; margin: 12mm; }
+  * { box-sizing: border-box; }
+  body {
+    font-family: "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    color: #1c2b22; margin: 0; font-size: 12.5px; line-height: 1.5;
+  }
+  /* Dossier : chaque document commence sur une nouvelle page. */
+  .page { page-break-after: always; }
+  .page:last-child { page-break-after: auto; }
+  .head {
+    display: flex; justify-content: space-between; align-items: flex-start;
+    border-bottom: 3px solid #15803d; padding-bottom: 14px; margin-bottom: 18px;
+  }
+  .brand h1 { margin: 0; font-size: 22px; color: #15803d; letter-spacing: -0.02em; }
+  .brand p { margin: 2px 0 0; color: #4b5c51; font-size: 11px; }
+  .doc { text-align: right; }
+  .doc .doc-title { font-size: 24px; font-weight: 700; letter-spacing: 0.05em; margin: 0; }
+  .doc .doc-num { font-family: "Courier New", monospace; color: #4b5c51; margin: 2px 0 0; }
+  .badge {
+    display: inline-block; margin-top: 6px; padding: 2px 10px; border-radius: 999px;
+    font-size: 10.5px; font-weight: 600; border: 1px solid #15803d; color: #15803d;
+  }
+  .badge.payee, .badge.ok { background: #15803d; color: #fff; }
+  h2 { font-size: 13px; margin: 18px 0 6px; color: #15803d; }
+  table { width: 100%; border-collapse: collapse; margin: 4px 0 10px; }
+  th { text-align: left; font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.05em;
+    color: #63756a; border-bottom: 2px solid #15803d; padding: 5px 6px; }
+  td { border-bottom: 1px solid #e2eae4; padding: 6px; vertical-align: top; }
+  .c { text-align: center; } .r { text-align: right; white-space: nowrap; }
+  .ok { color: #15803d; font-weight: 600; }
+  .meta { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 16px;
+    background: #f2f7f3; border-radius: 8px; padding: 10px 12px; }
+  .meta div { min-width: 140px; }
+  .meta .k { font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; color: #63756a; }
+  .pv { border: 1px solid #d5ded7; border-radius: 8px; padding: 10px 12px; }
+  .foot {
+    margin-top: 22px; border-top: 1px solid #d5ded7; padding-top: 8px;
+    font-size: 10.5px; color: #63756a; display: flex; justify-content: space-between; gap: 16px;
+  }
+`;
+
+const INVOICE_CSS = `
+  .grid { display: flex; gap: 16px; margin-bottom: 16px; }
+  .box { flex: 1; border: 1px solid #d5ded7; border-radius: 8px; padding: 10px 12px; }
+  .box h3 { margin: 0 0 4px; font-size: 10.5px; text-transform: uppercase;
+    letter-spacing: 0.08em; color: #15803d; }
+  table.totals { width: 46%; margin-left: auto; }
+  table.totals td { border: none; padding: 3px 6px; }
+  table.totals tr.grand td { border-top: 2px solid #15803d; font-weight: 700;
+    font-size: 14px; color: #15803d; padding-top: 6px; }
+  .tranches { display: flex; gap: 12px; margin: 8px 0 4px; }
+  .tranche { flex: 1; border: 1px solid #d5ded7; border-radius: 8px; padding: 8px 10px; }
+  .tranche-label { margin: 0; font-size: 10px; text-transform: uppercase;
+    letter-spacing: 0.06em; color: #63756a; }
+  .tranche-amount { margin: 2px 0; font-size: 15px; font-weight: 700; }
+  .tranche-status { margin: 0; font-size: 10.5px; color: #b45309; }
+  .tranche-status.ok { color: #15803d; }
+  .muted { color: #63756a; }
+  .sig img { height: 56px; display: block; margin-top: 4px; }
+`;
+
+const RECEPTION_CSS = `
+  .doc .doc-title { font-size: 19px; letter-spacing: 0.04em; }
+  .badge.wait { border-color: #b45309; color: #b45309; }
+  .client { border: 1px solid #d5ded7; border-radius: 8px; padding: 10px 12px; margin-bottom: 16px; }
+  .client h3 { margin: 0 0 4px; font-size: 10.5px; text-transform: uppercase;
+    letter-spacing: 0.08em; color: #15803d; }
+  .pv p { margin: 4px 0; }
+  .warranty { background: #f2f7f3; border-radius: 8px; padding: 10px 12px; margin: 12px 0; }
+  .warranty strong { color: #15803d; }
+  .ph-label { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.05em;
+    color: #63756a; margin: 10px 0 4px; }
+  .photos { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+  .photos img { width: 100%; border-radius: 6px; border: 1px solid #e2eae4; }
+  .sigarea { margin-top: 14px; display: flex; justify-content: space-between; gap: 16px; }
+  .sigarea .sig-box { flex: 1; }
+  .sigarea .frame { border: 1px dashed #9db3a4; border-radius: 8px;
+    padding: 8px; min-height: 96px; display: flex; align-items: center; justify-content: center; }
+  .sigarea img { max-height: 84px; max-width: 100%; }
+  .sigarea .hint { font-size: 10px; color: #63756a; margin: 4px 0 0; }
+`;
+
+// ===================== Corps Facture =====================
+
+function buildInvoiceBody(data: InvoicePdfData): string {
   const q = data.quote;
   const { advance, balance } = splitFiftyFifty(q?.total ?? 0);
   const advancePaid = data.payments.find((p) => p.milestone === "avance");
@@ -168,68 +285,7 @@ export function buildInvoiceHtml(data: InvoicePdfData): string {
     </div>`
     : "";
 
-  return `<!doctype html>
-<html lang="fr">
-<head>
-<meta charset="utf-8"/>
-<title>Facture ${esc(data.invoiceNumber)} — GTEC PRO</title>
-<style>
-  @page { size: A4; margin: 12mm; }
-  * { box-sizing: border-box; }
-  body {
-    font-family: "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-    color: #1c2b22; margin: 0; font-size: 12.5px; line-height: 1.5;
-  }
-  .head {
-    display: flex; justify-content: space-between; align-items: flex-start;
-    border-bottom: 3px solid #15803d; padding-bottom: 14px; margin-bottom: 18px;
-  }
-  .brand h1 { margin: 0; font-size: 22px; color: #15803d; letter-spacing: -0.02em; }
-  .brand p { margin: 2px 0 0; color: #4b5c51; font-size: 11px; }
-  .doc { text-align: right; }
-  .doc .doc-title { font-size: 26px; font-weight: 700; letter-spacing: 0.06em; margin: 0; }
-  .doc .doc-num { font-family: "Courier New", monospace; color: #4b5c51; margin: 2px 0 0; }
-  .badge {
-    display: inline-block; margin-top: 6px; padding: 2px 10px; border-radius: 999px;
-    font-size: 10.5px; font-weight: 600; border: 1px solid #15803d; color: #15803d;
-  }
-  .badge.payee { background: #15803d; color: #fff; }
-  .grid { display: flex; gap: 16px; margin-bottom: 16px; }
-  .box { flex: 1; border: 1px solid #d5ded7; border-radius: 8px; padding: 10px 12px; }
-  .box h3 { margin: 0 0 4px; font-size: 10.5px; text-transform: uppercase;
-    letter-spacing: 0.08em; color: #15803d; }
-  .meta { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 16px;
-    background: #f2f7f3; border-radius: 8px; padding: 10px 12px; }
-  .meta div { min-width: 140px; }
-  .meta .k { font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; color: #63756a; }
-  h2 { font-size: 13px; margin: 18px 0 6px; color: #15803d; }
-  table { width: 100%; border-collapse: collapse; margin: 4px 0 10px; }
-  th { text-align: left; font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.05em;
-    color: #63756a; border-bottom: 2px solid #15803d; padding: 5px 6px; }
-  td { border-bottom: 1px solid #e2eae4; padding: 6px; vertical-align: top; }
-  .c { text-align: center; } .r { text-align: right; white-space: nowrap; }
-  .ok { color: #15803d; font-weight: 600; }
-  table.totals { width: 46%; margin-left: auto; }
-  table.totals td { border: none; padding: 3px 6px; }
-  table.totals tr.grand td { border-top: 2px solid #15803d; font-weight: 700;
-    font-size: 14px; color: #15803d; padding-top: 6px; }
-  .tranches { display: flex; gap: 12px; margin: 8px 0 4px; }
-  .tranche { flex: 1; border: 1px solid #d5ded7; border-radius: 8px; padding: 8px 10px; }
-  .tranche-label { margin: 0; font-size: 10px; text-transform: uppercase;
-    letter-spacing: 0.06em; color: #63756a; }
-  .tranche-amount { margin: 2px 0; font-size: 15px; font-weight: 700; }
-  .tranche-status { margin: 0; font-size: 10.5px; color: #b45309; }
-  .tranche-status.ok { color: #15803d; }
-  .muted { color: #63756a; }
-  .pv { border: 1px solid #d5ded7; border-radius: 8px; padding: 10px 12px; }
-  .sig img { height: 56px; display: block; margin-top: 4px; }
-  .foot {
-    margin-top: 22px; border-top: 1px solid #d5ded7; padding-top: 8px;
-    font-size: 10.5px; color: #63756a; display: flex; justify-content: space-between; gap: 16px;
-  }
-</style>
-</head>
-<body>
+  return `
   <div class="head">
     <div class="brand">
       <h1>GTEC PRO</h1>
@@ -304,70 +360,12 @@ export function buildInvoiceHtml(data: InvoicePdfData): string {
       Document généré électroniquement par GTEC PRO<br/>
       ${new Date().toLocaleDateString("fr-FR", { dateStyle: "long" })}
     </div>
-  </div>
-</body>
-</html>`;
+  </div>`;
 }
 
-/**
- * Ouvre un document HTML dans un onglet isolé et déclenche l'impression
- * (« Enregistrer au format PDF »). Lève une erreur si les pop-ups sont bloqués.
- */
-function openPrintWindow(html: string): void {
-  const win = window.open("", "_blank", "width=920,height=1200");
-  if (!win) {
-    throw new Error(
-      "Le navigateur a bloqué la fenêtre d'impression. Autorisez les pop-ups pour télécharger le document.",
-    );
-  }
-  win.document.open();
-  win.document.write(html);
-  win.document.close();
-  const trigger = () => {
-    try {
-      win.focus();
-      win.print();
-    } catch {
-      /* l'utilisateur pourra imprimer manuellement (Ctrl+P) */
-    }
-  };
-  setTimeout(trigger, 400);
-}
+// ===================== Corps PV de réception =====================
 
-/**
- * Ouvre la facture dans un onglet isolé et déclenche l'impression
- * (« Enregistrer au format PDF »). Lève une erreur si les pop-ups sont bloqués.
- */
-export function openInvoicePdf(data: InvoicePdfData): void {
-  openPrintWindow(buildInvoiceHtml(data));
-}
-
-// ===================== PV de réception (document séparé) =====================
-
-export type ReceptionPdfData = {
-  /** La réception est-elle effective (PV signé) ? */
-  received: boolean;
-  clientName: string;
-  clientPhone?: string;
-  clientEmail?: string;
-  clientAddress?: string;
-  clientCity?: string;
-  request: InvoicePdfData["request"];
-  team?: { name: string; role: string }[];
-  report: {
-    workDone: string;
-    partsUsed: { label: string; qty: number }[];
-    recommendations?: string;
-    beforePhotos: string[];
-    afterPhotos: string[];
-    warrantyMonths: number;
-    receivedAt?: number;
-    receptionNote?: string;
-    clientSignature?: string;
-  };
-};
-
-export function buildReceptionHtml(data: ReceptionPdfData): string {
+function buildReceptionBody(data: ReceptionPdfData): string {
   const r = data.report;
   const parts = r.partsUsed.length
     ? `<p><strong>Matériel utilisé :</strong> ${r.partsUsed
@@ -392,57 +390,7 @@ export function buildReceptionHtml(data: ReceptionPdfData): string {
     </table>`
     : "";
 
-  return `<!doctype html>
-<html lang="fr">
-<head>
-<meta charset="utf-8"/>
-<title>PV de réception ${esc(data.request.reference)} — GTEC PRO</title>
-<style>
-  @page { size: A4; margin: 12mm; }
-  * { box-sizing: border-box; }
-  body { font-family: "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-    color: #1c2b22; margin: 0; font-size: 12.5px; line-height: 1.55; }
-  .head { display: flex; justify-content: space-between; align-items: flex-start;
-    border-bottom: 3px solid #15803d; padding-bottom: 14px; margin-bottom: 18px; }
-  .brand h1 { margin: 0; font-size: 22px; color: #15803d; letter-spacing: -0.02em; }
-  .brand p { margin: 2px 0 0; color: #4b5c51; font-size: 11px; }
-  .doc { text-align: right; }
-  .doc .doc-title { font-size: 19px; font-weight: 700; letter-spacing: 0.04em; margin: 0; }
-  .doc .doc-num { font-family: "Courier New", monospace; color: #4b5c51; margin: 2px 0 0; }
-  .badge { display: inline-block; margin-top: 6px; padding: 2px 10px; border-radius: 999px;
-    font-size: 10.5px; font-weight: 600; border: 1px solid #b45309; color: #b45309; }
-  .badge.ok { border-color: #15803d; background: #15803d; color: #fff; }
-  h2 { font-size: 13px; margin: 18px 0 6px; color: #15803d; }
-  table { width: 100%; border-collapse: collapse; margin: 4px 0 10px; }
-  th { text-align: left; font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.05em;
-    color: #63756a; border-bottom: 2px solid #15803d; padding: 5px 6px; }
-  td { border-bottom: 1px solid #e2eae4; padding: 6px; vertical-align: top; }
-  .meta { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 16px;
-    background: #f2f7f3; border-radius: 8px; padding: 10px 12px; }
-  .meta div { min-width: 140px; }
-  .meta .k { font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; color: #63756a; }
-  .client { border: 1px solid #d5ded7; border-radius: 8px; padding: 10px 12px; margin-bottom: 16px; }
-  .client h3 { margin: 0 0 4px; font-size: 10.5px; text-transform: uppercase;
-    letter-spacing: 0.08em; color: #15803d; }
-  .pv { border: 1px solid #d5ded7; border-radius: 8px; padding: 10px 12px; }
-  .pv p { margin: 4px 0; }
-  .warranty { background: #f2f7f3; border-radius: 8px; padding: 10px 12px; margin: 12px 0; }
-  .warranty strong { color: #15803d; }
-  .ph-label { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.05em;
-    color: #63756a; margin: 10px 0 4px; }
-  .photos { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
-  .photos img { width: 100%; border-radius: 6px; border: 1px solid #e2eae4; }
-  .sig { margin-top: 14px; display: flex; justify-content: space-between; gap: 16px; }
-  .sig .sig-box { flex: 1; }
-  .sig .sig-box .frame { border: 1px dashed #9db3a4; border-radius: 8px;
-    padding: 8px; min-height: 96px; display: flex; align-items: center; justify-content: center; }
-  .sig img { max-height: 84px; max-width: 100%; }
-  .sig .hint { font-size: 10px; color: #63756a; margin: 4px 0 0; }
-  .foot { margin-top: 22px; border-top: 1px solid #d5ded7; padding-top: 8px;
-    font-size: 10.5px; color: #63756a; display: flex; justify-content: space-between; gap: 16px; }
-</style>
-</head>
-<body>
+  return `
   <div class="head">
     <div class="brand">
       <h1>GTEC PRO</h1>
@@ -452,7 +400,7 @@ export function buildReceptionHtml(data: ReceptionPdfData): string {
     <div class="doc">
       <p class="doc-title">PROCÈS-VERBAL DE RÉCEPTION</p>
       <p class="doc-num">${esc(data.request.reference)}</p>
-      <span class="badge ${data.received ? "ok" : ""}">
+      <span class="badge ${data.received ? "ok" : "wait"}">
         ${data.received ? "Réceptionné" : "En attente de signature"}
       </span>
     </div>
@@ -492,7 +440,7 @@ export function buildReceptionHtml(data: ReceptionPdfData): string {
 
   ${team}
 
-  <div class="sig">
+  <div class="sigarea">
     <div class="sig-box">
       <p style="margin:0 0 4px"><strong>Signature du client</strong></p>
       <div class="frame">
@@ -514,15 +462,91 @@ export function buildReceptionHtml(data: ReceptionPdfData): string {
     <div style="text-align:right">
       ${new Date().toLocaleDateString("fr-FR", { dateStyle: "long" })}
     </div>
-  </div>
+  </div>`;
+}
+
+// ===================== Assemblage & ouverture =====================
+
+function wrapDocument(title: string, body: string, extraCss: string): string {
+  return `<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8"/>
+<title>${esc(title)}</title>
+<style>${BASE_CSS}${extraCss}</style>
+</head>
+<body>
+${body}
 </body>
 </html>`;
 }
 
+export function buildInvoiceHtml(data: InvoicePdfData): string {
+  return wrapDocument(`Facture ${data.invoiceNumber} — GTEC PRO`, buildInvoiceBody(data), INVOICE_CSS);
+}
+
+export function buildReceptionHtml(data: ReceptionPdfData): string {
+  return wrapDocument(
+    `PV de réception ${data.request.reference} — GTEC PRO`,
+    buildReceptionBody(data),
+    RECEPTION_CSS,
+  );
+}
+
+export type DossierPdfData = {
+  invoice: InvoicePdfData;
+  reception: ReceptionPdfData;
+};
+
 /**
- * Ouvre le PV de réception (document séparé de la facture) et déclenche
- * l'impression — « Enregistrer au format PDF ».
+ * Dossier complet : facture + PV de réception dans un seul document A4 —
+ * page 1 la facture, page suivante le PV (saut de page automatique).
  */
+export function buildDossierHtml(data: DossierPdfData): string {
+  return wrapDocument(
+    `Dossier ${data.invoice.request.reference} — GTEC PRO`,
+    `<div class="page">${buildInvoiceBody(data.invoice)}</div>
+<div class="page">${buildReceptionBody(data.reception)}</div>`,
+    INVOICE_CSS + RECEPTION_CSS,
+  );
+}
+
+/**
+ * Ouvre un document HTML dans un onglet isolé et déclenche l'impression
+ * (« Enregistrer au format PDF »). Lève une erreur si les pop-ups sont bloqués.
+ */
+function openPrintWindow(html: string): void {
+  const win = window.open("", "_blank", "width=920,height=1200");
+  if (!win) {
+    throw new Error(
+      "Le navigateur a bloqué la fenêtre d'impression. Autorisez les pop-ups pour télécharger le document.",
+    );
+  }
+  win.document.open();
+  win.document.write(html);
+  win.document.close();
+  const trigger = () => {
+    try {
+      win.focus();
+      win.print();
+    } catch {
+      /* l'utilisateur pourra imprimer manuellement (Ctrl+P) */
+    }
+  };
+  setTimeout(trigger, 400);
+}
+
+/** Facture seule. */
+export function openInvoicePdf(data: InvoicePdfData): void {
+  openPrintWindow(buildInvoiceHtml(data));
+}
+
+/** PV de réception seul. */
 export function openReceptionPdf(data: ReceptionPdfData): void {
   openPrintWindow(buildReceptionHtml(data));
+}
+
+/** Dossier complet (facture + PV, deux pages). */
+export function openDossierPdf(data: DossierPdfData): void {
+  openPrintWindow(buildDossierHtml(data));
 }
