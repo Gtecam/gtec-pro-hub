@@ -3303,12 +3303,15 @@ export const adminListWithdrawals = query({
       .filter((q: any) => q.ne(q.field("status"), "payee"))
       .collect();
     const sorted = [...all].sort((a: any, b: any) => b.requestedAt - a.requestedAt);
-    return await Promise.all(
-      sorted.map(async (w: any) => {
-        const user = await ctx.db.get(w.userId);
-        return { withdrawal: w, user };
-      }),
-    );
+    const out: {
+      withdrawal: Doc<"withdrawals">;
+      user: Doc<"users"> | null;
+    }[] = [];
+    for (const w of sorted) {
+      const user = await ctx.db.get(w.userId as Id<"users">);
+      out.push({ withdrawal: w as Doc<"withdrawals">, user });
+    }
+    return out;
   },
 });
 

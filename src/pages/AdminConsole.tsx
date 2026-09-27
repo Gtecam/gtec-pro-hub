@@ -38,6 +38,7 @@ import { api } from "@/convex/_generated/api";
 import { AppShell, StatusBadge } from "@/components/gtec";
 import { haversinePositions } from "@/lib/gtec";
 import { openDossierPdf, openMaintenancePdf } from "@/lib/invoicePdf";
+import { downloadCsv, todayStamp } from "@/lib/csv";
 import { ReportForm } from "@/components/ReportForm";
 import ServicesCatalog from "@/pages/ServicesCatalog";
 import { Button } from "@/components/ui/button";
@@ -909,6 +910,91 @@ export default function AdminConsole() {
   const validateCommission = useMutation(api.gtec.adminValidateCommission);
   const waiveCommission = useMutation(api.gtec.adminWaiveCommission);
   const adminRequestWithdrawal = useMutation(api.gtec.requestWithdrawal);
+
+  // Exports comptables CSV (commissions 15 % et retraits).
+  const exportCommissionsCsv = () => {
+    if (!commissions || commissions.length === 0) {
+      toast.error("Aucune commission à exporter.");
+      return;
+    }
+    downloadCsv(
+      `commissions-gtec-${todayStamp()}.csv`,
+      [
+        "Commission",
+        "Demande",
+        "Redevable",
+        "Base TTC (FCFA)",
+        "Part équipe 85% (FCFA)",
+        "Commission GTEC 15% (FCFA)",
+        "Statut",
+        "Moyen",
+        "Numéro payeur",
+        "Réf. externe",
+        "Payée le",
+        "Créée le",
+      ],
+      commissions.map(({ commission, request, tech }) => [
+        commission.breakdown ? commission.breakdown.gtecAmount : commission.amount,
+        request?.reference ?? "",
+        tech?.name ?? "",
+        commission.baseAmount,
+        commission.breakdown?.teamAmount ?? "",
+        commission.breakdown?.gtecAmount ?? commission.amount,
+        commission.status === "payee"
+          ? "Encaissée"
+          : commission.status === "exoneree"
+            ? "Exonérée"
+            : "Due",
+        commission.method ?? "",
+        commission.payerPhone ?? "",
+        commission.externalRef ?? "",
+        commission.paidAt ? new Date(commission.paidAt).toLocaleString("fr-FR") : "",
+        new Date(commission._creationTime).toLocaleString("fr-FR"),
+      ]),
+    );
+    toast.success(`${commissions.length} commission(s) exportée(s).`);
+  };
+
+  const exportWithdrawalsCsv = () => {
+    if (!withdrawals || withdrawals.length === 0) {
+      toast.error("Aucun retrait à exporter.");
+      return;
+    }
+    downloadCsv(
+      `retraits-gtec-${todayStamp()}.csv`,
+      [
+        "Référence",
+        "Bénéficiaire",
+        "Type",
+        "Montant (FCFA)",
+        "Moyen",
+        "Destination",
+        "Statut",
+        "Demandé le",
+        "Traité le",
+        "Note",
+      ],
+      withdrawals.map(({ withdrawal, user }) => [
+        withdrawal.reference,
+        user?.name ?? "",
+        withdrawal.sourceRole === "admin" ? "Administration (commissions)" : "Technicien (gains)",
+        withdrawal.amount,
+        withdrawal.method,
+        withdrawal.destination,
+        withdrawal.status === "demande"
+          ? "Demandé"
+          : withdrawal.status === "approuve"
+            ? "Approuvé"
+            : withdrawal.status === "payee"
+              ? "Payé"
+              : "Refusé",
+        new Date(withdrawal.requestedAt).toLocaleString("fr-FR"),
+        withdrawal.processedAt ? new Date(withdrawal.processedAt).toLocaleString("fr-FR") : "",
+        withdrawal.note ?? "",
+      ]),
+    );
+    toast.success(`${withdrawals.length} retrait(s) exporté(s).`);
+  };
   const [wdAmount, setWdAmount] = useState("");
   const [wdMethod, setWdMethod] = useState("mtn_momo");
   const [wdDestination, setWdDestination] = useState("");
@@ -2304,6 +2390,17 @@ export default function AdminConsole() {
               </Card>
 
               {/* Demandes de retrait (techniciens) */}
+              <div className="flex justify-end">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={(withdrawals?.length ?? 0) === 0}
+                  onClick={exportWithdrawalsCsv}
+                >
+                  <Download className="mr-1.5 size-4" />
+                  Export CSV (retraits)
+                </Button>
+              </div>
               {withdrawals === undefined ? (
                 <div className="h-32 animate-pulse rounded-xl bg-muted" />
               ) : withdrawals.length === 0 ? (
@@ -2406,6 +2503,17 @@ export default function AdminConsole() {
           {/* Commissions GTEC 15 % — répartition détaillée */}
           <TabsContent value="commissions" className="mt-4">
             <div className="flex flex-col gap-4">
+              <div className="flex justify-end">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={(commissions?.length ?? 0) === 0}
+                  onClick={exportCommissionsCsv}
+                >
+                  <Download className="mr-1.5 size-4" />
+                  Export CSV (commissions)
+                </Button>
+              </div>
               <div className="grid gap-3 sm:grid-cols-4">
                 {[
                   { label: "Commission due", value: commissionStats?.dueTotal, tone: "text-amber-600 dark:text-amber-400" },
