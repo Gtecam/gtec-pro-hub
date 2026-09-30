@@ -100,6 +100,32 @@ export default function RequestDetail() {
   const startMomoPayment = useAction(api.momo.startMomoPayment);
   const checkMomoPayment = useAction(api.momo.checkMomoPayment);
 
+  // GTEC PRO 2.0 (§20) : passerelle CinetPay — MoMo + carte via un checkout
+  // hébergé unique, escrow chez un Établissement de Paiement agréé.
+  const startGatewayPayment = useAction(api.paymentChannels.startGatewayPayment);
+  const checkGatewayPayment = useAction(api.paymentChannels.checkGatewayPayment);
+  const getPaymentChannelsAction = useAction(api.paymentChannels.getPaymentChannels);
+  const [channels, setChannels] = useState<Awaited<
+    ReturnType<typeof getPaymentChannelsAction>
+  > | null>(null);
+  const [gatewayFlow, setGatewayFlow] = useState<
+    | null
+    | {
+        paymentId: string;
+        status: "en_attente" | "reussie" | "echouee";
+      }
+  >(null);
+  useEffect(() => {
+    let stopped = false;
+    getPaymentChannelsAction()
+      .then((c) => !stopped && setChannels(c))
+      .catch(() => {});
+    return () => {
+      stopped = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // V6 : paiements en 2 tranches — toutes les tranches de la demande.
   const payments = (detail?.payments ?? []) as Doc<"payments">[] | undefined;
   const advanceValidated = !!payments?.some(
@@ -157,6 +183,46 @@ export default function RequestDetail() {
         failureReason?: string;
       }
   >(null);
+
+  // V5 : interrogation MTN en boucle tant que le client n'a pas validé.
+  useEffect(() => {
+    if (!gatewayFlow || gatewayFlow.status !== "en_attente") {
+      return;
+    }
+    let stopped = false;
+    let attempts = 0;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const tick = async () => {
+      attempts += 1;
+      try {
+        const res = await checkGatewayPayment({
+          paymentId: gatewayFlow.paymentId as never,
+        });
+        if (stopped) return;
+        const s = res?.status ?? "en_attente";
+        if (s === "reussie") {
+          setGatewayFlow({ paymentId: gatewayFlow.paymentId, status: "reussie" });
+          toast.success("Paiement en ligne confirmé — équipe en cours d'affectation !");
+          return;
+        }
+        if (s === "echouee") {
+          setGatewayFlow({ paymentId: gatewayFlow.paymentId, status: "echouee" });
+          toast.error("Paiement refusé ou annulé sur la page de paiement.");
+          return;
+        }
+        if (attempts < 40) timer = setTimeout(tick, 3500);
+        else setGatewayFlow({ paymentId: gatewayFlow.paymentId, status: "echouee" });
+      } catch {
+        if (!stopped && attempts < 40) timer = setTimeout(tick, 3500);
+      }
+    };
+    timer = setTimeout(tick, 3000);
+    return () => {
+      stopped = true;
+      if (timer) clearTimeout(timer);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gatewayFlow?.paymentId, gatewayFlow?.status]);
 
   // V5 : interrogation MTN en boucle tant que le client n'a pas validé.
   useEffect(() => {
@@ -1547,6 +1613,82 @@ export default function RequestDetail() {
                 </button>
               ))}
             </div>
+
+            {/* GTEC PRO 2.0 (§20/§23/§29) : passerelle sécurisée — MoMo + carte,
+                checkout hébergé chez un Établissement de Paiement agréé. */}
+            {(method === "mtn_momo" || method === "orange_money" || method === "carte_visa") &&
+              channels?.find((c) => c.channel === "cinetpay")?.available && (
+              <div className="flex flex-col gap-3 rounded-xl border border-emerald-500/30 bg-emerald-500/[0.04] p-3">
+                {gatewayFlow ? (
+                  <>
+                    <p className="flex items-center gap-2 text-sm font-medium">
+                      <Loader2 className="size-4 animate-spin text-primary" />
+                      {gatewayFlow.status === "en_attente" &&
+                        "Paiement sur la page sécurisée — la confirmation est vérifiée automatiquement."}
+                      {gatewayFlow.status === "reussie" && "Paiement confirmé — merci !"}
+                      {gatewayFlow.status === "echouee" && "Paiement non abouti."}
+                    </p>
+                    {gatewayFlow.status === "en_attente" && (
+                      <p className="text-xs text-muted-foreground">
+                        Si la page de paiement s'est fermée, rouvrez-la : la confirmation
+                        serveur reste valable et cette boîte se mettra à jour.
+                      </p>
+                    )}
+                    {gatewayFlow.status === "echouee" && (
+                      <Button variant="outline" size="sm" onClick={() => setGatewayFlow(null)}>
+                        Nouvel essai
+                      </Button>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    <p className="text-sm font-medium">
+                      Paiement sécurisé {method === "carte_visa" ? "par carte" : "Mobile Money"} — CinetPay
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {method === "carte_visa"
+                        ? "Visa/Mastercard acceptées : vous êtes redirigé vers une page de paiement sécurisée (vos données de carte ne transitent jamais par GTEC PRO, §29)."
+                        : "MTN MoMo, Orange Money et carte acceptés sur la page sécurisée. Les fonds sont conservés par un Établissement de Paiement agréé jusqu'à la réception des travaux (§20)."}
+                    </p>
+                    <Button
+                      className="halo-amber"
+                      size="sm"
+                      disabled={busy}
+                      onClick={async () => {
+                        if (method !== "carte_visa" && !/^[+0-9 ]{8,}$/.test(payerPhone.trim())) {
+                          toast.error("Numéro de téléphone invalide.");
+                          return;
+                        }
+                        setBusy(true);
+                        try {
+                          const res = await startGatewayPayment({
+                            quoteId: quote!._id,
+                            milestone,
+                            rail: method as "mtn_momo" | "orange_money" | "carte_visa",
+                            payerPhone: payerPhone.trim() || undefined,
+                            returnUrl: window.location.href,
+                          });
+                          if (res.kind === "redirect") {
+                            setGatewayFlow({ paymentId: res.paymentId, status: "en_attente" });
+                            window.open(res.url, "_blank");
+                            toast.info("Page de paiement ouverte — finalisez puis revenez ici.");
+                          } else {
+                            toast.info(res.reason);
+                          }
+                        } catch (e) {
+                          toast.error(e instanceof Error ? e.message : "Paiement impossible");
+                        } finally {
+                          setBusy(false);
+                        }
+                      }}
+                    >
+                      <Wallet className="mr-2 size-4" />
+                      Payer {milestone === "avance" ? fcfa(advanceAmount) : fcfa(balanceAmount)}
+                    </Button>
+                  </>
+                )}
+              </div>
+            )}
 
             {/* Mobile Money : flux automatique (V5) */}
             {(method === "mtn_momo" || method === "orange_money") && (

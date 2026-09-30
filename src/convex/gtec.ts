@@ -851,7 +851,12 @@ export const createPendingPayment = internalMutation({
     clientId: v.id("users"),
     amount: v.number(),
     currency: v.string(),
-    method: v.union(v.literal("mtn_momo"), v.literal("orange_money")),
+    // 2.0 : la passerelle (CinetPay) couvre aussi la carte bancaire.
+    method: v.union(
+      v.literal("mtn_momo"),
+      v.literal("orange_money"),
+      v.literal("carte_visa"),
+    ),
     payerPhone: v.string(),
     /** V6 : tranche payée — "avance" (50 % avant travaux) ou "solde". */
     milestone: v.union(v.literal("avance"), v.literal("solde")),
@@ -901,6 +906,18 @@ export const txForPayment = internalQuery({
       .collect();
     const tx = txs.slice(-1)[0];
     return tx ?? null;
+  },
+});
+
+/** Interne : retrouve un paiement par sa référence marchande passerelle. */
+export const paymentByExternalRef = internalQuery({
+  args: { externalRef: v.string() },
+  handler: async (ctx, args) => {
+    const all = await ctx.db
+      .query("payments")
+      .filter((q) => q.eq(q.field("externalRef"), args.externalRef))
+      .collect();
+    return all[0] ?? null;
   },
 });
 

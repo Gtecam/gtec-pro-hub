@@ -88,6 +88,62 @@ http.route({
   handler: momoCallback,
 });
 
+// ---------- GTEC PRO 2.0 (§20/§43) : notification passerelle (CinetPay) -----
+
+/**
+ * Point de notification de la passerelle de paiement (notify_url CinetPay).
+ * Le corps du POST n'est JAMAIS considéré comme une preuve : la pratique
+ * recommandée CinetPay est la vérification par re-requête serveur
+ * (`/v2/payment/check`) — c'est exactement ce que fait
+ * `verifyCinetPayTransaction`, de façon idempotente.
+ */
+export const gatewayCallback = httpAction(async (ctx, request) => {
+  if (request.method !== "POST") {
+    return new Response(null, { status: 405 });
+  }
+  let payload: Record<string, unknown> = {};
+  try {
+    payload = (await request.json()) as Record<string, unknown>;
+  } catch {
+    // Corps illisible : 200 pour éviter les relances infinies du PSP.
+    return new Response(null, { status: 200 });
+  }
+
+  const transactionId = String(
+    payload.transaction_id ?? payload.transactionId ?? "",
+  );
+  if (transactionId) {
+    try {
+      await ctx.runAction(internal.paymentChannels.verifyCinetPayTransaction, {
+        transactionId,
+      });
+    } catch {
+      // La vérification échoue (réseau, clés) : 200 quand même, la
+      // vérification restera possible via checkGatewayPayment côté client
+      // ou une prochaine notification.
+    }
+  }
+
+  // Draine la file d'e-mails pour notifier le client sans attendre.
+  await ctx.runAction(internal.emails.drainEmails, {});
+
+  return new Response(null, { status: 200 });
+});
+
+http.route({
+  path: "/api/gateway-callback",
+  method: "POST",
+  handler: gatewayCallback,
+});
+
+http.route({
+  path: "/api/gateway-callback",
+  method: "GET",
+  handler: httpAction(async () => {
+    return new Response("GTEC PRO — gateway-callback ready", { status: 200 });
+  }),
+});
+
 // Route de contrôle d'existence du webhook (healthcheck).
 http.route({
   path: "/api/momo-callback",
