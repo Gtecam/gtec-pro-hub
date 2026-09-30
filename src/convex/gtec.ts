@@ -3854,7 +3854,7 @@ export const adminListWithdrawals = query({
     await requireAdmin(ctx);
     const all = await ctx.db
       .query("withdrawals")
-      .filter((q: any) => q.ne(q.field("status"), "payee"))
+      .filter((q: any) => q.neq(q.field("status"), "payee"))
       .collect();
     const sorted = [...all].sort((a: any, b: any) => b.requestedAt - a.requestedAt);
     const out: {
