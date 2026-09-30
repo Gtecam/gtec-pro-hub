@@ -644,6 +644,42 @@ export const getRequestDetail = query({
       .withIndex("by_request", (q) => q.eq("requestId", request._id))
       .order("desc")
       .collect();
+    // GÉO TERRAIN : positions GPS partagées du chef et des membres de l'équipe
+    // (visibles par le client pendant le déplacement vers le chantier). On
+    // renvoie la dernière position connue + l'horodatage + l'état du partage,
+    // le client voyant ainsi la fraîcheur de la donnée.
+    const teamLocations = assignment
+      ? await Promise.all(
+          [
+            {
+              id: assignment.teamLeaderId,
+              name: teamLeader?.name ?? "Chef d'équipe",
+              role: "Chef d'équipe",
+            },
+            ...assignment.members.map((m) => ({
+              id: m.id,
+              name: "Technicien",
+              role: m.role,
+            })),
+          ].map(async (t) => {
+            const p = (
+              await ctx.db
+                .query("technicianProfiles")
+                .withIndex("by_user", (q) => q.eq("userId", t.id))
+                .collect()
+            )[0];
+            if (!p?.lastLocation || !p.lastLocationAt) return null;
+            return {
+              userId: t.id,
+              name: t.name,
+              role: t.role,
+              position: p.lastLocation,
+              positionAt: p.lastLocationAt,
+              sharing: p.locationSharing === true,
+            };
+          }),
+        )
+      : [];
     // V6 : toutes les tranches de paiement (avance 50 % + solde 50 %).
     const payments = await ctx.db
       .query("payments")
@@ -657,6 +693,9 @@ export const getRequestDetail = query({
       assignment,
       teamLeader,
       members: members.filter(Boolean),
+      teamLocations: teamLocations.filter(
+        (t): t is NonNullable<(typeof teamLocations)[number]> => !!t,
+      ),
       report,
       invoice,
       events,
@@ -1725,6 +1764,110 @@ export const stopTechnicianLocationSharing = mutation({
     if (!profile) throw new Error("Profil technicien introuvable.");
     await ctx.db.patch(profile._id, { locationSharing: false });
     return { ok: true };
+  },
+});
+
+/**
+ * GÉO TERRAIN (§9) : confirmation d'arrivée de l'équipe sur le chantier,
+ * horodatée et géolocalisée par l'appareil du technicien. Un seul signalement
+ * suffit (idempotent) — le client/diaspora est notifié en temps réel et voit
+ * le badge « Technicien arrivé » sur sa demande.
+ */
+export const markTeamArrival = mutation({
+  args: {
+    requestId: v.id("serviceRequests"),
+    lat: v.number(),
+    lon: v.number(),
+    accuracy: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const user = await requireUser(ctx);
+    const request = await ctx.db.get(args.requestId);
+    if (!request) throw new Error("Demande introuvable.");
+    const assignment = (
+      await ctx.db
+        .query("assignments")
+        .withIndex("by_request", (q) => q.eq("requestId", request._id))
+        .collect()
+    ).slice(-1)[0];
+    if (!assignment) throw new Error("Aucune équipe affectée à cette demande.");
+    const isTeamMember =
+      user.role === "admin" ||
+      assignment.teamLeaderId === user._id ||
+      assignment.members.some((m) => m.id === user._id);
+    if (!isTeamMember) {
+      throw new Error("Seuls les techniciens affectés peuvent confirmer l'arrivée.");
+    }
+    if (request.status !== "affectee") {
+      throw new Error(
+        "L'arrivée se confirme seulement quand la mission est planifiée (statut « affectée »).",
+      );
+    }
+    if (Math.abs(args.lat) > 90 || Math.abs(args.lon) > 180) {
+      throw new Error("Coordonnées GPS invalides.");
+    }
+    if (request.teamArrivalAt) return { ok: true, already: true };
+    const coords = {
+      lat: args.lat,
+      lon: args.lon,
+      ...(args.accuracy !== undefined ? { accuracy: args.accuracy } : {}),
+    };
+    await ctx.db.patch(request._id, {
+      teamArrivalAt: Date.now(),
+      teamArrivalCoords: coords,
+    });
+    // Mémorise aussi la position comme dernière position connue du technicien.
+    const profile = (
+      await ctx.db
+        .query("technicianProfiles")
+        .withIndex("by_user", (q) => q.eq("userId", user._id))
+        .collect()
+    )[0];
+    if (profile) {
+      await ctx.db.patch(profile._id, {
+        lastLocation: coords,
+        lastLocationAt: Date.now(),
+      });
+    }
+    await addEvent(
+      ctx,
+      request._id,
+      "intervention",
+      "Équipe arrivée sur le chantier",
+      `Position confirmée par GPS : ${args.lat.toFixed(5)}, ${args.lon.toFixed(5)}`,
+    );
+    await notify(
+      ctx,
+      request.clientId,
+      "intervention",
+      "Votre technicien est arrivé 📍",
+      `L'équipe GTEC PRO est sur place pour ${request.reference}. L'intervention peut démarrer.`,
+      request._id,
+    );
+    // Mode diaspora : prévenir aussi le bénéficiaire sur place (si compte lié
+    // à son numéro) pour qu'il accueille l'équipe.
+    if (request.isDiaspora && request.beneficiaryId) {
+      const beneficiary = await ctx.db.get(request.beneficiaryId);
+      if (beneficiary) {
+        const beneficiaryUser = (
+          await ctx.db
+            .query("users")
+            .withIndex("phone", (q) => q.eq("phone", beneficiary.phone))
+            .collect()
+        )[0];
+        if (beneficiaryUser && beneficiaryUser._id !== request.clientId) {
+          await ctx.db.insert("notifications", {
+            userId: beneficiaryUser._id,
+            kind: "diaspora",
+            title: "L'équipe GTEC est arrivée 📍",
+            body: `L'équipe envoyée par votre proche est arrivée pour ${request.reference}. Vous pouvez l'accueillir.`,
+            requestId: request._id,
+            at: Date.now(),
+          });
+        }
+      }
+    }
+    return { ok: true, already: false };
   },
 });
 

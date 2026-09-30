@@ -137,6 +137,11 @@ const schema = defineSchema(
       beneficiaryValidatedAt: v.optional(v.number()),
       /** Code remis au bénéficiaire pour valider sans compte (notifié au demandeur). */
       beneficiaryValidationCode: v.optional(v.string()),
+      /** GÉO TERRAIN : arrivée de l'équipe confirmée sur le chantier (§9). */
+      teamArrivalAt: v.optional(v.number()),
+      teamArrivalCoords: v.optional(
+        v.object({ lat: v.number(), lon: v.number(), accuracy: v.optional(v.number()) }),
+      ),
       /** Libellé de l'intervention figé à la création (affichage). */
       interventionLabel: v.optional(v.string()),
       /** Niveau d'urgence déclaré : normale | urgente | critique. */

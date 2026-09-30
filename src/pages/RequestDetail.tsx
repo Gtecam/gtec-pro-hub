@@ -14,6 +14,7 @@ import {
   ImagePlus,
   Loader2,
   MapPin,
+  Navigation,
   PenLine,
   Phone,
   Receipt,
@@ -78,6 +79,7 @@ import {
   statusMeta,
 } from "@/lib/gtec";
 import { URGENCY_BADGE } from "@/lib/interventions";
+import { formatGps, gmapsCoordsUrl, haversineKm } from "@/lib/gps";
 import { openDossierPdf, openInvoicePdf, openQuotePdf, openReceptionPdf } from "@/lib/invoicePdf";
 import { compressImageIfNeeded, dataUrlBytes, humanSize } from "@/lib/imageCompress";
 
@@ -596,6 +598,143 @@ export default function RequestDetail() {
             </p>
           </CardContent>
         </Card>
+
+        {/* GÉO TERRAIN : suivi du déplacement de l'équipe vers le chantier.
+            Visible par le client (et le diaspora qui suit pour son proche). */}
+        {["affectee", "en_intervention"].includes(request.status) && (
+          <Card className="card-layered border-primary/25 bg-primary/[0.03]">
+            <CardHeader className="pb-2">
+              <CardTitle className="flex items-center gap-2 text-sm">
+                <Truck className="size-4 text-primary" /> Suivi du déplacement
+                de l'équipe
+              </CardTitle>
+              <CardDescription>
+                Positions GPS partagées par les techniciens en route vers «
+                {request.address}, {request.city} ».
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="flex flex-col gap-3">
+              {request.teamArrivalAt ? (
+                <p className="flex items-center gap-2 rounded-lg bg-emerald-500/10 px-3 py-2 text-sm font-semibold text-emerald-700 ring-1 ring-emerald-500/30 dark:text-emerald-400">
+                  <CheckCircle2 className="size-4" /> Technicien arrivé 📍 —
+                  arrivée confirmée le {formatDateTime(request.teamArrivalAt)}
+                  {request.teamArrivalCoords && (
+                    <a
+                      className="ml-auto shrink-0 text-xs underline underline-offset-2"
+                      href={gmapsCoordsUrl(
+                        request.teamArrivalCoords as { lat: number; lon: number },
+                      )}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      Voir sur la carte
+                    </a>
+                  )}
+                </p>
+              ) : (
+                <p className="flex items-center gap-2 rounded-lg bg-primary/10 px-3 py-2 text-sm text-primary ring-1 ring-primary/20">
+                  <Truck className="size-4 shrink-0" /> L'équipe est en route —
+                  la position apparaît dès que le technicien active son GPS.
+                </p>
+              )}
+              {(detail.teamLocations?.length ?? 0) === 0 ? (
+                <p className="text-xs text-muted-foreground">
+                  Aucune position partagée pour l'instant — les techniciens
+                  n'ont pas encore activé leur partage GPS.
+                </p>
+              ) : (
+                <div className="flex flex-col gap-2">
+                  {detail.teamLocations!.map((t) => {
+                    const dist =
+                      request.coords &&
+                      haversineKm(
+                        t.position as { lat: number; lon: number },
+                        request.coords as { lat: number; lon: number },
+                      );
+                    const ageMin = Math.round(
+                      (Date.now() - t.positionAt) / 60000,
+                    );
+                    return (
+                      <div
+                        key={t.userId}
+                        className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 rounded-lg border border-border/70 px-3 py-2 text-sm"
+                      >
+                        <span className="flex min-w-0 items-center gap-2">
+                          <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
+                            {t.sharing ? (
+                              <span className="relative flex size-2">
+                                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+                                <span className="relative inline-flex size-2 rounded-full bg-emerald-500" />
+                              </span>
+                            ) : (
+                              <Navigation className="size-3" />
+                            )}
+                          </span>
+                          <span className="min-w-0">
+                            <span className="block truncate font-medium">
+                              {t.name}
+                              <span className="ml-1.5 text-xs font-normal text-muted-foreground">
+                                {t.role}
+                              </span>
+                            </span>
+                            <span className="block truncate text-xs text-muted-foreground">
+                              MAJ il y a{" "}
+                              {ageMin < 1
+                                ? "moins d'une minute"
+                                : ageMin < 60
+                                  ? `${ageMin} min`
+                                  : `${Math.round(ageMin / 60)} h`}
+                              {t.sharing ? " · partage en direct" : ""}
+                            </span>
+                          </span>
+                        </span>
+                        <span className="flex shrink-0 items-center gap-3 text-xs">
+                          {dist !== null && dist !== undefined && (
+                            <span className="font-semibold">
+                              {dist < 1
+                                ? `${Math.round(dist * 1000)} m`
+                                : `${dist} km`} du chantier
+                            </span>
+                          )}
+                          <a
+                            className="flex items-center gap-1 text-primary hover:underline"
+                            href={gmapsCoordsUrl(
+                              t.position as { lat: number; lon: number },
+                            )}
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            <MapPin className="size-3.5" /> Carte
+                          </a>
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+              {request.coords && !request.teamArrivalAt && (
+                <p className="text-xs text-muted-foreground">
+                  Chantier épinglé :{" "}
+                  <span className="font-mono">
+                    {formatGps(request.coords as { lat: number; lon: number })}
+                  </span>{" "}
+                  —
+                  <a
+                    className="ml-1 text-primary hover:underline"
+                    href={gmapsCoordsUrl(request.coords as {
+                      lat: number;
+                      lon: number;
+                    })}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    ouvrir dans Google Maps
+                  </a>
+                </p>
+              )}
+            </CardContent>
+          </Card>
+        )}
 
         {/* MODE DIASPORA (§8/§11) : validation à distance + libération des fonds */}
         {request.isDiaspora && request.status === "rapport_emis" && (

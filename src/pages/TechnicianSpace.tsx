@@ -41,6 +41,7 @@ import {
   formatGps,
   gmapsDirectionsUrl,
   gmapsCoordsUrl,
+  haversineKm,
   type GpsCoords,
 } from "@/lib/gps";
 import { Button } from "@/components/ui/button";
@@ -516,6 +517,8 @@ export default function TechnicianSpace() {
   // GPS : partage de position (temps réel optionnel) vers la console admin.
   const updateLocation = useMutation(api.gtec.updateTechnicianLocation);
   const stopSharing = useMutation(api.gtec.stopTechnicianLocationSharing);
+  const markArrival = useMutation(api.gtec.markTeamArrival);
+  const [arrivalBusy, setArrivalBusy] = useState(false);
   const geo = useGeolocation({ watch: true });
 
   const pendingSubPayment = useQuery(api.gtec.myPendingSubscriptionPayment);
@@ -1666,13 +1669,136 @@ export default function TechnicianSpace() {
                               {request.description}
                             </p>
 
-                            {request.status === "affectee" && (
-                              <p className="flex items-center gap-2 text-sm text-muted-foreground">
-                                <Truck className="size-4" />
-                                Rendez-vous sur place à l'heure prévue —
-                                l'admin démarrera l'intervention.
-                              </p>
-                            )}
+                            {request.status === "affectee" &&
+                              !request.coords && (
+                                <p className="flex items-center gap-2 text-sm text-muted-foreground">
+                                  <Truck className="size-4" />
+                                  Rendez-vous sur place à l'heure prévue —
+                                  l'admin démarrera l'intervention.
+                                </p>
+                              )}
+
+                            {/* GÉO TERRAIN : déplacement GPS vers le chantier */}
+                            {request.status === "affectee" &&
+                              request.coords &&
+                              (() => {
+                                const target = request.coords as GpsCoords;
+                                const from = geo.position?.coords ?? lastGps;
+                                const dist = from
+                                  ? haversineKm(from, target)
+                                  : null;
+                                const etaMin =
+                                  dist !== null
+                                    ? Math.max(
+                                        1,
+                                        Math.round((dist / 30) * 60),
+                                      )
+                                    : null;
+                                const arrived = !!request.teamArrivalAt;
+                                return (
+                                  <div className="flex flex-col gap-2 rounded-xl border border-primary/25 bg-primary/[0.04] p-3">
+                                    <div className="flex flex-wrap items-center justify-between gap-2">
+                                      <p className="flex items-center gap-1.5 text-sm font-semibold">
+                                        <Truck className="size-4 text-primary" />{" "}
+                                        Déplacement vers le chantier
+                                      </p>
+                                      {arrived ? (
+                                        <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-xs font-semibold text-emerald-700 ring-1 ring-emerald-500/30 dark:text-emerald-400">
+                                          📍 Arrivée confirmée
+                                        </span>
+                                      ) : (
+                                        <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-semibold text-primary ring-1 ring-primary/20">
+                                          En déplacement
+                                        </span>
+                                      )}
+                                    </div>
+                                    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                                      {dist !== null && (
+                                        <span>
+                                          Distance :{" "}
+                                          <span className="font-semibold text-foreground">
+                                            {dist < 1
+                                              ? `${Math.round(dist * 1000)} m`
+                                              : `${dist} km`}
+                                          </span>
+                                        </span>
+                                      )}
+                                      {etaMin !== null && (
+                                        <span>
+                                          ETA estimée : ~
+                                          {etaMin < 60
+                                            ? `${etaMin} min`
+                                            : `${Math.round(etaMin / 6) / 10} h`}
+                                        </span>
+                                      )}
+                                      {dist !== null && dist < 0.2 && (
+                                        <span className="font-semibold text-emerald-600 dark:text-emerald-400">
+                                          Vous êtes sur place ✓
+                                        </span>
+                                      )}
+                                      <a
+                                        className="flex items-center gap-1 text-primary hover:underline"
+                                        href={gmapsDirectionsUrl(from, target)}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                      >
+                                        <Navigation className="size-3.5" />
+                                        Ouvrir l'itinéraire
+                                      </a>
+                                    </div>
+                                    {!arrived && (
+                                      <Button
+                                        size="sm"
+                                        className="halo-amber w-fit"
+                                        disabled={arrivalBusy}
+                                        onClick={async () => {
+                                          const fix =
+                                            geo.position?.coords ?? lastGps;
+                                          if (!fix) {
+                                            toast.error(
+                                              "Position GPS indisponible — activez le partage de position puis réessayez.",
+                                            );
+                                            return;
+                                          }
+                                          setArrivalBusy(true);
+                                          try {
+                                            await markArrival({
+                                              requestId: request._id,
+                                              lat: fix.lat,
+                                              lon: fix.lon,
+                                              ...(geo.position
+                                                ? {
+                                                    accuracy: Math.round(
+                                                      geo.position.accuracy,
+                                                    ),
+                                                  }
+                                                : {}),
+                                            });
+                                            toast.success(
+                                              "Arrivée confirmée — le client est prévenu 📍",
+                                            );
+                                          } catch (e) {
+                                            toast.error(
+                                              e instanceof Error
+                                                ? e.message
+                                                : "Erreur",
+                                            );
+                                          } finally {
+                                            setArrivalBusy(false);
+                                          }
+                                        }}
+                                      >
+                                        {arrivalBusy ? (
+                                          <Loader2 className="mr-2 size-4 animate-spin" />
+                                        ) : (
+                                          <CheckCircle2 className="mr-2 size-4" />
+                                        )}
+                                        Je suis arrivé
+                                      </Button>
+                                    )}
+                                  </div>
+                                );
+                              })()}
 
                             {request.status === "en_intervention" && (
                               <>
