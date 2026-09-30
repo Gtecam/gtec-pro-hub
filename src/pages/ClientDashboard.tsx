@@ -364,10 +364,15 @@ export default function ClientDashboard() {
               Support GTEC : 655 09 42 28
             </a>
           </div>
-          <Button size="lg" className="halo-amber" onClick={() => navigate("/dashboard/new")}>
-            <Plus className="mr-2 size-4" />
-            Nouvelle demande
-          </Button>
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <Button size="lg" className="halo-amber" onClick={() => navigate("/dashboard/new")}>
+              <Plus className="mr-2 size-4" />
+              Nouvelle demande
+            </Button>
+            <Button size="lg" variant="outline" onClick={() => navigate("/diaspora")}>
+              🌍 Mode Diaspora
+            </Button>
+          </div>
         </div>
 
         {/* Numéro de téléphone vérifié */}

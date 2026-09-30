@@ -280,6 +280,11 @@ export default function RequestDetail() {
   const [cancelOpen, setCancelOpen] = useState(false);
   const [cancelReason, setCancelReason] = useState("");
 
+  // MODE DIASPORA (§11) : validation à distance par le client à l'étranger.
+  const validateDiaspora = useMutation(api.diaspora.validateByDiaspora);
+  const [diasporaNote, setDiasporaNote] = useState("");
+  const [diasporaBusy, setDiasporaBusy] = useState(false);
+
   if (detail === undefined) {
     return (
       <AppShell>
@@ -591,6 +596,101 @@ export default function RequestDetail() {
             </p>
           </CardContent>
         </Card>
+
+        {/* MODE DIASPORA (§8/§11) : validation à distance + libération des fonds */}
+        {request.isDiaspora && request.status === "rapport_emis" && (
+          <Card className="card-layered border-primary/25 bg-primary/[0.03]">
+            <CardHeader className="pb-2">
+              <CardTitle className="flex items-center gap-2 text-sm">
+                🌍 Validation à distance — Mode Diaspora
+              </CardTitle>
+              <CardDescription>
+                L'intervention est-elle terminée conformément au devis ? Votre
+                validation libère les fonds du paiement sécurisé.
+                {request.beneficiaryValidationCode
+                  ? ` Code du bénéficiaire sur place : ${request.beneficiaryValidationCode}.`
+                  : ""}
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="flex flex-col gap-2">
+              <Textarea
+                value={diasporaNote}
+                onChange={(e) => setDiasporaNote(e.target.value)}
+                placeholder="Commentaire (optionnel) — précisions, corrections demandées…"
+                rows={2}
+              />
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  size="sm"
+                  className="halo-amber"
+                  disabled={diasporaBusy}
+                  onClick={async () => {
+                    setDiasporaBusy(true);
+                    try {
+                      await validateDiaspora({
+                        requestId: request._id as never,
+                        verdict: "conforme",
+                        note: diasporaNote.trim() || undefined,
+                      });
+                      toast.success("Validation enregistrée — fonds libérés");
+                    } catch (e) {
+                      toast.error(e instanceof Error ? e.message : "Erreur");
+                    } finally {
+                      setDiasporaBusy(false);
+                    }
+                  }}
+                >
+                  ✅ Oui, tout est correct
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={diasporaBusy || diasporaNote.trim().length < 5}
+                  onClick={async () => {
+                    setDiasporaBusy(true);
+                    try {
+                      await validateDiaspora({
+                        requestId: request._id as never,
+                        verdict: "correction_demandee",
+                        note: diasporaNote.trim() || undefined,
+                      });
+                      toast.success("Correction demandée — GTEC reprend le travail");
+                    } catch (e) {
+                      toast.error(e instanceof Error ? e.message : "Erreur");
+                    } finally {
+                      setDiasporaBusy(false);
+                    }
+                  }}
+                >
+                  ⚠️ Demander une correction
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="text-destructive"
+                  disabled={diasporaBusy || diasporaNote.trim().length < 5}
+                  onClick={async () => {
+                    setDiasporaBusy(true);
+                    try {
+                      await validateDiaspora({
+                        requestId: request._id as never,
+                        verdict: "probleme_signale",
+                        note: diasporaNote.trim() || undefined,
+                      });
+                      toast.error("Problème signalé — un litige est ouvert");
+                    } catch (e) {
+                      toast.error(e instanceof Error ? e.message : "Erreur");
+                    } finally {
+                      setDiasporaBusy(false);
+                    }
+                  }}
+                >
+                  ❌ Signaler un problème
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         {request.status === "annulee" && (
           <Card className="card-layered border-destructive/30">

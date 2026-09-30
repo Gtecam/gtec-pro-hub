@@ -41,7 +41,7 @@ function cmE164(raw: string): string {
 
 // ---------- helpers ----------
 
-async function requireUser(ctx: any): Promise<Doc<"users">> {
+export async function requireUser(ctx: any): Promise<Doc<"users">> {
   const userId = await getAuthUserId(ctx);
   if (userId === null) throw new Error("Non connecté.");
   const user = await ctx.db.get(userId);

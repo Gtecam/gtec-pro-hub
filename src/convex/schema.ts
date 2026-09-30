@@ -114,6 +114,29 @@ const schema = defineSchema(
       requiredSkills: v.optional(v.array(v.string())),
       /** CATALOGUE : intervention choisie (code unique CFO-INS-01…). */
       interventionCode: v.optional(v.string()),
+      /** DIASPORA : commande passée pour un proche au Cameroun. */
+      beneficiaryId: v.optional(v.id("diasporaBeneficiaries")),
+      /** Mode diaspora : le demandeur est à l'étranger (affichages + suivi). */
+      isDiaspora: v.optional(v.boolean()),
+      /** Bénéficiaire à contacter sur place (nom + téléphone, si proche non compté). */
+      onSiteContact: v.optional(
+        v.object({ name: v.string(), phone: v.string() }),
+      ),
+      /** Instructions d'accès au chantier (portail, étage, repère…). */
+      accessInstructions: v.optional(v.string()),
+      /** DIASPORA §11 : validation du proche sur place. */
+      beneficiaryValidation: v.optional(
+        v.union(
+          v.literal("en_attente"),
+          v.literal("conforme"),
+          v.literal("correction_demandee"),
+          v.literal("probleme_signale"),
+        ),
+      ),
+      beneficiaryValidationNote: v.optional(v.string()),
+      beneficiaryValidatedAt: v.optional(v.number()),
+      /** Code remis au bénéficiaire pour valider sans compte (notifié au demandeur). */
+      beneficiaryValidationCode: v.optional(v.string()),
       /** Libellé de l'intervention figé à la création (affichage). */
       interventionLabel: v.optional(v.string()),
       /** Niveau d'urgence déclaré : normale | urgente | critique. */
@@ -168,6 +191,29 @@ const schema = defineSchema(
       .index("by_client", ["clientId"])
       .index("by_author", ["authorId"]),
 
+    /**
+     * DIASPORA — bénéficiaires d'un client vivant à l'étranger : proches,
+     * locataires, maison familiale ou entreprise au Cameroun (§2, §15).
+     */
+    diasporaBeneficiaries: defineTable({
+      ownerId: v.id("users"), // client diaspora (payeur, à l'étranger)
+      firstName: v.string(),
+      lastName: v.string(),
+      phone: v.string(), // numéro camerounais du bénéficiaire
+      relation: v.string(), // maman, papa, frère, sœur, locataire…
+      city: v.string(),
+      quarter: v.optional(v.string()), // quartier
+      address: v.optional(v.string()),
+      coords: v.optional(
+        v.object({ lat: v.number(), lon: v.number(), accuracy: v.optional(v.number()) }),
+      ),
+      accessInstructions: v.optional(v.string()),
+      onSiteContactName: v.optional(v.string()),
+      onSiteContactPhone: v.optional(v.string()),
+      archived: v.optional(v.boolean()),
+    })
+      .index("by_owner", ["ownerId"]),
+
     payments: defineTable({
       quoteId: v.id("quotes"),
       requestId: v.id("serviceRequests"),
@@ -194,6 +240,20 @@ const schema = defineSchema(
       bankName: v.optional(v.string()),
       bankRef: v.optional(v.string()), // référence transaction bancaire
       cardLast4: v.optional(v.string()), // 4 derniers chiffres Visa
+      /** DIASPORA §7 : paiement international (tokenisé chez le PSP, jamais de
+       * donnée de carte chez GTEC PRO). Montant + devise du payeur + conversion. */
+      international: v.optional(
+        v.object({
+          provider: v.union(v.literal("stripe"), v.literal("cinetpay_card")),
+          amountMinor: v.number(), // centimes (ou unités zéro-décimale pour XAF)
+          currency: v.string(), // EUR, USD, GBP, CAD…
+          fxRateFromXaf: v.optional(v.number()), // taux appliqué (indicatif)
+          feeXaf: v.optional(v.number()), // frais éventuels affichés avant validation
+          /** §8 : fonds capturés seulement après validation de l'intervention. */
+          captured: v.optional(v.boolean()),
+          providerRef: v.optional(v.string()),
+        }),
+      ),
       collectedBy: v.optional(v.id("users")), // technicien encaisseur (cash)
       collectedAt: v.optional(v.number()),
       paidAt: v.optional(v.number()), // date réelle d'encaissement (démo/rapports)

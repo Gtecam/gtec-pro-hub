@@ -49,6 +49,8 @@ import {
   interventionByCode,
 } from "@/lib/interventions";
 import { compressImageIfNeeded, dataUrlBytes, humanSize } from "@/lib/imageCompress";
+import { relationIcon } from "@/lib/diaspora";
+import { useSearchParams } from "react-router";
 
 const STEPS = [
   { key: "service", label: "Domaine" },
@@ -62,11 +64,21 @@ const STEPS = [
 export default function NewRequest() {
   const navigate = useNavigate();
   const createRequest = useMutation(api.gtec.createRequest);
+  const createDiasporaRequest = useMutation(api.diaspora.createDiasporaRequest);
+  // MODE DIASPORA : commande pour un proche (?diaspora=1&beneficiary=…).
+  const [searchParams] = useSearchParams();
+  const diasporaMode = searchParams.get("diaspora") === "1";
+  const presetBeneficiary = searchParams.get("beneficiary") ?? "";
+  const beneficiaries = useQuery(
+    api.diaspora.listBeneficiaries,
+    diasporaMode ? {} : "skip",
+  );
   // Catalogue dynamique géré par l'administration (§4) ; tant que le backend
   // n'a pas répondu, on affiche la liste statique des 12 domaines officiels.
   const categories = useQuery(api.catalog.listServiceCategories, {});
   const [step, setStep] = useState(0);
   const [submitting, setSubmitting] = useState(false);
+  const [beneficiaryId, setBeneficiaryId] = useState<string>(presetBeneficiary);
 
   const [serviceKey, setServiceKey] = useState<ServiceKey | null>(null);
   const [subcategory, setSubcategory] = useState<string | null>(null);
@@ -152,7 +164,10 @@ export default function NewRequest() {
     : [];
 
   const canNext = () => {
-    if (step === 0) return !!serviceKey;
+    if (step === 0) {
+      if (diasporaMode && !beneficiaryId) return false;
+      return !!serviceKey;
+    }
     if (step === 1) return !!interventionCode;
     if (step === 2)
       return title.trim().length >= 4 && description.trim().length >= 10;
@@ -230,6 +245,43 @@ export default function NewRequest() {
 
   const submit = async () => {
     if (!serviceKey) return;
+    // MODE DIASPORA : la demande part pour le bénéficiaire sélectionné.
+    if (diasporaMode) {
+      if (!beneficiaryId) {
+        toast.error("Choisissez pour qui est l'intervention (Mes proches).");
+        return;
+      }
+      setSubmitting(true);
+      try {
+        const id = await createDiasporaRequest({
+          beneficiaryId: beneficiaryId as never,
+          serviceKey,
+          interventionCode: interventionCode || undefined,
+          title: title.trim(),
+          description: description.trim(),
+          photos,
+          urgency: urgency as "normale" | "urgente" | "critique",
+          desiredDate: desiredDate ? new Date(desiredDate).getTime() : undefined,
+          budgetHint: budgetHint ? Number(budgetHint) : undefined,
+          voiceNoteUrl: voiceNoteUrl ?? undefined,
+          specialtyCode: specialtyCode || undefined,
+          requiredSkills: requiredSkills.length ? requiredSkills : undefined,
+          coords: gpsCoords
+            ? {
+                lat: gpsCoords.coords.lat,
+                lon: gpsCoords.coords.lon,
+                accuracy: Math.round(gpsCoords.accuracy),
+              }
+            : undefined,
+        });
+        toast.success("Demande envoyée — votre proche sera notifié au Cameroun");
+        navigate(`/dashboard/requests/${id}`);
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : "Erreur");
+        setSubmitting(false);
+      }
+      return;
+    }
     setSubmitting(true);
     try {
       const id = await createRequest({
@@ -320,6 +372,60 @@ export default function NewRequest() {
             </CardDescription>
           </CardHeader>
           <CardContent className="min-h-[280px]">
+            {/* MODE DIASPORA (§2) : pour qui est l'intervention ? */}
+            {step === 0 && diasporaMode && (
+              <div className="mb-5 flex flex-col gap-2 rounded-xl border border-primary/25 bg-primary/[0.04] p-3">
+                <p className="text-sm font-semibold">🌍 Mode Diaspora — Pour qui souhaitez-vous commander ?</p>
+                {beneficiaries === undefined ? (
+                  <div className="h-16 animate-pulse rounded-lg bg-muted" />
+                ) : (beneficiaries ?? []).filter((b) => !b.archived).length === 0 ? (
+                  <p className="text-xs text-muted-foreground">
+                    Aucun proche enregistré —{" "}
+                    <button
+                      className="font-medium text-primary underline"
+                      onClick={() => navigate("/diaspora")}
+                    >
+                      ajoutez un bénéficiaire
+                    </button>{" "}
+                    depuis l'espace Diaspora.
+                  </p>
+                ) : (
+                  <div className="grid gap-1.5 sm:grid-cols-2">
+                    {(beneficiaries ?? [])
+                      .filter((b) => !b.archived)
+                      .map((b) => (
+                        <button
+                          key={b._id}
+                          type="button"
+                          className={cn(
+                            "flex items-center gap-2 rounded-lg border px-3 py-2 text-left text-sm transition-all",
+                            beneficiaryId === b._id
+                              ? "border-primary bg-primary/5 font-medium ring-1 ring-primary/30"
+                              : "border-border/70 hover:bg-muted/40",
+                          )}
+                          onClick={() => setBeneficiaryId(b._id)}
+                        >
+                          <span>{relationIcon(b.relation)}</span>
+                          <span className="min-w-0">
+                            <span className="block truncate">
+                              {b.firstName} ({b.relation})
+                            </span>
+                            <span className="block truncate text-[11px] text-muted-foreground">
+                              {b.city}
+                              {b.quarter ? ` · ${b.quarter}` : ""}
+                            </span>
+                          </span>
+                        </button>
+                      ))}
+                  </div>
+                )}
+                <p className="text-[11px] text-muted-foreground">
+                  Le bénéficiaire est notifié au Cameroun dès l'envoi ; son
+                  adresse et ses instructions d'accès sont transmises à
+                  l'équipe.
+                </p>
+              </div>
+            )}
             {step === 0 && (
               <div className="grid gap-3 sm:grid-cols-2">
                 {view.map((s) => {
