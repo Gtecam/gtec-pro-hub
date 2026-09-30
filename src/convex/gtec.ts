@@ -21,6 +21,7 @@ import {
   degreeByKey,
   nomenSpecialtyByCode,
 } from "../lib/nomenclature";
+import { interventionByCode } from "../lib/interventions";
 
 /**
  * Normalise un numéro camerounais validé en E.164 (+237XXXXXXXX).
@@ -451,6 +452,18 @@ export const createRequest = mutation({
     specialtyCode: v.optional(v.string()),
     /** Compétences techniques requises (sélectionnées par le client). */
     requiredSkills: v.optional(v.array(v.string())),
+    /** CATALOGUE : intervention choisie (code unique CFO-INS-01…). */
+    interventionCode: v.optional(v.string()),
+    /** Niveau d'urgence : normale (défaut) | urgente | critique. */
+    urgency: v.optional(
+      v.union(v.literal("normale"), v.literal("urgente"), v.literal("critique")),
+    ),
+    /** Date souhaitée d'intervention (timestamp). */
+    desiredDate: v.optional(v.number()),
+    /** Budget indicatif (FCFA), facultatif. */
+    budgetHint: v.optional(v.number()),
+    /** Message vocal (data URL audio), facultatif — max ~600 Ko. */
+    voiceNoteUrl: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const user = await requireUser(ctx);
@@ -471,6 +484,20 @@ export const createRequest = mutation({
       );
     }
     const reference = await nextRef(ctx, "serviceRequests", "GTC");
+    // CATALOGUE : résolution de l'intervention choisie (code → définition).
+    const intervention = interventionByCode(args.interventionCode);
+    if (args.interventionCode && !intervention) {
+      throw new Error("Intervention inconnue (catalogue GTEC PRO).");
+    }
+    // Compétences = catalogue de l'intervention + sélection client (déduupliquées).
+    const mergedSkills = [
+      ...(intervention?.skills ?? []),
+      ...(args.requiredSkills ?? []),
+    ]
+      .map((s) => s.trim())
+      .filter(Boolean)
+      .filter((s, i, a) => a.findIndex((x) => x.toLowerCase() === s.toLowerCase()) === i);
+    const mergedCerts = intervention?.certifications ?? [];
     const id = await ctx.db.insert("serviceRequests", {
       clientId: user._id,
       reference,
@@ -483,9 +510,13 @@ export const createRequest = mutation({
       photos: args.photos,
       ...(args.coords ? { coords: args.coords, coordsAt: Date.now() } : {}),
       specialtyCode: args.specialtyCode,
-      requiredSkills: args.requiredSkills?.length
-        ? args.requiredSkills.map((s) => s.trim()).filter(Boolean)
-        : undefined,
+      interventionCode: intervention?.code,
+      interventionLabel: intervention?.label,
+      urgency: args.urgency ?? "normale",
+      desiredDate: args.desiredDate,
+      budgetHint: args.budgetHint !== undefined ? Math.max(0, args.budgetHint) : undefined,
+      voiceNoteUrl: args.voiceNoteUrl,
+      requiredSkills: mergedSkills.length ? mergedSkills : undefined,
       status: "nouvelle",
     });
     await addEvent(

@@ -112,6 +112,20 @@ const schema = defineSchema(
       specialtyCode: v.optional(v.string()),
       /** Compétences techniques requises pour l'intervention. */
       requiredSkills: v.optional(v.array(v.string())),
+      /** CATALOGUE : intervention choisie (code unique CFO-INS-01…). */
+      interventionCode: v.optional(v.string()),
+      /** Libellé de l'intervention figé à la création (affichage). */
+      interventionLabel: v.optional(v.string()),
+      /** Niveau d'urgence déclaré : normale | urgente | critique. */
+      urgency: v.optional(
+        v.union(v.literal("normale"), v.literal("urgente"), v.literal("critique")),
+      ),
+      /** Date souhaitée d'intervention (timestamp). */
+      desiredDate: v.optional(v.number()),
+      /** Budget indicatif du client (FCFA), facultatif. */
+      budgetHint: v.optional(v.number()),
+      /** Message vocal (data URL audio, compressé côté client). */
+      voiceNoteUrl: v.optional(v.string()),
     })
       .index("by_client", ["clientId"])
       .index("by_status", ["status"])

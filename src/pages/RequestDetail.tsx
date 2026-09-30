@@ -77,6 +77,7 @@ import {
   SERVICES,
   statusMeta,
 } from "@/lib/gtec";
+import { URGENCY_BADGE } from "@/lib/interventions";
 import { openDossierPdf, openInvoicePdf, openQuotePdf, openReceptionPdf } from "@/lib/invoicePdf";
 import { compressImageIfNeeded, dataUrlBytes, humanSize } from "@/lib/imageCompress";
 
@@ -542,6 +543,26 @@ export default function RequestDetail() {
                     {request.address}, {request.city}
                   </span>
                 </p>
+                {(request.interventionLabel || request.urgency) && (
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                    {request.interventionLabel && (
+                      <span className="rounded-full bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary">
+                        {request.interventionLabel}
+                        {request.interventionCode ? ` · ${request.interventionCode}` : ""}
+                      </span>
+                    )}
+                    {request.urgency && request.urgency !== "normale" && (
+                      <span
+                        className={cn(
+                          "rounded-full px-2.5 py-1 text-xs font-medium ring-1 ring-inset",
+                          URGENCY_BADGE[request.urgency],
+                        )}
+                      >
+                        {request.urgency === "critique" ? "Urgence critique" : "Urgente"}
+                      </span>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
             <div className="flex items-center gap-2">

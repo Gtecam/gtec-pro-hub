@@ -79,6 +79,7 @@ import type { Doc, Id } from "@/convex/_generated/dataModel";
 import { useAuth } from "@/hooks/use-auth";
 import { cn } from "@/lib/utils";
 import { CITIES, fcfa, formatDate, formatDateTime, suggestTeam, SERVICES, CONTRACT_STATUS_META, contractFrequencyLabel } from "@/lib/gtec";
+import { URGENCY_BADGE } from "@/lib/interventions";
 import {
   Bar,
   BarChart,
@@ -618,6 +619,9 @@ function AdminRequestRow({
       city: string;
       scheduledAt?: number;
       coords?: { lat: number; lon: number; accuracy?: number } | null;
+      urgency?: "normale" | "urgente" | "critique";
+      interventionLabel?: string;
+      interventionCode?: string;
     };
     client?: { name?: string; phone?: string; email?: string } | null;
     quote?: {
@@ -773,9 +777,22 @@ function AdminRequestRow({
           {request.reference}
         </span>
         <span className="min-w-0 flex-1">
-          <span className="block truncate text-sm font-medium">{request.title}</span>
+          <span className="block truncate text-sm font-medium">
+            {request.title}
+            {request.urgency && request.urgency !== "normale" && (
+              <span
+                className={cn(
+                  "ml-2 rounded-full px-2 py-0.5 text-[10px] font-semibold ring-1 ring-inset",
+                  URGENCY_BADGE[request.urgency],
+                )}
+              >
+                {request.urgency === "critique" ? "URGENCE" : "URGENT"}
+              </span>
+            )}
+          </span>
           <span className="block truncate text-xs text-muted-foreground">
             {client?.name ?? "Client"} · {request.city}
+            {request.interventionLabel ? ` · ${request.interventionLabel}` : ""}
           </span>
         </span>
         {quote && (
