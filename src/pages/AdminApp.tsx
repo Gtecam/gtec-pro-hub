@@ -59,7 +59,18 @@ export default function AdminApp() {
     return <AdminConsole signOut={signOut} />;
   }
 
-  if (isAuthenticated && !isAdmin) {
+  // Session validée mais profil encore en chargement (juste après le code OTP
+  // ou au rechargement) : on affiche un écran d'attente — surtout PAS l'écran
+  // « Accès refusé », sinon la console admin ne s'ouvre jamais.
+  if (isAuthenticated && isLoading) {
+    return (
+      <AdminShell centered>
+        <Loader2 className="size-6 animate-spin text-amber-400" />
+      </AdminShell>
+    );
+  }
+
+  if (isAuthenticated && !isLoading && !isAdmin) {
     // Un compte non-admin qui atterrit ici : accès refusé clair.
     return (
     <AdminShell centered>
