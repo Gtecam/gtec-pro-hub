@@ -207,6 +207,19 @@ export async function verifyWebhookHmac(
 
 // ---------- payouts (retraits techniciens, §28) ----------
 
+/**
+ * Authentification Transfert CinetPay : login (`/transfer/login`) renvoie un
+ * `token` (porteur ~24 h) réutilisé par les appels suivants.
+ */
+export function cinetPayTransferLoginPayload(keys: {
+  apiKey: string;
+  password: string;
+}) {
+  return { apikey: keys.apiKey, password: keys.password };
+}
+
+export const CINETPAY_TRANSFER_LOGIN = "https://client.cinetpay.com/v1/transfer/login";
+
 /** Requête de transfert CinetPay Mass Payout vers un wallet Mobile Money. */
 export function cinetPayTransferPayload(
   req: {

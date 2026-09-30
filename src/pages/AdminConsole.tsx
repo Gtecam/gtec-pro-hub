@@ -26,6 +26,7 @@ import {
   Scale,
   ScrollText,
   ShieldAlert,
+  Send,
   ShieldCheck,
   Sparkles,
   Trash2,
@@ -36,7 +37,7 @@ import {
   Wrench,
   XCircle,
 } from "lucide-react";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { api } from "@/convex/_generated/api";
 import { AppShell, StatusBadge } from "@/components/gtec";
@@ -928,6 +929,28 @@ export default function AdminConsole() {
   const issueSanction = useMutation(api.gtec.adminIssueSanction);
   const liftSanction = useMutation(api.gtec.adminLiftSanction);
   const setAdminRole = useMutation(api.gtec.adminSetAdminRole);
+
+  // GTEC PRO 2.0 (§28) : retraits automatiques via CinetPay Mass Payout.
+  // Le bouton s'affiche dès que le canal CinetPay est configuré (clés
+  // présentes) ; CINETPAY_TRANSFER_PASSWORD est vérifié côté action.
+  const payWithdrawalAutomatic = useMutation(api.paymentChannels.adminPayWithdrawalAutomatic);
+  const [massPayoutAvailable, setMassPayoutAvailable] = useState<boolean | null>(null);
+  const getChannelsForPayout = useAction(api.paymentChannels.getPaymentChannels);
+  useEffect(() => {
+    let stopped = false;
+    getChannelsForPayout()
+      .then((c) => {
+        if (!stopped) {
+          const cp = c.find((x) => x.channel === "cinetpay");
+          setMassPayoutAvailable(!!cp?.available);
+        }
+      })
+      .catch(() => setMassPayoutAvailable(false));
+    return () => {
+      stopped = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [disputeNote, setDisputeNote] = useState("");
   const [sanctionTarget, setSanctionTarget] = useState<string>("");
   const [sanctionLevel, setSanctionLevel] = useState<string>("1");
@@ -2909,6 +2932,32 @@ export default function AdminConsole() {
                         >
                           <CheckCircle2 className="mr-1.5 size-4" /> Approuver
                         </Button>
+                        {/* GTEC PRO 2.0 (§28) : transfert MoMo automatique via Mass Payout */}
+                        {withdrawal.method !== "virement" &&
+                          withdrawal.method !== "especes" &&
+                          massPayoutAvailable !== false && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              disabled={busy || withdrawal.status !== "approuve"}
+                              title={
+                                withdrawal.status !== "approuve"
+                                  ? "Approuvez d'abord le retrait"
+                                  : "Envoie le transfert Mobile Money réel via CinetPay Mass Payout"
+                              }
+                              onClick={() =>
+                                run(
+                                  () =>
+                                    payWithdrawalAutomatic({
+                                      withdrawalId: withdrawal._id as never,
+                                    }),
+                                  "Transfert Mass Payout envoyé — statut mis à jour à la confirmation",
+                                )
+                              }
+                            >
+                              <Send className="mr-1.5 size-4" /> Payer (MoMo)
+                            </Button>
+                          )}
                         <Button
                           size="sm"
                           variant="outline"
@@ -2925,7 +2974,7 @@ export default function AdminConsole() {
                             )
                           }
                         >
-                          <Banknote className="mr-1.5 size-4" /> Payé
+                          <Banknote className="mr-1.5 size-4" /> Payé (manuel)
                         </Button>
                         <Button
                           size="sm"

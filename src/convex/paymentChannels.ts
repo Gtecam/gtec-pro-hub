@@ -15,13 +15,18 @@
  */
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { v } from "convex/values";
-import { action, internalAction, internalMutation } from "./_generated/server";
+import { action, internalAction, internalMutation, internalQuery, mutation, query } from "./_generated/server";
 import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
+import { requireAdminScope } from "./gtec";
 import {
   CINETPAY_BASE,
+  CINETPAY_TRANSFER_BASE,
+  CINETPAY_TRANSFER_LOGIN,
   buildMerchantReference,
   cinetPayCollectPayload,
+  cinetPayTransferLoginPayload,
+  cinetPayTransferPayload,
   getAvailableChannels,
   isValidCollectAmount,
   mapCinetPayStatus,
@@ -330,5 +335,201 @@ export const verifyCinetPayTransaction = internalAction({
       });
     }
     return { checked: true as const, outcome };
+  },
+});
+
+// ========================================================================
+// GTEC PRO 2.0 (§28) — retraits automatiques via CinetPay Mass Payout
+// ========================================================================
+
+/**
+ * Session Transfert (token ~24 h). Cache module : une action Convex vit le
+ * temps d'un appel, le token est donc re-demandé à chaque exécution — le
+ * cache n'optimise que plusieurs transferts dans la même action.
+ */
+let cachedTransferToken: { token: string; expiresAt: number } | null = null;
+
+async function transferToken(): Promise<string> {
+  if (cachedTransferToken && Date.now() < cachedTransferToken.expiresAt - 60_000) {
+    return cachedTransferToken.token;
+  }
+  const apiKey = process.env.CINETPAY_API_KEY;
+  const password = process.env.CINETPAY_TRANSFER_PASSWORD;
+  if (!apiKey || !password) {
+    throw new Error(
+      "Mass Payout non configuré : ajoutez CINETPAY_API_KEY et CINETPAY_TRANSFER_PASSWORD (mot de passe Transfert du back-office) dans les clés du projet.",
+    );
+  }
+  const res = await fetchJson(CINETPAY_TRANSFER_LOGIN, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify(cinetPayTransferLoginPayload({ apiKey, password })),
+  });
+  if (!res.ok || !res.data?.token) {
+    throw new Error(
+      `Authentification Transfert CinetPay échouée (${res.status}). Vérifiez CINETPAY_TRANSFER_PASSWORD.`,
+    );
+  }
+  cachedTransferToken = {
+    token: String(res.data.token),
+    expiresAt: Date.now() + 20 * 3600 * 1000,
+  };
+  return cachedTransferToken.token;
+}
+
+/** Interne : enrichit un retrait avec le contexte de transfert. */
+export const getWithdrawalForTransfer = internalQuery({
+  args: { withdrawalId: v.id("withdrawals") },
+  handler: async (ctx, args) => {
+    const w = await ctx.db.get(args.withdrawalId);
+    if (!w) return null;
+    const user = await ctx.db.get(w.userId);
+    return {
+      withdrawal: w,
+      userName: user?.name ?? null,
+      userPhone: user?.phone ?? null,
+    };
+  },
+});
+
+/** Interne : enregistre une tentative de transfert sur le retrait. */
+export const recordTransferAttempt = internalMutation({
+  args: {
+    withdrawalId: v.id("withdrawals"),
+    transferId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.withdrawalId, {
+      note: `Transfert CinetPay ${args.transferId.slice(0, 40)} — en cours`,
+    });
+  },
+});
+
+/**
+ * Envoie réellement la demande de transfert (Mass Payout). Interne : appelée
+ * par `adminPayWithdrawalAutomatic` ou le cron après validation admin.
+ */
+export const sendMassPayout = internalAction({
+  args: {
+    withdrawalId: v.id("withdrawals"),
+    transferRef: v.string(),
+    amountXaf: v.number(),
+    /** 9 chiffres du wallet bénéficiaire. */
+    beneficiaryPhone: v.string(),
+    beneficiaryName: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const token = await transferToken();
+    const apiKey = process.env.CINETPAY_API_KEY!;
+    const payload = cinetPayTransferPayload(
+      {
+        merchantReference: args.transferRef,
+        amountXaf: args.amountXaf,
+        beneficiaryPhone: args.beneficiaryPhone,
+        beneficiaryName: args.beneficiaryName,
+      },
+      { apiKey },
+    );
+    const res = await fetchJson(
+      `${CINETPAY_TRANSFER_BASE}/transfer/money/send/contact?token=${encodeURIComponent(token)}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify(payload),
+      },
+    );
+    // CinetPay répond { code: 0, message: "OPERATION_SUCCES", data: [...] }.
+    const code = Number(res.data?.code);
+    const transferId: string =
+      String(
+        res.data?.data?.[0]?.transaction_id ?? res.data?.data?.transaction_id ?? args.transferRef,
+      ) || args.transferRef;
+    if (!res.ok || (Number.isFinite(code) && code !== 0)) {
+      const message = String(res.data?.message ?? `HTTP ${res.status}`);
+      await ctx.runMutation(internal.paymentChannels.markWithdrawalTransferFailed, {
+        withdrawalId: args.withdrawalId,
+        reason: message.slice(0, 200),
+      });
+      throw new Error(`Transfert CinetPay refusé : ${message}`);
+    }
+    await ctx.runMutation(internal.paymentChannels.markWithdrawalTransferSent, {
+      withdrawalId: args.withdrawalId,
+      transferId,
+    });
+    return { transferId };
+  },
+});
+
+/** Interne : note l'échec d'un transfert (le retrait reste "approuve"). */
+export const markWithdrawalTransferFailed = internalMutation({
+  args: { withdrawalId: v.id("withdrawals"), reason: v.string() },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.withdrawalId, {
+      note: `Échec transfert : ${args.reason}`,
+    });
+  },
+});
+
+/** Interne : passe le retrait en "payee" après envoi réussi du transfert. */
+export const markWithdrawalTransferSent = internalMutation({
+  args: { withdrawalId: v.id("withdrawals"), transferId: v.string() },
+  handler: async (ctx, args) => {
+    const w = await ctx.db.get(args.withdrawalId);
+    if (!w || w.status === "payee" || w.status === "refuse") return;
+    await ctx.db.patch(args.withdrawalId, {
+      status: "payee",
+      processedAt: Date.now(),
+      note: `Transfert CinetPay ${args.transferId.slice(0, 40)}`,
+    });
+    await ctx.db.insert("notifications", {
+      userId: w.userId,
+      kind: "general",
+      title: `Retrait ${w.reference} payé`,
+      body: `${w.amount.toLocaleString("fr-FR")} FCFA ont été transférés vers ${w.destination} via CinetPay Mass Payout.`,
+      at: Date.now(),
+    });
+  },
+});
+
+/**
+ * Paiement automatique d'un retrait approuvé (§28) : l'administration déclenche
+ * le transfert MoMo réel via Mass Payout. Recommandé pour les méthodes
+ * mtn_momo / orange_money — sinon, marquage manuel habituel.
+ */
+export const adminPayWithdrawalAutomatic = mutation({
+  args: { withdrawalId: v.id("withdrawals") },
+  handler: async (ctx, args) => {
+    const admin = await requireAdminScope(ctx, "finance", "super_admin");
+    const w = await ctx.db.get(args.withdrawalId);
+    if (!w) throw new Error("Retrait introuvable.");
+    if (w.status !== "approuve") {
+      throw new Error("Seul un retrait approuvé peut être payé automatiquement.");
+    }
+    if (!w.destination || !/^[0-9 +]{8,}$/.test(w.destination.trim())) {
+      throw new Error("La destination du retrait n'est pas un numéro de wallet valide.");
+    }
+    const info = (await ctx.runQuery(internal.paymentChannels.getWithdrawalForTransfer, {
+      withdrawalId: args.withdrawalId,
+    })) as {
+      withdrawal: { amount: number; reference: string };
+      userName: string | null;
+    } | null;
+    if (!info) throw new Error("Retrait introuvable.");
+
+    const transferRef = `GTEC-WD-${w.reference}-${Date.now().toString(36).toUpperCase()}`;
+    await ctx.runMutation(internal.paymentChannels.recordTransferAttempt, {
+      withdrawalId: args.withdrawalId,
+      transferId: transferRef,
+    });
+    // Une mutation ne peut pas appeler d'action directement : le transfert
+    // est planifié immédiatement (runAfter 0) et clôturera le retrait.
+    await ctx.scheduler.runAfter(0, internal.paymentChannels.sendMassPayout, {
+      withdrawalId: args.withdrawalId,
+      transferRef,
+      amountXaf: w.amount,
+      beneficiaryPhone: w.destination.replace(/\D/g, "").slice(-9),
+      beneficiaryName: info.userName ?? undefined,
+    });
+    return { scheduled: true as const, transferRef };
   },
 });

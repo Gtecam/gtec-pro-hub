@@ -53,11 +53,9 @@ async function requireAdmin(ctx: any): Promise<Doc<"users">> {
  * GTEC PRO 2.0 (§3) : garde admin avec périmètre. Un Super Admin passe tous
  * les périmètres ; les autres comptes admin n'accèdent qu'à leur rôle :
  * kyc, finance, missions, support, litiges, moderation, technique.
- * Sans scope exigé, tout admin actif passe (fonctions transverses)./**
- * À l'affectation d'une équipe, la commission générée au paiement est
- * réattribuée au chef d'équipe (redevable de la régularisation pour sa team).
+ * Sans scope exigé, tout admin actif passe (fonctions transverses).
  */
-async function requireAdminScope(
+export async function requireAdminScope(
   ctx: any,
   ...scopes: (typeof ADMIN_ROLES)[number][]
 ): Promise<Doc<"users">> {
