@@ -13,6 +13,7 @@ import {
   Package,
   type LucideIcon,
 } from "lucide-react";
+import { nomenMatchScore } from "./nomenclature";
 
 // ---------- services (écran « Que souhaitez-vous faire ? ») ----------
 // Les 12 domaines officiels GTEC PRO (cahier des charges §4).
@@ -507,7 +508,7 @@ export function cityDistanceKm(a: string, b: string): number {
 
 /**
  * V6 : constitution d'équipe (≥ 2 personnes) selon la zone géographique et
- * la spécialité du chantier, puis choix du chef d'équipe selon des critères
+ * la spécialité du chantier, puis choix du chef d'équipe selon les critères
  * objectifs. Le même code sert au dashboard admin (suggestion) et au backend.
  */
 export type CrewCandidate = {
@@ -529,6 +530,14 @@ export type CrewCandidate = {
   verified?: boolean;
   /** Position GPS réelle du technicien (prioritaire sur la ville). */
   gps?: { lat: number; lon: number };
+  /** NOMENCLATURE GTEC PRO : spécialité (code), métier, diplôme, compétences. */
+  specialtyCode?: string;
+  job?: string;
+  degreeKey?: string;
+  degreeLevel?: string;
+  skills?: string[];
+  /** Certifications / habilitations déclarées. */
+  certifications?: string[];
 };
 
 /** Chef d'équipe : score = expérience pondérée + note client + ancienneté. */
@@ -558,6 +567,8 @@ export function suggestTeam(
   minSize = 2,
   /** GPS précis du chantier — active la distance réelle technicien↔chantier. */
   requestGps?: { lat: number; lon: number },
+  /** NOMENCLATURE : spécialité attendue (code) et compétences requises. */
+  need?: { specialtyCode?: string; requiredSkills?: string[] },
 ): { leaderId: string | null; memberIds: string[]; total: number; reason: string } {
   const pool = techs.filter((t) => t.active !== false);
   if (pool.length === 0) {
@@ -588,7 +599,23 @@ export function suggestTeam(
         matches(t.specialty, hint),
       );
       const kycBonus = t.verified === false ? -25 : 0;
-      const score = 100 - distance * 0.8 + (specialtyFit ? 20 : 0) + kycBonus;
+      // NOMENCLATURE GTEC PRO : bonus spécialité+métier+diplôme+compétences
+      // (0-40) calculé par le moteur dédié — repli legacy si non renseigné.
+      const nomenBonus = nomenMatchScore(
+        {
+          specialtyCode: t.specialtyCode,
+          job: t.job,
+          degreeKey: t.degreeKey,
+          degreeLevel: t.degreeLevel,
+          skills: t.skills,
+        },
+        {
+          specialtyCode: need?.specialtyCode,
+          serviceKey,
+          skills: need?.requiredSkills,
+        },
+      );
+      const score = 100 - distance * 0.8 + (specialtyFit ? 20 : 0) + kycBonus + nomenBonus;
       return { tech: t, distance, score };
     })
     .sort((a, b) => b.score - a.score);
@@ -600,10 +627,15 @@ export function suggestTeam(
     ? Math.round(chosen.reduce((s, c) => s + c.distance, 0) / chosen.length)
     : 0;
   const gpsUsed = !!requestGps && chosen.some((c) => c.tech.gps);
+  const nomenTop = chosen.some(
+    (c) =>
+      !!need?.specialtyCode &&
+      c.tech.specialtyCode === need.specialtyCode,
+  );
   const reason =
     chosen.length === 0
       ? "Aucun technicien disponible"
-      : `Équipe de ${chosen.length} · proximité ${requestCity}${avgDistance ? ` (${avgDistance} km${gpsUsed ? ", GPS" : ""})` : ""}${chosen.some((c) => matches(c.tech.specialty, rule.leaderHint)) ? " · spécialité" : ""}`;
+      : `Équipe de ${chosen.length} · proximité ${requestCity}${avgDistance ? ` (${avgDistance} km${gpsUsed ? ", GPS" : ""})` : ""}${chosen.some((c) => matches(c.tech.specialty, rule.leaderHint)) ? " · spécialité" : ""}${nomenTop ? " · nomenclature" : ""}`;
   return { leaderId, memberIds, total: memberIds.length + (leaderId ? 1 : 0), reason };
 }
 

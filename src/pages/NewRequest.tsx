@@ -38,6 +38,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { CITIES, MAX_FILE_SIZE_LABEL, SERVICES, categoryIcon, type ServiceKey } from "@/lib/gtec";
+import { NOMENCLATURE, SKILLS_BY_DOMAIN } from "@/lib/nomenclature";
 import { compressImageIfNeeded, dataUrlBytes, humanSize } from "@/lib/imageCompress";
 
 const STEPS = [
@@ -64,6 +65,9 @@ export default function NewRequest() {
   const [photos, setPhotos] = useState<string[]>([]);
   const [address, setAddress] = useState("");
   const [city, setCity] = useState<string>("Douala");
+  // NOMENCLATURE GTEC PRO : spécialité professionnelle attendue + compétences.
+  const [specialtyCode, setSpecialtyCode] = useState<string>("");
+  const [requiredSkills, setRequiredSkills] = useState<string[]>([]);
 
   // GPS du chantier : position capturée au moment de la demande (facultative).
   const geo = useGeolocation();
@@ -169,6 +173,8 @@ export default function NewRequest() {
         address: address.trim(),
         city,
         photos,
+        specialtyCode: specialtyCode || undefined,
+        requiredSkills: requiredSkills.length ? requiredSkills : undefined,
         coords: gpsCoords
           ? {
               lat: gpsCoords.coords.lat,
@@ -301,6 +307,62 @@ export default function NewRequest() {
                     </Select>
                   </div>
                 )}
+                {/* NOMENCLATURE GTEC PRO : spécialité attendue + compétences requises */}
+                <div className="rounded-xl border border-border/70 bg-muted/30 p-3 flex flex-col gap-2">
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-sm font-medium">
+                      Spécialité professionnelle attendue (optionnel)
+                    </label>
+                    <Select value={specialtyCode} onValueChange={(v) => { setSpecialtyCode(v); setRequiredSkills([]); }}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Préciser la spécialité GTEC PRO (ELEC-ELEC-IND…)" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {NOMENCLATURE.map((domain) => (
+                          <div key={domain.code}>
+                            <p className="px-2 pt-1.5 pb-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                              {domain.label}
+                            </p>
+                            {domain.specialties.map((s) => (
+                              <SelectItem key={s.code} value={s.code} className="pl-4">
+                                {s.label}
+                              </SelectItem>
+                            ))}
+                          </div>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  {specialtyCode && (
+                    <div className="flex flex-col gap-1.5">
+                      <label className="text-sm font-medium">Compétences attendues</label>
+                      <div className="flex flex-wrap gap-1.5">
+                        {(SKILLS_BY_DOMAIN[NOMENCLATURE.find((d) => d.specialties.some((s) => s.code === specialtyCode))!.code] ?? []).map((s) => (
+                          <button
+                            key={s}
+                            type="button"
+                            onClick={() =>
+                              setRequiredSkills((prev) =>
+                                prev.includes(s) ? prev.filter((x) => x !== s) : [...prev, s],
+                              )
+                            }
+                            className={cn(
+                              "rounded-full border px-2.5 py-1 text-xs transition-colors",
+                              requiredSkills.includes(s)
+                                ? "border-primary bg-primary/10 font-medium text-primary"
+                                : "border-border/70 text-muted-foreground hover:bg-muted/50",
+                            )}
+                          >
+                            {s}
+                          </button>
+                        ))}
+                      </div>
+                      <p className="text-[11px] text-muted-foreground">
+                        Le moteur d'affectation priorisera les techniciens dont la spécialité, le métier, le diplôme et les compétences correspondent ({specialtyCode}).
+                      </p>
+                    </div>
+                  )}
+                </div>
                 <div className="flex flex-col gap-1.5">
                   <label className="text-sm font-medium">Titre</label>
                   <Input

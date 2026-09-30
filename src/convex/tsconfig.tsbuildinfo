@@ -1,0 +1,1 @@
+{"root":["./adminApp.ts","./auth.config.ts","./auth.ts","./catalog.ts","./crons.ts","./demo.ts","./emailQueue.ts","./emails.ts","./gtec.ts","./http.ts","./momo.ts","./paymentChannels.ts","./schema.ts","./sms.ts","./users.ts","./auth/emailOtp.ts","./auth/phoneOtp.ts"],"errors":true,"version":"5.9.3"}

@@ -108,6 +108,10 @@ const schema = defineSchema(
       ),
       /** Date de la dernière position GPS client enregistrée. */
       coordsAt: v.optional(v.number()),
+      /** NOMENCLATURE : spécialité professionnelle attendue (code ELEC-ELEC-IND…). */
+      specialtyCode: v.optional(v.string()),
+      /** Compétences techniques requises pour l'intervention. */
+      requiredSkills: v.optional(v.array(v.string())),
     })
       .index("by_client", ["clientId"])
       .index("by_status", ["status"])
@@ -411,6 +415,32 @@ const schema = defineSchema(
       lastLocationAt: v.optional(v.number()),
       /** Partage GPS temps réel activé par le technicien. */
       locationSharing: v.optional(v.boolean()),
+
+      /**
+       * NOMENCLATURE GTEC PRO : Domaine → Spécialité professionnelle →
+       * Métier → Compétences → Diplôme → Spécialité du diplôme → Niveau →
+       * Certifications (+ expérience, zone d'intervention détaillée).
+       */
+      /** Domaine (code racine : ELEC, HTA, IND, ENE, FROID, INFO, RES, BTP, PLB, MNT, MEC, SEC, ENT). */
+      domainCode: v.optional(v.string()),
+      /** Spécialité professionnelle (code unique : ELEC-ELEC-IND…). */
+      specialtyCode: v.optional(v.string()),
+      /** Métier officiel de la nomenclature (ex. "Électricien industriel"). */
+      jobTitle: v.optional(v.string()),
+      /** Compétences réellement exercées. */
+      skills: v.optional(v.array(v.string())),
+      /** Clé du diplôme (BTS_ELTO, LIC_GE, ING_GE…) — voir src/lib/nomenclature.ts. */
+      degreeKey: v.optional(v.string()),
+      /** Niveau d'études lisible (ex. "Bac+2"). */
+      degreeLevel: v.optional(v.string()),
+      /** Certifications / habilitations (HTA, photovoltaïque, sécurité…). */
+      certifications: v.optional(v.array(v.string())),
+      /** Palier d'expérience déclaré (0-1, 2-3, 4-5, 6-10, 10+). */
+      experienceBand: v.optional(v.string()),
+      /** Arrondissement / quartier principal d'intervention. */
+      district: v.optional(v.string()),
+      /** Rayon d'intervention accepté autour de la ville (km). */
+      radiusKm: v.optional(v.number()),
       /** GTEC PRO 2.0 (§12) : disponibilité déclarée — un prestataire
        * indisponible n'est jamais proposé par le moteur d'affectation. */
       availability: v.optional(

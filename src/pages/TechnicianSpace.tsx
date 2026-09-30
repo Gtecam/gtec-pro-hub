@@ -67,6 +67,15 @@ import { useAuth } from "@/hooks/use-auth";
 import { NavigationOff } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { CITIES, fcfa, formatDate, formatDateTime, MAX_FILE_SIZE, MAX_FILE_SIZE_LABEL, PAYMENT_METHODS } from "@/lib/gtec";
+import {
+  CERTIFICATION_SUGGESTIONS,
+  DEGREES,
+  EXPERIENCE_BANDS,
+  NOMENCLATURE,
+  SKILLS_BY_DOMAIN,
+  degreeByKey,
+  nomenSpecialtyByCode,
+} from "@/lib/nomenclature";
 import { compressImageIfNeeded, dataUrlBytes, humanSize } from "@/lib/imageCompress";
 import { Navigate } from "react-router";
 
@@ -538,6 +547,18 @@ export default function TechnicianSpace() {
   const [specialty, setSpecialty] = useState("");
   const [profession, setProfession] = useState("");
   const [experience, setExperience] = useState(2);
+  // NOMENCLATURE GTEC PRO : domaine → spécialité → métier → compétences →
+  // diplôme → spécialité du diplôme → niveau → certifications → expérience → zone.
+  const [domainCode, setDomainCode] = useState("");
+  const [specialtyCode, setSpecialtyCode] = useState("");
+  const [jobTitle, setJobTitle] = useState("");
+  const [skills, setSkills] = useState<string[]>([]);
+  const [certifications, setCertifications] = useState<string[]>([]);
+  const [experienceBand, setExperienceBand] = useState("");
+  const [district, setDistrict] = useState("");
+  const [radiusKm, setRadiusKm] = useState("");
+  const [degreeKey, setDegreeKey] = useState("");
+  const [degreeGroup, setDegreeGroup] = useState<string>("");
   const [currentEmployer, setCurrentEmployer] = useState("");
   const [references, setReferences] = useState("");
   const [zones, setZones] = useState<string[]>(["Douala"]);
@@ -624,6 +645,17 @@ export default function TechnicianSpace() {
         references: references.trim() || undefined,
         zones,
         bio: bio.trim() || undefined,
+        // NOMENCLATURE GTEC PRO
+        domainCode: domainCode || undefined,
+        specialtyCode: specialtyCode || undefined,
+        jobTitle: jobTitle || undefined,
+        skills: skills.length ? skills : undefined,
+        certifications: certifications.length ? certifications : undefined,
+        degreeKey: degreeKey || undefined,
+        degreeLevel: degreeKey ? (degreeByKey(degreeKey)?.level ?? undefined) : undefined,
+        experienceBand: experienceBand || undefined,
+        district: district.trim() || undefined,
+        radiusKm: radiusKm ? Number(radiusKm) : undefined,
         highestDegree: highestDegree.trim(),
         fieldOfStudy: fieldOfStudy.trim() || undefined,
         school: school.trim() || undefined,
@@ -1000,9 +1032,112 @@ export default function TechnicianSpace() {
                   <p className="flex items-center gap-1.5 text-sm font-semibold">
                     <HardHat className="size-4 text-primary" /> Profession
                   </p>
+                  {/* NOMENCLATURE GTEC PRO : Domaine → Spécialité → Métier */}
+                  <div className="grid gap-3 sm:grid-cols-3">
+                    <div className="flex flex-col gap-1.5">
+                      <Label className="text-sm">Domaine *</Label>
+                      <Select
+                        value={domainCode}
+                        onValueChange={(v) => {
+                          setDomainCode(v);
+                          setSpecialtyCode("");
+                          setJobTitle("");
+                          setSkills([]);
+                        }}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Choisir" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {NOMENCLATURE.map((d) => (
+                            <SelectItem key={d.code} value={d.code}>
+                              {d.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="flex flex-col gap-1.5">
+                      <Label className="text-sm">Spécialité professionnelle *</Label>
+                      <Select
+                        value={specialtyCode}
+                        onValueChange={(v) => {
+                          setSpecialtyCode(v);
+                          setJobTitle("");
+                          const entry = nomenSpecialtyByCode(v);
+                          if (entry) setSpecialty(entry.specialty.label);
+                        }}
+                        disabled={!domainCode}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder={domainCode ? "Choisir" : "Choisissez d'abord un domaine"} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {NOMENCLATURE.find((d) => d.code === domainCode)?.specialties.map((s) => (
+                            <SelectItem key={s.code} value={s.code}>
+                              {s.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="flex flex-col gap-1.5">
+                      <Label className="text-sm">Métier *</Label>
+                      <Select
+                        value={jobTitle}
+                        onValueChange={(v) => {
+                          setJobTitle(v);
+                          setProfession(v);
+                        }}
+                        disabled={!specialtyCode}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder={specialtyCode ? "Choisir" : "Choisissez une spécialité"} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {(nomenSpecialtyByCode(specialtyCode)?.specialty.jobs ?? []).map((j) => (
+                            <SelectItem key={j} value={j}>
+                              {j}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                  {specialtyCode && (
+                    <p className="rounded-lg bg-muted/60 px-3 py-2 text-xs text-muted-foreground">
+                      Code nomenclature : <span className="font-mono font-semibold text-foreground">{specialtyCode}</span>
+                    </p>
+                  )}
+                  {domainCode && (
+                    <div className="flex flex-col gap-1.5">
+                      <Label className="text-sm">Compétences *</Label>
+                      <div className="flex flex-wrap gap-1.5">
+                        {(SKILLS_BY_DOMAIN[domainCode] ?? []).map((s) => (
+                          <button
+                            key={s}
+                            type="button"
+                            onClick={() =>
+                              setSkills((prev) =>
+                                prev.includes(s) ? prev.filter((x) => x !== s) : [...prev, s],
+                              )
+                            }
+                            className={cn(
+                              "rounded-full border px-2.5 py-1 text-xs transition-colors",
+                              skills.includes(s)
+                                ? "border-primary bg-primary/10 font-medium text-primary"
+                                : "border-border/70 text-muted-foreground hover:bg-muted/50",
+                            )}
+                          >
+                            {s}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                   <div className="grid gap-3 sm:grid-cols-2">
                     <div className="flex flex-col gap-1.5">
-                      <Label className="text-sm">Spécialité *</Label>
+                      <Label className="text-sm">Spécialité (libellé libre, complet) *</Label>
                       <Input
                         value={specialty}
                         onChange={(e) => setSpecialty(e.target.value)}
@@ -1010,15 +1145,32 @@ export default function TechnicianSpace() {
                       />
                     </div>
                     <div className="flex flex-col gap-1.5">
-                      <Label className="text-sm">Métier exact</Label>
+                      <Label className="text-sm">Métier exact (si absent de la liste)</Label>
                       <Input
                         value={profession}
                         onChange={(e) => setProfession(e.target.value)}
                         placeholder="Ex. : Électricien bâtiment"
                       />
                     </div>
+                  </div>
+                  <div className="grid gap-3 sm:grid-cols-2">
                     <div className="flex flex-col gap-1.5">
-                      <Label className="text-sm">Années d'expérience *</Label>
+                      <Label className="text-sm">Palier d'expérience *</Label>
+                      <Select value={experienceBand} onValueChange={setExperienceBand}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Choisir" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {EXPERIENCE_BANDS.map((b) => (
+                            <SelectItem key={b.key} value={b.key}>
+                              {b.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="flex flex-col gap-1.5">
+                      <Label className="text-sm">Années d'expérience (précises) *</Label>
                       <Input
                         type="number"
                         min={0}
@@ -1060,6 +1212,29 @@ export default function TechnicianSpace() {
                           </label>
                         ))}
                       </div>
+                      {/* NOMENCLATURE §J : zone détaillée (arrondissement, rayon) */}
+                      <div className="mt-1 grid gap-3 sm:grid-cols-2">
+                        <div className="flex flex-col gap-1.5">
+                          <Label className="text-sm">Arrondissement / quartier principal</Label>
+                          <Input
+                            value={district}
+                            onChange={(e) => setDistrict(e.target.value)}
+                            placeholder="Ex. : Bonapriso, Nkolbisson…"
+                          />
+                        </div>
+                        <div className="flex flex-col gap-1.5">
+                          <Label className="text-sm">Rayon d'intervention (km)</Label>
+                          <Input
+                            type="number"
+                            min={0}
+                            max={300}
+                            value={radiusKm}
+                            onChange={(e) => setRadiusKm(e.target.value)}
+                            placeholder="Ex. : 25"
+                            className="w-28"
+                          />
+                        </div>
+                      </div>
                     </div>
                     <div className="flex flex-col gap-1.5 sm:col-span-2">
                       <Label className="text-sm">Présentation (optionnel)</Label>
@@ -1078,21 +1253,70 @@ export default function TechnicianSpace() {
                   <p className="flex items-center gap-1.5 text-sm font-semibold">
                     <GraduationCap className="size-4 text-primary" /> Parcours académique
                   </p>
+                  {/* NOMENCLATURE : Niveau → Diplôme → Spécialité du diplôme */}
                   <div className="grid gap-3 sm:grid-cols-2">
                     <div className="flex flex-col gap-1.5">
-                      <Label className="text-sm">Dernier diplôme *</Label>
-                      <Input
-                        value={highestDegree}
-                        onChange={(e) => setHighestDegree(e.target.value)}
-                        placeholder="Ex. : CAP, BT, BTS, Licence, Ingénieur…"
-                      />
+                      <Label className="text-sm">Niveau de diplôme *</Label>
+                      <Select
+                        value={degreeGroup}
+                        onValueChange={(v) => {
+                          setDegreeGroup(v);
+                          setDegreeKey("");
+                          const first = (DEGREES as Record<string, { key: string; label: string }[]>)[v]?.[0];
+                          if (first) {
+                            setDegreeKey(first.key);
+                            setHighestDegree(first.label);
+                          }
+                        }}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Choisir" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {Object.keys(DEGREES).map((g) => (
+                            <SelectItem key={g} value={g}>
+                              {g}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="flex flex-col gap-1.5">
+                      <Label className="text-sm">Diplôme *</Label>
+                      <Select
+                        value={degreeKey}
+                        onValueChange={(v) => {
+                          setDegreeKey(v);
+                          setHighestDegree(degreeByKey(v)?.label ?? "");
+                        }}
+                        disabled={!degreeGroup}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder={degreeGroup ? "Choisir" : "Choisissez un niveau"} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {((DEGREES as Record<string, { key: string; label: string; level: string }[]>)[degreeGroup] ?? []).map((d) => (
+                            <SelectItem key={d.key} value={d.key}>
+                              {d.label} · {d.level}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                     </div>
                     <div className="flex flex-col gap-1.5">
                       <Label className="text-sm">Spécialité du diplôme</Label>
                       <Input
                         value={fieldOfStudy}
                         onChange={(e) => setFieldOfStudy(e.target.value)}
-                        placeholder="Ex. : Électrotechnique"
+                        placeholder="Ex. : Électrotechnique, Énergies renouvelables…"
+                      />
+                    </div>
+                    <div className="flex flex-col gap-1.5">
+                      <Label className="text-sm">Dernier diplôme (libellé libre) *</Label>
+                      <Input
+                        value={highestDegree}
+                        onChange={(e) => setHighestDegree(e.target.value)}
+                        placeholder="Ex. : CAP, BT, BTS, Licence, Ingénieur…"
                       />
                     </div>
                     <div className="flex flex-col gap-1.5">
@@ -1117,6 +1341,31 @@ export default function TechnicianSpace() {
                         }
                         className="w-28"
                       />
+                    </div>
+                  </div>
+                  {/* NOMENCLATURE : Certifications (§H) */}
+                  <div className="flex flex-col gap-1.5">
+                    <Label className="text-sm">Certifications / habilitations</Label>
+                    <div className="flex flex-wrap gap-1.5">
+                      {CERTIFICATION_SUGGESTIONS.filter((c) => c !== "Autre (préciser)").map((c) => (
+                        <button
+                          key={c}
+                          type="button"
+                          onClick={() =>
+                            setCertifications((prev) =>
+                              prev.includes(c) ? prev.filter((x) => x !== c) : [...prev, c],
+                            )
+                          }
+                          className={cn(
+                            "rounded-full border px-2.5 py-1 text-xs transition-colors",
+                            certifications.includes(c)
+                              ? "border-primary bg-primary/10 font-medium text-primary"
+                              : "border-border/70 text-muted-foreground hover:bg-muted/50",
+                          )}
+                        >
+                          {c}
+                        </button>
+                      ))}
                     </div>
                   </div>
                 </section>
@@ -1144,6 +1393,13 @@ export default function TechnicianSpace() {
                   disabled={
                     busy ||
                     specialty.trim().length < 3 ||
+                    !domainCode ||
+                    !specialtyCode ||
+                    !jobTitle ||
+                    skills.length === 0 ||
+                    !degreeGroup ||
+                    !degreeKey ||
+                    !experienceBand ||
                     zones.length === 0 ||
                     !documents.some((d) => d.kind === "cni") ||
                     !documents.some((d) =>

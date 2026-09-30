@@ -14,6 +14,13 @@ import {
   ADVANCE_PERCENT,
   BALANCE_PERCENT,
 } from "../lib/gtec";
+import {
+  DEGREES,
+  EXPERIENCE_BANDS,
+  NOMENCLATURE,
+  degreeByKey,
+  nomenSpecialtyByCode,
+} from "../lib/nomenclature";
 
 /**
  * Normalise un numéro camerounais validé en E.164 (+237XXXXXXXX).
@@ -440,9 +447,17 @@ export const createRequest = mutation({
     coords: v.optional(
       v.object({ lat: v.number(), lon: v.number(), accuracy: v.optional(v.number()) }),
     ),
+    /** NOMENCLATURE : spécialité professionnelle attendue (code ELEC-ELEC-IND…). */
+    specialtyCode: v.optional(v.string()),
+    /** Compétences techniques requises (sélectionnées par le client). */
+    requiredSkills: v.optional(v.array(v.string())),
   },
   handler: async (ctx, args) => {
     const user = await requireUser(ctx);
+    // Nomenclature : la spécialité attendue doit exister.
+    if (args.specialtyCode && !nomenSpecialtyByCode(args.specialtyCode)) {
+      throw new Error("Spécialité inconnue (nomenclature GTEC PRO).");
+    }
     // Garde de taille : le champ `photos` (data URLs) est limité par Convex
     // (~1 Mio par valeur). Les images sont compressées côté navigateur —
     // cette garde n'attrape que les cas anormaux avec un message clair.
@@ -467,6 +482,10 @@ export const createRequest = mutation({
       city: args.city,
       photos: args.photos,
       ...(args.coords ? { coords: args.coords, coordsAt: Date.now() } : {}),
+      specialtyCode: args.specialtyCode,
+      requiredSkills: args.requiredSkills?.length
+        ? args.requiredSkills.map((s) => s.trim()).filter(Boolean)
+        : undefined,
       status: "nouvelle",
     });
     await addEvent(
@@ -1483,6 +1502,13 @@ export const suggestTeamForRequest = query({
           gps: profile?.lastLocation
             ? { lat: profile.lastLocation.lat, lon: profile.lastLocation.lon }
             : undefined,
+          // NOMENCLATURE GTEC PRO : spécialité, métier, diplôme, compétences.
+          specialtyCode: profile?.specialtyCode,
+          job: profile?.jobTitle ?? profile?.profession,
+          degreeKey: profile?.degreeKey,
+          degreeLevel: profile?.degreeLevel,
+          skills: profile?.skills,
+          certifications: profile?.certifications,
         };
       }),
     );
@@ -1492,6 +1518,10 @@ export const suggestTeamForRequest = query({
       enriched,
       2,
       request.coords ? { lat: request.coords.lat, lon: request.coords.lon } : undefined,
+      {
+        specialtyCode: request.specialtyCode,
+        requiredSkills: request.requiredSkills,
+      },
     );
   },
 });
@@ -1712,6 +1742,17 @@ export const submitTechnicianApplication = mutation({
     fieldOfStudy: v.optional(v.string()),
     school: v.optional(v.string()),
     graduationYear: v.optional(v.number()),
+    // NOMENCLATURE GTEC PRO (A→J)
+    domainCode: v.optional(v.string()),
+    specialtyCode: v.optional(v.string()),
+    jobTitle: v.optional(v.string()),
+    skills: v.optional(v.array(v.string())),
+    degreeKey: v.optional(v.string()),
+    degreeLevel: v.optional(v.string()),
+    certifications: v.optional(v.array(v.string())),
+    experienceBand: v.optional(v.string()),
+    district: v.optional(v.string()),
+    radiusKm: v.optional(v.number()),
     // Documents (obligatoires)
     documents: v.array(
       v.object({
@@ -1751,6 +1792,44 @@ export const submitTechnicianApplication = mutation({
     // Parcours académique
     if (!args.highestDegree.trim()) {
       throw new Error("Indiquez votre dernier diplôme obtenu.");
+    }
+    // ===== NOMENCLATURE GTEC PRO : validation cohérente A→J =====
+    if (args.specialtyCode) {
+      const entry = nomenSpecialtyByCode(args.specialtyCode);
+      if (!entry) {
+        throw new Error("Spécialité professionnelle inconnue (nomenclature GTEC PRO).");
+      }
+      if (args.domainCode && args.domainCode !== entry.domain.code) {
+        throw new Error(
+          "Incohérence : le domaine ne correspond pas à la spécialité choisie.",
+        );
+      }
+      if (
+        args.jobTitle &&
+        !entry.specialty.jobs.some(
+          (j) => j.toLowerCase() === args.jobTitle?.toLowerCase(),
+        )
+      ) {
+        throw new Error(
+          "Le métier saisi ne figure pas dans les métiers de cette spécialité.",
+        );
+      }
+    }
+    if (args.degreeKey && !degreeByKey(args.degreeKey)) {
+      throw new Error("Diplôme inconnu (nomenclature GTEC PRO).");
+    }
+    if (
+      args.experienceBand &&
+      !EXPERIENCE_BANDS.some((b) => b.key === args.experienceBand)
+    ) {
+      throw new Error("Palier d'expérience invalide.");
+    }
+    if (
+      args.skills?.some(
+        (s) => !s.trim() || s.length > 60,
+      )
+    ) {
+      throw new Error("Compétences invalides (chaque compétence : 1 à 60 caractères).");
     }
     // Documents obligatoires : au moins une pièce d'identité + un justificatif
     // de compétence (diplôme, attestation ou certificat).
@@ -1868,16 +1947,31 @@ export const submitTechnicianApplication = mutation({
       city: args.city.trim(),
       address: args.address?.trim() || undefined,
       specialty: args.specialty.trim(),
-      profession: args.profession?.trim() || undefined,
+      profession: args.jobTitle?.trim() || args.profession?.trim() || undefined,
       experienceYears: Math.max(0, args.experienceYears),
       currentEmployer: args.currentEmployer?.trim() || undefined,
       references: args.references?.trim() || undefined,
       zones: args.zones,
       bio: args.bio?.trim() || undefined,
-      highestDegree: args.highestDegree.trim(),
+      highestDegree: args.degreeKey
+        ? (degreeByKey(args.degreeKey)?.label ?? args.highestDegree.trim())
+        : args.highestDegree.trim(),
       fieldOfStudy: args.fieldOfStudy?.trim() || undefined,
       school: args.school?.trim() || undefined,
       graduationYear: args.graduationYear || undefined,
+      // NOMENCLATURE GTEC PRO (A→J)
+      domainCode: args.domainCode || undefined,
+      specialtyCode: args.specialtyCode || undefined,
+      jobTitle: args.jobTitle?.trim() || undefined,
+      skills: args.skills?.length ? args.skills.map((s) => s.trim()).filter(Boolean) : undefined,
+      degreeKey: args.degreeKey || undefined,
+      degreeLevel: args.degreeLevel?.trim() || degreeByKey(args.degreeKey ?? "")?.level || undefined,
+      certifications: args.certifications?.length
+        ? args.certifications.map((c) => c.trim()).filter(Boolean)
+        : undefined,
+      experienceBand: args.experienceBand || undefined,
+      district: args.district?.trim() || undefined,
+      radiusKm: args.radiusKm !== undefined ? Math.max(0, Math.min(300, args.radiusKm)) : undefined,
       documents: args.documents,
       status: "en_attente",
       subscription: "aucun",
