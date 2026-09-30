@@ -17,6 +17,7 @@ import {
   PenLine,
   Phone,
   Receipt,
+  ShieldAlert,
   ShieldCheck,
   Truck,
   Users,
@@ -53,6 +54,13 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/use-auth";
@@ -107,6 +115,14 @@ export default function RequestDetail() {
   );
   const cancelRequest = useMutation(api.gtec.cancelRequest);
   const submitReview = useMutation(api.gtec.clientSubmitReview);
+
+  // GTEC PRO 2.0 §36 : litiges (signalement + suivi).
+  const requestDisputes = useQuery(api.gtec.listRequestDisputes, {
+    requestId: requestId as never,
+  });
+  const createDispute = useMutation(api.gtec.createDispute);
+  const [disputeCategory, setDisputeCategory] = useState("travaux_non_conformes");
+  const [disputeDescription, setDisputeDescription] = useState("");
 
   const myReview = useQuery(api.gtec.getReviewForRequest, {
     requestId: requestId as never,
@@ -1301,6 +1317,109 @@ export default function RequestDetail() {
                   </CardContent>
                 </Card>
               </motion.div>
+            )}
+
+            {/* GTEC PRO 2.0 §36 : Signaler un problème (client) */}
+            {request.status !== "annulee" && (
+              <Card className="card-layered">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2 text-sm">
+                    <ShieldAlert className="size-4 text-destructive" />
+                    Un problème sur cette mission ?
+                  </CardTitle>
+                  <CardDescription>
+                    Votre signalement est transmis à l'administration GTEC qui instruit le dossier et rend une décision documentée.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="flex flex-col gap-2">
+                  {requestDisputes === undefined ? (
+                    <div className="h-12 animate-pulse rounded-xl bg-muted" />
+                  ) : (
+                    <>
+                      {requestDisputes.length > 0 && (
+                        <div className="flex flex-col gap-1.5">
+                          {requestDisputes.map(({ dispute, resolvedByName }) => (
+                            <div
+                              key={dispute._id}
+                              className="rounded-lg border border-border/70 px-3 py-2 text-xs"
+                            >
+                              <p className="font-medium">
+                                {dispute.category.replace(/_/g, " ")} · {""}
+                                {dispute.status === "ouverte"
+                                  ? "Ouverte"
+                                  : dispute.status === "en_cours"
+                                    ? "En instruction"
+                                    : dispute.status === "resolue"
+                                      ? "Résolue"
+                                      : "Rejetée"}
+                              </p>
+                              {dispute.decision && (
+                                <p className="mt-0.5 text-muted-foreground">
+                                  Décision GTEC : {dispute.decision}
+                                  {resolvedByName ? ` — ${resolvedByName}` : ""}
+                                </p>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      {requestDisputes.length === 0 && (
+                        <>
+                          <Select
+                            value={disputeCategory}
+                            onValueChange={setDisputeCategory}
+                          >
+                            <SelectTrigger className="w-full sm:w-64">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="travaux_non_conformes">Travaux non conformes</SelectItem>
+                              <SelectItem value="retard">Retard</SelectItem>
+                              <SelectItem value="paiement">Paiement</SelectItem>
+                              <SelectItem value="comportement">Comportement</SelectItem>
+                              <SelectItem value="materiel">Matériel</SelectItem>
+                              <SelectItem value="devis">Devis</SelectItem>
+                              <SelectItem value="contrat">Contrat</SelectItem>
+                              <SelectItem value="autre">Autre</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <Textarea
+                            value={disputeDescription}
+                            onChange={(e) => setDisputeDescription(e.target.value)}
+                            placeholder="Décrivez le problème (10 caractères minimum)…"
+                            rows={2}
+                          />
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="self-end text-destructive"
+                            disabled={busy || disputeDescription.trim().length < 10}
+                            onClick={async () => {
+                              setBusy(true);
+                              try {
+                                await createDispute({
+                                  requestId: request._id as never,
+                                  category: disputeCategory as never,
+                                  description: disputeDescription.trim(),
+                                });
+                                toast.success("Problème signalé — GTEC va instruire le dossier");
+                                setDisputeDescription("");
+                              } catch (e) {
+                                toast.error(e instanceof Error ? e.message : "Erreur");
+                              } finally {
+                                setBusy(false);
+                              }
+                            }}
+                          >
+                            <ShieldAlert className="mr-1.5 size-4" />
+                            Signaler un problème
+                          </Button>
+                        </>
+                      )}
+                    </>
+                  )}
+                </CardContent>
+              </Card>
             )}
 
             {/* Photos client */}

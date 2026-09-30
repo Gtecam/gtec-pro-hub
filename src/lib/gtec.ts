@@ -684,13 +684,13 @@ export const BANK_DETAILS = {
 // ---------- abonnements techniciens (paiement Mobile Money vérifié) ----------
 
 /**
- * Formules d'abonnement technicien (cahier des charges §14) :
- * mensuel 2 500 · trimestriel 9 000 · annuel modifiable par l'administration.
+ * Formules d'abonnement technicien (cahier des charges 2.0 §26) :
+ * mensuel 6 000 · trimestriel 20 000 · annuel 55 000 FCFA.
  */
 export const SUBSCRIPTION_PLANS = [
-  { key: "mensuel", label: "Mensuel", price: 2500, days: 30, hint: "1 mois" },
-  { key: "trimestriel", label: "Trimestriel", price: 9000, days: 90, hint: "3 mois" },
-  { key: "annuel", label: "Annuel", price: 30000, days: 365, hint: "12 mois · tarif à confirmer par l'administration" },
+  { key: "mensuel", label: "Mensuel", price: 6000, days: 30, hint: "1 mois" },
+  { key: "trimestriel", label: "Trimestriel", price: 20000, days: 90, hint: "3 mois" },
+  { key: "annuel", label: "Annuel", price: 55000, days: 365, hint: "12 mois · 2 mois offerts" },
 ] as const;
 
 export type SubscriptionPlanKey = (typeof SUBSCRIPTION_PLANS)[number]["key"];
@@ -698,16 +698,18 @@ export type SubscriptionPlanKey = (typeof SUBSCRIPTION_PLANS)[number]["key"];
 // ---------- rémunération techniciens (règles GTEC V1) ----------
 
 /**
- * Commission GTEC obligatoire : 15 % de chaque intervention (cahier des
- * charges §10). Base = montant total de l'intervention (TTC du devis).
- * Le reste (85 %) revient à l'équipe selon la répartition ci-dessous.
+ * Commission GTEC : 10 % de chaque mission obtenue via GTEC PRO (cahier des
+ * charges 2.0 §22). Base = montant total de l'intervention (TTC du devis).
+ * Le reste (90 %) revient à l'équipe selon la répartition ci-dessous.
  */
-export const GTEC_COMMISSION_PERCENT = 15;
+export const GTEC_COMMISSION_PERCENT = 10;
 export const TEAM_SHARE_PERCENT = 100 - GTEC_COMMISSION_PERCENT;
+/** Délai de régularisation d'une dette de commission (§24) : 7 jours. */
+export const COMMISSION_DEBT_DAYS = 7;
 export const LEADER_WEIGHT = 1.5;
 export const MEMBER_WEIGHT = 1;
 
-/** Commission GTEC due sur une intervention (15 % du montant TTC). */
+/** Commission GTEC due sur une intervention (10 % du montant TTC, §22). */
 export function commissionFor(quoteTotal: number): number {
   return Math.round((quoteTotal * GTEC_COMMISSION_PERCENT) / 100);
 }

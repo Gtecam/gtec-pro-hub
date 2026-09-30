@@ -1,8 +1,11 @@
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { v } from "convex/values";
+import { ADMIN_ROLES } from "./schema";
 import { internalMutation, internalQuery, mutation, query } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import {
+  COMMISSION_DEBT_DAYS,
+  GTEC_COMMISSION_PERCENT,
   commissionFor,
   payoutFor,
   splitFiftyFifty,
@@ -14,7 +17,9 @@ import {
 
 /**
  * Normalise un numéro camerounais validé en E.164 (+237XXXXXXXX).
- * Lève une erreur explicite si le numéro n'est pas un mobile camerounais.
+ * Lève une erreur explicite si le numéro n'est pas un mobile camerounais./**
+ * À l'affectation d'une équipe, la commission générée au paiement est
+ * réattribuée au chef d'équipe (redevable de la régularisation pour sa team).
  */
 function cmE164(raw: string): string {
   const local = toCmLocal(raw);
@@ -42,6 +47,57 @@ async function requireAdmin(ctx: any): Promise<Doc<"users">> {
     throw new Error("Accès réservé à l'administration GTEC.");
   }
   return user;
+}
+
+/**
+ * GTEC PRO 2.0 (§3) : garde admin avec périmètre. Un Super Admin passe tous
+ * les périmètres ; les autres comptes admin n'accèdent qu'à leur rôle :
+ * kyc, finance, missions, support, litiges, moderation, technique.
+ * Sans scope exigé, tout admin actif passe (fonctions transverses)./**
+ * À l'affectation d'une équipe, la commission générée au paiement est
+ * réattribuée au chef d'équipe (redevable de la régularisation pour sa team).
+ */
+async function requireAdminScope(
+  ctx: any,
+  ...scopes: (typeof ADMIN_ROLES)[number][]
+): Promise<Doc<"users">> {
+  const admin = await requireAdmin(ctx);
+  if (!scopes.length || admin.adminRole === "super_admin" || admin.adminRole === undefined) {
+    return admin;
+  }
+  if (!scopes.includes(admin.adminRole as (typeof ADMIN_ROLES)[number])) {
+    throw new Error(
+      `Action réservée au périmètre : ${scopes.join(" / ")}. Votre rôle : ${admin.adminRole}.`,
+    );
+  }
+  return admin;
+}
+
+/** Journal d'audit (§44) : trace une action sensible avec ancienne/nouvelle valeur. */
+async function auditLog(
+  ctx: any,
+  opts: {
+    actorId?: Id<"users">;
+    actorRole?: string;
+    action: string;
+    targetTable?: string;
+    targetId?: string;
+    oldValue?: string;
+    newValue?: string;
+    detail?: string;
+  },
+) {
+  await ctx.db.insert("auditLogs", {
+    actorId: opts.actorId,
+    actorRole: opts.actorRole,
+    action: opts.action,
+    targetTable: opts.targetTable,
+    targetId: opts.targetId,
+    oldValue: opts.oldValue,
+    newValue: opts.newValue,
+    detail: opts.detail,
+    at: Date.now(),
+  });
 }
 
 async function addEvent(
@@ -137,7 +193,9 @@ function quoteTotals(items: { qty: number; unitPrice: number }[]) {
 /**
  * Empreinte déterministe d'un document (djb2 sur début/milieu/fin du data
  * URL). Sert à détecter la réutilisation d'une même pièce d'identité ou d'un
- * même diplôme par plusieurs candidats — sans dépendre de node:crypto.
+ * même diplôme par plusieurs candidats — sans dépendre de node:crypto./**
+ * À l'affectation d'une équipe, la commission générée au paiement est
+ * réattribuée au chef d'équipe (redevable de la régularisation pour sa team).
  */
 function docFingerprint(url: string): string {
   const mid = Math.floor(url.length / 2);
@@ -167,7 +225,9 @@ function normalizeNationalId(s: string): string {
 
 /**
  * Type d'espace choisi à l'inscription : "client" ou "technicien".
- * Irreversible côté client — l'admin peut toujours créer des comptes dédiés.
+ * Irreversible côté client — l'admin peut toujours créer des comptes dédiés./**
+ * À l'affectation d'une équipe, la commission générée au paiement est
+ * réattribuée au chef d'équipe (redevable de la régularisation pour sa team).
  */
 export const setAccountType = mutation({
   args: {
@@ -213,7 +273,9 @@ export const updateClientProfile = mutation({
 
 /**
  * Identité complète du client — prénom, nom, pièce d'identité, contacts,
- * adresse détaillée, type de client (particulier/entreprise) et photo de CNI.
+ * adresse détaillée, type de client (particulier/entreprise) et photo de CNI./**
+ * À l'affectation d'une équipe, la commission générée au paiement est
+ * réattribuée au chef d'équipe (redevable de la régularisation pour sa team).
  */
 export const updateClientIdentity = mutation({
   args: {
@@ -559,7 +621,9 @@ export const getRequestDetail = query({
 /**
  * V6 : le technicien établit le devis SUR LE TERRAIN après validation du
  * client. Dès qu'il l'envoie, GTEC le valide automatiquement (plus de
- * QuoteBuilder admin manuel) : le devis part immédiatement au client.
+ * QuoteBuilder admin manuel) : le devis part immédiatement au client./**
+ * À l'affectation d'une équipe, la commission générée au paiement est
+ * réattribuée au chef d'équipe (redevable de la régularisation pour sa team).
  */
 export const submitFieldQuote = mutation({
   args: {
@@ -606,6 +670,8 @@ export const submitFieldQuote = mutation({
       .query("quotes")
       .withIndex("by_request", (q) => q.eq("requestId", args.requestId))
       .collect();
+    // GTEC PRO 2.0 (§18) : toute modification crée une NOUVELLE VERSION —
+    // l'ancien devis est marqué remplacé (et expire), jamais écrasé.
     for (const q of previous) {
       if (q.status === "emis") await ctx.db.patch(q._id, { status: "expire" });
     }
@@ -613,6 +679,8 @@ export const submitFieldQuote = mutation({
     if (total <= 0) throw new Error("Le montant du devis doit être positif.");
     const number = await nextRef(ctx, "quotes", "DEV");
     const validUntil = Date.now() + (args.validDays ?? 7) * 24 * 3600 * 1000;
+    const lastQuote = previous.slice(-1)[0];
+    const version = (lastQuote?.version ?? 0) + 1;
     await ctx.db.insert("quotes", {
       requestId: args.requestId,
       clientId: request.clientId,
@@ -628,13 +696,26 @@ export const submitFieldQuote = mutation({
       authorRole,
       // Validation automatique GTEC dès l'envoi du devis terrain.
       autoValidatedAt: Date.now(),
+      version,
+      ...(lastQuote ? { revisedFromId: lastQuote._id } : {}),
     });
     await ctx.db.patch(args.requestId, { status: "devis_emis" });
+    await auditLog(ctx, {
+      actorId: user._id,
+      actorRole: authorRole === "admin" ? "admin" : "technicien",
+      action: "quote.revised",
+      targetTable: "quotes",
+      targetId: args.requestId,
+      oldValue: lastQuote ? `${lastQuote.number} V${lastQuote.version ?? 1} · ${lastQuote.total.toLocaleString("fr-FR")} FCFA` : undefined,
+      newValue: `${number} V${version} · ${total.toLocaleString("fr-FR")} FCFA`,
+    });
     await addEvent(
       ctx,
       args.requestId,
       "devis",
-      `Devis ${number} émis sur le terrain`,
+      version > 1
+        ? `Devis ${number} — version ${version} émise (remplace ${lastQuote.number})`
+        : `Devis ${number} émis sur le terrain`,
       `Total ${total.toLocaleString("fr-FR")} FCFA · validé automatiquement par GTEC`,
     );
     await notify(
@@ -839,7 +920,9 @@ export const txByProviderRef = internalQuery({
 
 /**
  * V6 : paiement en 2 tranches — le client règle 50 % AVANT le début des
- * travaux puis 50 % à la fin. `milestone` vaut "avance" ou "solde".
+ * travaux puis 50 % à la fin. `milestone` vaut "avance" ou "solde"./**
+ * À l'affectation d'une équipe, la commission générée au paiement est
+ * réattribuée au chef d'équipe (redevable de la régularisation pour sa team).
  */
 export const initiatePayment = mutation({
   args: {
@@ -956,7 +1039,9 @@ export const initiatePayment = mutation({
 /**
  * Encaissement cash par un technicien : il enregistre la collecte avec preuve
  * photo. V6 : il collecte soit l'avance (50 % avant travaux), soit le solde
- * (50 % à la fin). Crée le paiement en attente de validation admin.
+ * (50 % à la fin). Crée le paiement en attente de validation admin./**
+ * À l'affectation d'une équipe, la commission générée au paiement est
+ * réattribuée au chef d'équipe (redevable de la régularisation pour sa team).
  */
 export const technicianCollectCash = mutation({
   args: {
@@ -1040,7 +1125,9 @@ export const technicianCollectCash = mutation({
 /**
  * V6 : applique la validation d'une tranche de paiement. Factorisé pour
  * l'admin, le webhook MoMo et le flux automatique — crée la commission GTEC
- * détaillée 85/15 uniquement sur l'avance (1ʳᵉ tranche encaissée).
+ * détaillée 85/15 uniquement sur l'avance (1ʳᵉ tranche encaissée)./**
+ * À l'affectation d'une équipe, la commission générée au paiement est
+ * réattribuée au chef d'équipe (redevable de la régularisation pour sa team).
  */
 export async function settleMilestone(
   ctx: any,
@@ -1070,9 +1157,13 @@ export async function settleMilestone(
       `Avance 50 % validée (${payment.amount.toLocaleString("fr-FR")} FCFA)`,
       "L'équipe va être affectée — travaux autorisés",
     );
-    // ---- Répartition détaillée 85/15 (commission à la charge du technicien)
+    // ---- Répartition détaillée 90/10 (commission 2.0 §22 : 10 %)
+    // §24 : pour un paiement EN ESPÈCES, le client a remis la totalité au
+    // prestataire — GTEC ne peut pas prélever sur un wallet vide. La commission
+    // devient une DETTE DE COMMISSION à régulariser sous un délai de 7 jours.
     const commissionAmount = commissionFor(payment.amount * 2);
     const teamAmount = payment.amount * 2 - commissionAmount;
+    const isCash = payment.method === "especes";
     const existingCommissions = await ctx.db
       .query("gtecCommissions")
       .withIndex("by_request", (q: any) => q.eq("requestId", payment.requestId))
@@ -1085,18 +1176,34 @@ export async function settleMilestone(
         // d'équipe lors de l'affectation de la mission.
         techUserId: payment.collectedBy ?? opts.adminId ?? request.clientId,
         baseAmount: payment.amount * 2,
-        ratePercent: 15,
+        ratePercent: GTEC_COMMISSION_PERCENT,
         amount: commissionAmount,
         currency: payment.currency,
         status: "due",
         breakdown: { teamAmount, gtecAmount: commissionAmount },
+        ...(isCash
+          ? {
+              commissionDebt: {
+                deadlineAt: Date.now() + COMMISSION_DEBT_DAYS * 24 * 3600 * 1000,
+              },
+            }
+          : {}),
       });
       await addEvent(
         ctx,
         payment.requestId,
         "paiement",
-        `Répartition 85/15 : équipe ${teamAmount.toLocaleString("fr-FR")} FCFA · GTEC ${commissionAmount.toLocaleString("fr-FR")} FCFA (15 %)`,
+        `Répartition 90/10 : équipe ${teamAmount.toLocaleString("fr-FR")} FCFA · GTEC ${commissionAmount.toLocaleString("fr-FR")} FCFA (10 %)${isCash ? " · paiement en espèces = dette de commission à régulariser" : ""}`,
       );
+      if (isCash) {
+        await notifyAdmins(
+          ctx,
+          "paiement",
+          "Dette de commission (paiement cash)",
+          `Commission de ${commissionAmount.toLocaleString("fr-FR")} FCFA à régulariser par le prestataire sous ${COMMISSION_DEBT_DAYS} jours (paiement en espèces).`,
+          payment.requestId,
+        );
+      }
     }
     await notify(
       ctx,
@@ -1267,8 +1374,8 @@ export const adminAssignCrew = mutation({
         ctx,
         args.teamLeaderId,
         "general",
-        "Commission GTEC 15 % à régler",
-        `Vous êtes chef d'équipe. La part GTEC de la mission est de ${commission.amount.toLocaleString("fr-FR")} FCFA (15 % de ${commission.baseAmount.toLocaleString("fr-FR")} FCFA) — réglez-la depuis votre espace.`,
+        "Commission GTEC 10 % à régler",
+        `Vous êtes chef d'équipe. La part GTEC de la mission est de ${commission.amount.toLocaleString("fr-FR")} FCFA (10 % de ${commission.baseAmount.toLocaleString("fr-FR")} FCFA) — réglez-la depuis votre espace.`,
         args.requestId,
       );
     }
@@ -1296,7 +1403,9 @@ export const adminAssignCrew = mutation({
 
 /**
  * V6 : suggestion d'équipe serveur (moteur géo). Retourne leader + membres
- * (≥ 2 personnes) proches de la ville du chantier + le motif du choix.
+ * (≥ 2 personnes) proches de la ville du chantier + le motif du choix./**
+ * À l'affectation d'une équipe, la commission générée au paiement est
+ * réattribuée au chef d'équipe (redevable de la régularisation pour sa team).
  */
 export const suggestTeamForRequest = query({
   args: { requestId: v.id("serviceRequests") },
@@ -1304,10 +1413,23 @@ export const suggestTeamForRequest = query({
     await requireAdmin(ctx);
     const request = await ctx.db.get(args.requestId);
     if (!request) return null;
-    const members = await ctx.db
-      .query("users")
-      .filter((q) => q.eq(q.field("role"), "member"))
-      .collect();
+    // §12 : les techniciens indisponibles (hors ligne, congé, occupé,
+    // en intervention, indisponible) ne sont jamais proposés.
+    const AVAILABLE_STATUSES = [undefined, "disponible"];
+    const members = (
+      await ctx.db
+        .query("users")
+        .filter((q) => q.eq(q.field("role"), "member"))
+        .collect()
+    ).filter(async (t) => {
+      const p = (
+        await ctx.db
+          .query("technicianProfiles")
+          .withIndex("by_user", (q) => q.eq("userId", t._id))
+          .collect()
+      )[0];
+      return AVAILABLE_STATUSES.includes(p?.availability as never);
+    });
     const enriched = await Promise.all(
       members.map(async (t) => {
         const profile = (
@@ -1342,6 +1464,7 @@ export const suggestTeamForRequest = query({
           missionCount,
           active: profile ? subscriptionActive(profile) : true,
           verified: profile?.status === "verifie" || !profile,
+          availability: profile?.availability ?? "disponible",
           gps: profile?.lastLocation
             ? { lat: profile.lastLocation.lat, lon: profile.lastLocation.lon }
             : undefined,
@@ -1382,7 +1505,9 @@ export const adminStartIntervention = mutation({
 
 /**
  * Taille approximative d'un tableau de data URLs (octets binaires).
- * Utilisé par les gardes de taille serveur (limite Convex ~1 Mio/valeur).
+ * Utilisé par les gardes de taille serveur (limite Convex ~1 Mio/valeur)./**
+ * À l'affectation d'une équipe, la commission générée au paiement est
+ * réattribuée au chef d'équipe (redevable de la régularisation pour sa team).
  */
 function dataUrlsBytes(urls: string[]): number {
   return urls.reduce(
@@ -1457,7 +1582,9 @@ export const adminSubmitReport = mutation({
 /**
  * Enregistre la position GPS du technicien connecté (bouton « Partager ma
  * position » ou suivi temps réel côté app). Aucune géolocalisation de fond :
- * le technicien garde la main sur l'activation et la désactivation.
+ * le technicien garde la main sur l'activation et la désactivation./**
+ * À l'affectation d'une équipe, la commission générée au paiement est
+ * réattribuée au chef d'équipe (redevable de la régularisation pour sa team).
  */
 export const updateTechnicianLocation = mutation({
   args: {
@@ -1541,7 +1668,9 @@ export const myTechnicianProfile = query({
 
 /**
  * Candidature technicien complète : identité, profession, parcours académique
- * et documents justificatifs OBLIGATOIRES (CNI + diplôme/certificat).
+ * et documents justificatifs OBLIGATOIRES (CNI + diplôme/certificat)./**
+ * À l'affectation d'une équipe, la commission générée au paiement est
+ * réattribuée au chef d'équipe (redevable de la régularisation pour sa team).
  */
 export const submitTechnicianApplication = mutation({
   args: {
@@ -1748,14 +1877,16 @@ export const submitTechnicianApplication = mutation({
 });
 
 const SUBSCRIPTION_PRICES: Record<string, number> = {
-  mensuel: 2500,
-  trimestriel: 9000,
-  annuel: 30000,
+  mensuel: 6000, // cahier des charges 2.0 §26
+  trimestriel: 20000,
+  annuel: 55000,
 };
 
 /**
  * Abonnement actif ? (non expiré). Un technicien sans abonnement actif
- * n'apparaît pas dans les suggestions d'affectation.
+ * n'apparaît pas dans les suggestions d'affectation./**
+ * À l'affectation d'une équipe, la commission générée au paiement est
+ * réattribuée au chef d'équipe (redevable de la régularisation pour sa team).
  */
 function subscriptionActive(profile: Doc<"technicianProfiles"> | null): boolean {
   return (
@@ -1915,7 +2046,9 @@ export const adminRejectSubscriptionPayment = mutation({
 
 /**
  * Techniciens affectables : vérifiés ET abonnement actif. Utilisé par le
- * moteur d'affectation — remplace la liste brute des "member".
+ * moteur d'affectation — remplace la liste brute des "member"./**
+ * À l'affectation d'une équipe, la commission générée au paiement est
+ * réattribuée au chef d'équipe (redevable de la régularisation pour sa team).
  */
 export const adminListAssignableTechnicians = query({
   args: {},
@@ -1944,6 +2077,7 @@ export const adminListAssignableTechnicians = query({
           subscriptionUntil: profile?.subscriptionUntil,
           active: profile ? active : true,
           verified: profile?.status === "verifie" || !profile,
+          availability: profile?.availability ?? "disponible",
           gps: profile?.lastLocation
             ? { lat: profile.lastLocation.lat, lon: profile.lastLocation.lon }
             : undefined,
@@ -2055,7 +2189,9 @@ export const adminReviewTechnician = mutation({
 
 /**
  * V6 : demandes à chiffrer sur le terrain — le technicien vérifié établit le
- * devis après la visite. Statuts « nouvelle » ou « devis_emis » seulement.
+ * devis après la visite. Statuts « nouvelle » ou « devis_emis » seulement./**
+ * À l'affectation d'une équipe, la commission générée au paiement est
+ * réattribuée au chef d'équipe (redevable de la régularisation pour sa team).
  */
 export const listQuoteableRequests = query({
   args: {},
@@ -2283,7 +2419,9 @@ export const adminListApplications = query({
 /**
  * V6 : porte de réception — le PV ne peut être signé que si l'avance (50 %)
  * ET le solde (50 %) sont encaissés. Tolérance legacy : une demande payée en
- * une seule fois (avant le passage au 50/50) reste réceptionnable.
+ * une seule fois (avant le passage au 50/50) reste réceptionnable./**
+ * À l'affectation d'une équipe, la commission générée au paiement est
+ * réattribuée au chef d'équipe (redevable de la régularisation pour sa team).
  */
 export async function assertReceptionPaymentsAllowed(
   ctx: any,
@@ -2487,7 +2625,7 @@ export const adminListClients = query({
   },
 });
 
-// ===================== Commission GTEC 15 % (§10 cahier des charges) =====================
+// ===================== Commission GTEC 10 % (§22 cahier des charges 2.0) =====================
 
 /**
  * À l'affectation d'une équipe, la commission générée au paiement est
@@ -2527,7 +2665,9 @@ export const adminCommissionStats = query({
 
 /**
  * Commissions du technicien connecté : dues, payées, solde à régulariser.
- * Un solde non nul peut suspendre l'accès aux nouvelles missions.
+ * Un solde non nul peut suspendre l'accès aux nouvelles missions./**
+ * À l'affectation d'une équipe, la commission générée au paiement est
+ * réattribuée au chef d'équipe (redevable de la régularisation pour sa team).
  */
 export const myCommissions = query({
   args: {},
@@ -2539,18 +2679,27 @@ export const myCommissions = query({
       .collect();
     const due = all.filter((c) => c.status === "due");
     const paid = all.filter((c) => c.status === "payee");
+    // §24 : état de la dette de commission la plus urgente (bandeau UI).
+    const nextDeadline = due
+      .map((c) => c.commissionDebt?.deadlineAt)
+      .filter((d): d is number => !!d)
+      .sort((a, b) => a - b)[0];
     return {
       items: all.sort((a, b) => b._creationTime - a._creationTime),
       dueTotal: due.reduce((s, c) => s + c.amount, 0),
       dueCount: due.length,
       paidTotal: paid.reduce((s, c) => s + c.amount, 0),
+      debtDeadline: nextDeadline,
+      debtOverdue: nextDeadline !== undefined && nextDeadline < Date.now(),
     };
   },
 });
 
 /**
  * Déclaration de paiement d'une commission par le technicien : Mobile Money
- * vers les numéros officiels GTEC, ou virement. En attente de validation.
+ * vers les numéros officiels GTEC, ou virement. En attente de validation./**
+ * À l'affectation d'une équipe, la commission générée au paiement est
+ * réattribuée au chef d'équipe (redevable de la régularisation pour sa team).
  */
 export const payCommission = mutation({
   args: {
@@ -2559,6 +2708,7 @@ export const payCommission = mutation({
       v.literal("mtn_momo"),
       v.literal("orange_money"),
       v.literal("virement"),
+      v.literal("especes"),
     ),
     payerPhone: v.string(),
     externalRef: v.optional(v.string()),
@@ -2576,8 +2726,9 @@ export const payCommission = mutation({
     if (!args.payerPhone.trim()) {
       throw new Error("Indiquez le numéro payeur.");
     }
+    // §24 : la dette de commission n'est soldée qu'après vérification GTEC —
+    // le statut reste "due", le règlement déclaré est conservé pour audit.
     await ctx.db.patch(args.commissionId, {
-      status: "payee",
       method: args.method,
       payerPhone: args.payerPhone.trim(),
       externalRef:
@@ -2585,6 +2736,13 @@ export const payCommission = mutation({
         `COM-${Date.now().toString(36).toUpperCase()}`,
       paidAt: Date.now(),
     });
+    await addEvent(
+      ctx,
+      commission.requestId,
+      "paiement",
+      `Règlement de commission déclaré (${commission.amount.toLocaleString("fr-FR")} FCFA)`,
+      "En attente de validation GTEC",
+    );
     await notify(
       ctx,
       user._id,
@@ -2593,14 +2751,21 @@ export const payCommission = mutation({
       `Règlement de ${commission.amount.toLocaleString("fr-FR")} FCFA déclaré — en attente de validation GTEC.`,
       commission.requestId,
     );
+    await notifyAdmins(
+      ctx,
+      "paiement",
+      "Commission déclarée — à valider",
+      `${user.name ?? "Un technicien"} déclare avoir réglé ${commission.amount.toLocaleString("fr-FR")} FCFA (${args.method}).`,
+      commission.requestId,
+    );
   },
 });
 
-/** Validation par l'administration du règlement d'une commission. */
+/** Validation par l'administration du règlement d'une commission (§24). */
 export const adminValidateCommission = mutation({
   args: { commissionId: v.id("gtecCommissions") },
   handler: async (ctx, args) => {
-    const admin = await requireAdmin(ctx);
+    const admin = await requireAdminScope(ctx, "finance", "super_admin");
     const commission = await ctx.db.get(args.commissionId);
     if (!commission) throw new Error("Commission introuvable.");
     if (commission.status !== "due") {
@@ -2611,12 +2776,22 @@ export const adminValidateCommission = mutation({
       paidAt: commission.paidAt ?? Date.now(),
       validatedBy: admin._id,
     });
+    await auditLog(ctx, {
+      actorId: admin._id,
+      actorRole: `admin:${admin.adminRole ?? "super_admin"}`,
+      action: "commission.validated",
+      targetTable: "gtecCommissions",
+      targetId: args.commissionId,
+      oldValue: "due",
+      newValue: "payee",
+      detail: `${commission.amount.toLocaleString("fr-FR")} FCFA régularisés (dette de commission soldée).`,
+    });
     await notify(
       ctx,
       commission.techUserId,
       "general",
       "Commission validée",
-      `${commission.amount.toLocaleString("fr-FR")} FCFA régularisés. Merci !`,
+      `${commission.amount.toLocaleString("fr-FR")} FCFA régularisés. Votre compte est à nouveau entièrement opérationnel.`,
       commission.requestId,
     );
   },
@@ -2624,7 +2799,9 @@ export const adminValidateCommission = mutation({
 
 /**
  * Exonération administrative (autorisation spéciale GTEC — §10 : toute
- * dérogation est tracée et validée par l'administration).
+ * dérogation est tracée et validée par l'administration)./**
+ * À l'affectation d'une équipe, la commission générée au paiement est
+ * réattribuée au chef d'équipe (redevable de la régularisation pour sa team).
  */
 export const adminWaiveCommission = mutation({
   args: { commissionId: v.id("gtecCommissions") },
@@ -2864,7 +3041,9 @@ export const myTechnicianReviews = query({
 
 /**
  * Derniers avis clients (public, pour la vitrine). Retourne prénom + initiale
- * du nom du client, la note et le commentaire.
+ * du nom du client, la note et le commentaire./**
+ * À l'affectation d'une équipe, la commission générée au paiement est
+ * réattribuée au chef d'équipe (redevable de la régularisation pour sa team).
  */
 export const listPublicReviews = query({
   args: {},
@@ -3503,7 +3682,9 @@ async function nextWithdrawalRef(ctx: any): Promise<string> {
 /**
  * Solde retirable d'un utilisateur.
  *  - technicien : rémunérations "payé" − retraits
- *  - admin : commissions GTEC "payée" (15 % encaissées) − retraits
+ *  - admin : commissions GTEC "payée" (15 % encaissées) − retraits/**
+ * À l'affectation d'une équipe, la commission générée au paiement est
+ * réattribuée au chef d'équipe (redevable de la régularisation pour sa team).
  */
 export const myWallet = query({
   args: {},
@@ -3550,7 +3731,9 @@ export const adminListWithdrawals = query({
 
 /**
  * Demande de retrait — disponible pour les techniciens (sur leurs gains) ET
- * pour l'administration (sur les commissions GTEC encaissées).
+ * pour l'administration (sur les commissions GTEC encaissées)./**
+ * À l'affectation d'une équipe, la commission générée au paiement est
+ * réattribuée au chef d'équipe (redevable de la régularisation pour sa team).
  */
 export const requestWithdrawal = mutation({
   args: {
@@ -3590,6 +3773,22 @@ export const requestWithdrawal = mutation({
       throw new Error(
         `Solde insuffisant : disponible ${wallet.available.toLocaleString("fr-FR")} FCFA.`,
       );
+    }
+    // §24 : retraits bloqués tant qu'une dette de commission est ouverte.
+    if (!isAdmin) {
+      const openDebt = (
+        await ctx.db
+          .query("gtecCommissions")
+          .withIndex("by_tech", (q: any) =>
+            q.eq("techUserId", user._id).eq("status", "due"),
+          )
+          .collect()
+      ).reduce((s: number, c: any) => s + c.amount, 0);
+      if (openDebt > 0) {
+        throw new Error(
+          `Retrait bloqué : dette de commission à régulariser (${openDebt.toLocaleString("fr-FR")} FCFA). Réglez votre commission GTEC depuis votre espace.`,
+        );
+      }
     }
     const reference = await nextWithdrawalRef(ctx);
     const id = await ctx.db.insert("withdrawals", {
@@ -3706,5 +3905,580 @@ export const adminProcessWithdrawal = mutation({
       `Retrait ${w.reference} approuvé`,
       "Votre demande est validée — le transfert sera effectué par l'administration.",
     );
+  },
+});
+
+// ========================================================================
+// GTEC PRO 2.0 — litiges (§36), sanctions (§37), audit (§44),
+// disponibilité (§12), score prestataire (§38), rôles admin (§3)
+// ========================================================================
+
+// ------------------------ Litiges (§36) ------------------------
+
+const DISPUTE_CATEGORY_LABELS: Record<string, string> = {
+  travaux_non_conformes: "Travaux non conformes",
+  retard: "Retard",
+  paiement: "Paiement",
+  comportement: "Comportement",
+  materiel: "Matériel",
+  devis: "Devis",
+  contrat: "Contrat",
+  autre: "Autre",
+};
+
+/** Litiges visibles par l'utilisateur connecté sur une mission donnée. */
+export const listRequestDisputes = query({
+  args: { requestId: v.id("serviceRequests") },
+  handler: async (ctx, args) => {
+    const user = await requireUser(ctx);
+    const request = await ctx.db.get(args.requestId);
+    if (!request) throw new Error("Demande introuvable.");
+    const assignment = (
+      await ctx.db
+        .query("assignments")
+        .withIndex("by_request", (q) => q.eq("requestId", args.requestId))
+        .collect()
+    ).slice(-1)[0];
+    const isTeamMember = assignment?.members.some((m) => m.id === user._id);
+    if (request.clientId !== user._id && user.role !== "admin" && !isTeamMember) {
+      throw new Error("Action non autorisée.");
+    }
+    const disputes = await ctx.db
+      .query("disputes")
+      .withIndex("by_request", (q) => q.eq("requestId", args.requestId))
+      .collect();
+    return await Promise.all(
+      disputes.sort((a, b) => b._creationTime - a._creationTime).map(async (d) => {
+        const openedBy = await ctx.db.get(d.openedById);
+        const resolver = d.resolvedById ? await ctx.db.get(d.resolvedById) : null;
+        return {
+          dispute: d,
+          openedByName: openedBy?.name ?? "Utilisateur",
+          resolvedByName: resolver?.name,
+        };
+      }),
+    );
+  },
+});
+
+/** File admin de tous les litiges (console). */
+export const adminListDisputes = query({
+  args: {},
+  handler: async (ctx) => {
+    await requireAdminScope(ctx, "litiges", "support", "super_admin");
+    const disputes = await ctx.db.query("disputes").order("desc").collect();
+    return await Promise.all(
+      disputes.map(async (d) => {
+        const request = await ctx.db.get(d.requestId);
+        const openedBy = await ctx.db.get(d.openedById);
+        return { dispute: d, request, openedByName: openedBy?.name ?? "Utilisateur" };
+      }),
+    );
+  },
+});
+
+/**
+ * Ouvre un litige sur une mission (client ou technicien de l'équipe) —
+ * toujours motivé, tracé et notifié à l'administration.
+ */
+export const createDispute = mutation({
+  args: {
+    requestId: v.id("serviceRequests"),
+    category: v.union(
+      v.literal("travaux_non_conformes"),
+      v.literal("retard"),
+      v.literal("paiement"),
+      v.literal("comportement"),
+      v.literal("materiel"),
+      v.literal("devis"),
+      v.literal("contrat"),
+      v.literal("autre"),
+    ),
+    description: v.string(),
+    attachments: v.optional(v.array(v.string())),
+  },
+  handler: async (ctx, args) => {
+    const user = await requireUser(ctx);
+    const request = await ctx.db.get(args.requestId);
+    if (!request) throw new Error("Demande introuvable.");
+    const assignment = (
+      await ctx.db
+        .query("assignments")
+        .withIndex("by_request", (q) => q.eq("requestId", args.requestId))
+        .collect()
+    ).slice(-1)[0];
+    const isTeamMember = assignment?.members.some((m) => m.id === user._id);
+    if (request.clientId !== user._id && !isTeamMember) {
+      throw new Error("Seuls le client et les techniciens de la mission peuvent signaler un problème.");
+    }
+    if (args.description.trim().length < 10) {
+      throw new Error("Décrivez le problème (10 caractères minimum).");
+    }
+    if (args.attachments && dataUrlsBytes(args.attachments) > 900 * 1024) {
+      throw new Error("Pièces jointes trop volumineuses — elles sont compressées automatiquement, réessayez.");
+    }
+    const open = await ctx.db
+      .query("disputes")
+      .withIndex("by_request", (q) => q.eq("requestId", args.requestId))
+      .collect();
+    if (open.some((d) => d.status === "ouverte" || d.status === "en_cours")) {
+      throw new Error("Un litige est déjà ouvert sur cette mission.");
+    }
+    const id = await ctx.db.insert("disputes", {
+      requestId: args.requestId,
+      openedById: user._id,
+      category: args.category,
+      description: args.description.trim(),
+      attachments: args.attachments,
+      status: "ouverte",
+    });
+    await auditLog(ctx, {
+      actorId: user._id,
+      actorRole: user.role === "member" ? "technicien" : "client",
+      action: "dispute.opened",
+      targetTable: "disputes",
+      targetId: id,
+      newValue: DISPUTE_CATEGORY_LABELS[args.category] ?? args.category,
+      detail: `Mission ${request.reference} · ${args.description.trim().slice(0, 80)}`,
+    });
+    await addEvent(ctx, args.requestId, "litige", `Problème signalé (${DISPUTE_CATEGORY_LABELS[args.category] ?? args.category})`);
+    await notifyAdmins(
+      ctx,
+      "litige",
+      "Nouveau litige signalé",
+      `${user.name ?? "Un utilisateur"} signale : ${DISPUTE_CATEGORY_LABELS[args.category] ?? args.category} — ${request.reference}.`,
+      args.requestId,
+    );
+    if (request.clientId !== user._id) {
+      await notify(
+        ctx,
+        request.clientId,
+        "litige",
+        "Un problème a été signalé",
+        `${user.name ?? "Votre équipe"} a signalé un problème sur la mission ${request.reference}. L'administration GTEC va instruire le dossier.`,
+        args.requestId,
+      );
+    } else if (assignment) {
+      await notify(
+        ctx,
+        assignment.teamLeaderId,
+        "litige",
+        "Un problème a été signalé",
+        `Le client a signalé un problème sur la mission ${request.reference}. L'administration GTEC va instruire le dossier.`,
+        args.requestId,
+      );
+    }
+    return id;
+  },
+});
+
+/** Décision admin documentée sur un litige (instruction → résolution/rejet). */
+export const adminResolveDispute = mutation({
+  args: {
+    disputeId: v.id("disputes"),
+    decision: v.union(v.literal("resolue"), v.literal("rejetee"), v.literal("en_cours")),
+    decisionNote: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const admin = await requireAdminScope(ctx, "litiges", "support", "super_admin");
+    const dispute = await ctx.db.get(args.disputeId);
+    if (!dispute) throw new Error("Litige introuvable.");
+    if (dispute.status === "resolue" || dispute.status === "rejetee") {
+      throw new Error("Ce litige est déjà clôturé.");
+    }
+    if (args.decisionNote.trim().length < 10) {
+      throw new Error("La décision doit être documentée (10 caractères minimum).");
+    }
+    await ctx.db.patch(args.disputeId, {
+      status: args.decision,
+      decision: args.decisionNote.trim(),
+      resolvedById: args.decision === "en_cours" ? undefined : admin._id,
+      resolvedAt: args.decision === "en_cours" ? undefined : Date.now(),
+    });
+    const request = await ctx.db.get(dispute.requestId);
+    await auditLog(ctx, {
+      actorId: admin._id,
+      actorRole: `admin:${admin.adminRole ?? "super_admin"}`,
+      action: "dispute.resolved",
+      targetTable: "disputes",
+      targetId: args.disputeId,
+      oldValue: dispute.status,
+      newValue: args.decision,
+      detail: args.decisionNote.trim().slice(0, 120),
+    });
+    await addEvent(ctx, dispute.requestId, "litige", `Litige ${args.decision === "en_cours" ? "en instruction" : args.decision}`);
+    await notify(
+      ctx,
+      dispute.openedById,
+      "litige",
+      args.decision === "resolue" ? "Litige résolu" : args.decision === "rejetee" ? "Litige rejeté" : "Litige en cours d'instruction",
+      args.decisionNote.trim(),
+      dispute.requestId,
+    );
+    if (request && request.clientId !== dispute.openedById) {
+      await notify(
+        ctx,
+        request.clientId,
+        "litige",
+        "Mise à jour du litige",
+        `Décision GTEC : ${args.decision === "en_cours" ? "instruction en cours" : args.decision}. ${args.decisionNote.trim()}`,
+        dispute.requestId,
+      );
+    }
+  },
+});
+
+// ------------------------ Sanctions graduées (§37) ------------------------
+
+const SANCTION_LEVELS = [
+  { level: 1, label: "Avertissement" },
+  { level: 2, label: "Limitation" },
+  { level: 3, label: "Suspension temporaire" },
+  { level: 4, label: "Restriction financière" },
+  { level: 5, label: "Résiliation / bannissement" },
+];
+
+/** Vérifie l'état de blocage d'un compte (sanction active, auto-expirée si niveau 3). */
+export const mySanctions = query({
+  args: {},
+  handler: async (ctx) => {
+    const user = await requireUser(ctx);
+    const all = await ctx.db
+      .query("sanctions")
+      .withIndex("by_user", (q) => q.eq("userId", user._id))
+      .collect();
+    const now = Date.now();
+    // Suspension temporaire (niveau 3) : auto-expirée logiquement à l'échéance.
+    const active = all.filter(
+      (s) =>
+        s.status === "active" &&
+        !(s.level === 3 && s.until !== undefined && s.until < now),
+    );
+    const maxLevel = active.reduce((m, s) => Math.max(m, s.level), 0);
+    return {
+      items: all.sort((a, b) => b.issuedAt - a.issuedAt),
+      activeCount: active.length,
+      maxLevel,
+      isBanned: active.some((s) => s.level === 5),
+    };
+  },
+});
+
+/** File admin des sanctions (console). */
+export const adminListSanctions = query({
+  args: {},
+  handler: async (ctx) => {
+    await requireAdminScope(ctx, "litiges", "moderation", "super_admin");
+    const all = await ctx.db.query("sanctions").order("desc").collect();
+    return await Promise.all(
+      all.map(async (s) => {
+        const target = await ctx.db.get(s.userId);
+        const issuer = await ctx.db.get(s.issuedById);
+        return { sanction: s, targetName: target?.name ?? "Utilisateur", issuerName: issuer?.name ?? "Admin" };
+      }),
+    );
+  },
+});
+
+/** Émet une sanction graduée, motivée et notifiée (§37). */
+export const adminIssueSanction = mutation({
+  args: {
+    userId: v.id("users"),
+    level: v.number(),
+    reason: v.string(),
+    requestId: v.optional(v.id("serviceRequests")),
+    /** Niveau 3 uniquement : durée de suspension en jours. */
+    days: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const admin = await requireAdminScope(ctx, "litiges", "moderation", "super_admin");
+    if (args.level < 1 || args.level > 5) {
+      throw new Error("Niveau de sanction invalide (1 à 5).");
+    }
+    if (args.reason.trim().length < 10) {
+      throw new Error("La sanction doit être motivée (10 caractères minimum).");
+    }
+    const target = await ctx.db.get(args.userId);
+    if (!target) throw new Error("Utilisateur introuvable.");
+    if (target.role === "admin") {
+      throw new Error("Les sanctions s'appliquent aux comptes clients et techniciens.");
+    }
+    const id = await ctx.db.insert("sanctions", {
+      userId: args.userId,
+      level: args.level,
+      reason: args.reason.trim(),
+      requestId: args.requestId,
+      status: "active",
+      until:
+        args.level === 3
+          ? Date.now() + Math.max(1, args.days ?? 7) * 24 * 3600 * 1000
+          : undefined,
+      issuedById: admin._id,
+      issuedAt: Date.now(),
+    });
+    // Niveau 5 : résiliation — le compte perd son rôle d'accès.
+    if (args.level === 5 && target.role === "member") {
+      await ctx.db.patch(args.userId, { role: "user" });
+    }
+    const label = SANCTION_LEVELS[args.level - 1]?.label ?? `Niveau ${args.level}`;
+    await auditLog(ctx, {
+      actorId: admin._id,
+      actorRole: `admin:${admin.adminRole ?? "super_admin"}`,
+      action: "sanction.issued",
+      targetTable: "sanctions",
+      targetId: id,
+      newValue: `Niveau ${args.level} — ${label}`,
+      detail: args.reason.trim().slice(0, 120),
+    });
+    await notify(
+      ctx,
+      args.userId,
+      "sanction",
+      `Sanction : ${label}`,
+      `${args.reason.trim()} Vous pouvez contester cette décision auprès de l'administration GTEC.`,
+      args.requestId,
+    );
+    return id;
+  },
+});
+
+/** Levée de sanction (décision révisée) — tracée. */
+export const adminLiftSanction = mutation({
+  args: {
+    sanctionId: v.id("sanctions"),
+    note: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const admin = await requireAdminScope(ctx, "litiges", "moderation", "super_admin");
+    const s = await ctx.db.get(args.sanctionId);
+    if (!s) throw new Error("Sanction introuvable.");
+    if (s.status !== "active" && s.status !== "contested") {
+      throw new Error("Cette sanction est déjà levée.");
+    }
+    await ctx.db.patch(args.sanctionId, { status: "levee" });
+    const target = await ctx.db.get(s.userId);
+    // Réactivation du compte après un bannissement levé.
+    if (s.level === 5 && target && target.role === "user") {
+      await ctx.db.patch(s.userId, { role: "member" });
+    }
+    await auditLog(ctx, {
+      actorId: admin._id,
+      actorRole: `admin:${admin.adminRole ?? "super_admin"}`,
+      action: "sanction.lifted",
+      targetTable: "sanctions",
+      targetId: args.sanctionId,
+      oldValue: s.status,
+      newValue: "levee",
+      detail: args.note,
+    });
+    await notify(
+      ctx,
+      s.userId,
+      "sanction",
+      "Sanction levée",
+      args.note?.trim() || "La sanction qui vous concernait a été levée par l'administration.",
+      s.requestId,
+    );
+  },
+});
+
+/** Contestation d'une sanction par l'utilisateur concerné (droit de réponse §37). */
+export const contestSanction = mutation({
+  args: {
+    sanctionId: v.id("sanctions"),
+    reason: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const user = await requireUser(ctx);
+    const s = await ctx.db.get(args.sanctionId);
+    if (!s) throw new Error("Sanction introuvable.");
+    if (s.userId !== user._id) throw new Error("Action non autorisée.");
+    if (s.status !== "active") {
+      throw new Error("Seule une sanction active peut être contestée.");
+    }
+    if (args.reason.trim().length < 10) {
+      throw new Error("Expliquez votre contestation (10 caractères minimum).");
+    }
+    await ctx.db.patch(args.sanctionId, {
+      status: "contested",
+      contestReason: args.reason.trim(),
+      contestAt: Date.now(),
+    });
+    await auditLog(ctx, {
+      actorId: user._id,
+      actorRole: user.role === "member" ? "technicien" : "client",
+      action: "sanction.contested",
+      targetTable: "sanctions",
+      targetId: args.sanctionId,
+      detail: args.reason.trim().slice(0, 120),
+    });
+    await notifyAdmins(
+      ctx,
+      "sanction",
+      "Sanction contestée",
+      `${user.name ?? "Un utilisateur"} conteste une sanction de niveau ${s.level} : ${args.reason.trim().slice(0, 80)}`,
+      s.requestId,
+    );
+  },
+});
+
+// ------------------------ Journal d'audit (§44) ------------------------
+
+/** 200 dernières entrées du journal d'audit (console admin). */
+export const adminAuditLogs = query({
+  args: {},
+  handler: async (ctx) => {
+    await requireAdminScope(ctx, "super_admin", "technique", "finance", "litiges", "moderation", "kyc", "missions", "support");
+    return await ctx.db.query("auditLogs").order("desc").take(200);
+  },
+});
+
+// ------------------------ Disponibilité technicien (§12) ------------------------
+
+/** Met à jour la disponibilité déclarée du technicien connecté. */
+export const setAvailability = mutation({
+  args: {
+    availability: v.union(
+      v.literal("disponible"),
+      v.literal("occupe"),
+      v.literal("hors_ligne"),
+      v.literal("indisponible"),
+      v.literal("en_intervention"),
+      v.literal("conge"),
+    ),
+  },
+  handler: async (ctx, args) => {
+    const user = await requireUser(ctx);
+    const profile = (
+      await ctx.db
+        .query("technicianProfiles")
+        .withIndex("by_user", (q) => q.eq("userId", user._id))
+        .collect()
+    )[0];
+    if (!profile) throw new Error("Profil technicien introuvable.");
+    await ctx.db.patch(profile._id, { availability: args.availability });
+    return { ok: true };
+  },
+});
+
+// ------------------------ Rôles admin (§3) ------------------------
+
+/** Liste des comptes administrateurs et de leur périmètre. */
+export const adminListAdmins = query({
+  args: {},
+  handler: async (ctx) => {
+    await requireAdminScope(ctx, "super_admin");
+    const admins = await ctx.db
+      .query("users")
+      .filter((q) => q.eq(q.field("role"), "admin"))
+      .collect();
+    return admins.map((a) => ({
+      _id: a._id,
+      name: a.name,
+      phone: a.phone,
+      email: a.email,
+      adminRole: a.adminRole,
+    }));
+  },
+});
+
+/** Attribue le périmètre d'un compte admin (Super Admin seulement, §3). */
+export const adminSetAdminRole = mutation({
+  args: {
+    userId: v.id("users"),
+    adminRole: v.optional(
+      v.union(
+        v.literal("super_admin"),
+        v.literal("kyc"),
+        v.literal("finance"),
+        v.literal("missions"),
+        v.literal("support"),
+        v.literal("litiges"),
+        v.literal("moderation"),
+        v.literal("technique"),
+      ),
+    ),
+    /** Niveau d'accès admin : "admin" = compte admin, undefined = retire. */
+    makeAdmin: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args) => {
+    const superAdmin = await requireAdminScope(ctx, "super_admin");
+    const target = await ctx.db.get(args.userId);
+    if (!target) throw new Error("Utilisateur introuvable.");
+    if (target._id === superAdmin._id) {
+      throw new Error("Vous ne pouvez pas modifier votre propre périmètre.");
+    }
+    const willBeAdmin = args.makeAdmin ?? target.role === "admin";
+    await ctx.db.patch(args.userId, {
+      role: willBeAdmin ? "admin" : "user",
+      ...(willBeAdmin ? { adminRole: args.adminRole ?? "support" } : { adminRole: undefined }),
+    });
+    await auditLog(ctx, {
+      actorId: superAdmin._id,
+      actorRole: "admin:super_admin",
+      action: "admin.role.changed",
+      targetTable: "users",
+      targetId: args.userId,
+      oldValue: `${target.role}${target.adminRole ? `:${target.adminRole}` : ""}`,
+      newValue: willBeAdmin ? `admin:${args.adminRole ?? "support"}` : "user",
+      detail: `Compte : ${target.name ?? args.userId}`,
+    });
+    return { ok: true };
+  },
+});
+
+// ------------------------ Score prestataire (§38) ------------------------
+
+/**
+ * Score interne non manipulable (§38) : taux de réponse (missions menées à
+ * terme), taux d'annulation, satisfaction, ancienneté, missions réussies.
+ * Utilisé par le matching et affiché au technicien.
+ */
+export const myProviderScore = query({
+  args: {},
+  handler: async (ctx) => {
+    const user = await requireUser(ctx);
+    const reviews = await ctx.db
+      .query("reviews")
+      .withIndex("by_tech", (q) => q.eq("techUserId", user._id))
+      .collect();
+    const satisfaction = reviews.length
+      ? reviews.reduce((s, r) => s + r.rating, 0) / reviews.length
+      : 3;
+    const myAssignments = (
+      await ctx.db.query("assignments").collect()
+    ).filter((a) => a.members.some((m) => m.id === user._id));
+    const requestIds = new Set(myAssignments.map((a) => a.requestId));
+    const relatedRequests = (
+      await ctx.db.query("serviceRequests").collect()
+    ).filter((r) => requestIds.has(r._id));
+    const completed = relatedRequests.filter((r) => r.status === "terminee").length;
+    const cancelled = relatedRequests.filter((r) => r.status === "annulee").length;
+    const judged = completed + cancelled;
+    const completionRate = judged ? completed / judged : 1;
+    const cancellationRate = judged ? cancelled / judged : 0;
+    // Ancienneté : jours depuis le premier évènement du compte (plafonné à 2 ans).
+    const seniorityDays = Math.min(
+      730,
+      Math.max(0, (Date.now() - user._creationTime) / (24 * 3600 * 1000)),
+    );
+    const score =
+      Math.round(
+        satisfaction * 10 +
+          completionRate * 40 +
+          (1 - cancellationRate) * 10 +
+          (seniorityDays / 730) * 15 +
+          Math.min(completed, 50) * 0.5,
+      ) || 0;
+    return {
+      score: Math.max(0, Math.min(100, score)),
+      satisfaction: Math.round(satisfaction * 10) / 10,
+      reviewCount: reviews.length,
+      completed,
+      cancelled,
+      completionRate: Math.round(completionRate * 100),
+      cancellationRate: Math.round(cancellationRate * 100),
+      seniorityDays: Math.round(seniorityDays),
+    };
   },
 });

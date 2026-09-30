@@ -70,11 +70,24 @@ import { CITIES, fcfa, formatDate, formatDateTime, MAX_FILE_SIZE, MAX_FILE_SIZE_
 import { compressImageIfNeeded, dataUrlBytes, humanSize } from "@/lib/imageCompress";
 import { Navigate } from "react-router";
 
+// Prix officiels GTEC PRO 2.0 (§26) — alignés sur le backend (SUBSCRIPTION_PRICES).
 const PLANS = [
-  { key: "mensuel", label: "Mensuel", price: "5 000 FCFA", hint: "30 jours" },
-  { key: "trimestriel", label: "Trimestriel", price: "12 000 FCFA", hint: "90 jours · 20 % de réduction" },
-  { key: "annuel", label: "Annuel", price: "40 000 FCFA", hint: "365 jours · 33 % de réduction" },
+  { key: "mensuel", label: "Mensuel", price: "6 000 FCFA", hint: "30 jours" },
+  { key: "trimestriel", label: "Trimestriel", price: "20 000 FCFA", hint: "90 jours · 2 mois offerts sur l'année" },
+  { key: "annuel", label: "Annuel", price: "55 000 FCFA", hint: "365 jours · meilleur tarif" },
 ] as const;
+
+// Disponibilité technicien (§12 cahier des charges 2.0).
+const AVAILABILITY_OPTIONS = [
+  { key: "disponible", label: "Disponible" },
+  { key: "occupe", label: "Occupé" },
+  { key: "en_intervention", label: "En intervention" },
+  { key: "indisponible", label: "Indisponible" },
+  { key: "conge", label: "En congé" },
+  { key: "hors_ligne", label: "Hors ligne" },
+] as const;
+
+type AvailabilityKey = (typeof AVAILABILITY_OPTIONS)[number]["key"];
 
 function useTechnicianReportMutation() {
   return useMutation(api.gtec.technicianSubmitReport);
@@ -501,6 +514,10 @@ export default function TechnicianSpace() {
   const myWallet = useQuery(api.gtec.myWallet);
   const requestWithdrawal = useMutation(api.gtec.requestWithdrawal);
   const payCommission = useMutation(api.gtec.payCommission);
+  const setAvailability = useMutation(api.gtec.setAvailability);
+  const myScore = useQuery(api.gtec.myProviderScore);
+  const mySanctions = useQuery(api.gtec.mySanctions);
+  const contestSanction = useMutation(api.gtec.contestSanction);
   const myPayouts = useQuery(api.gtec.listMyPayouts);
   const myVisits = useQuery(api.gtec.listMyVisits);
   const myReviews = useQuery(api.gtec.myTechnicianReviews);
@@ -1171,6 +1188,106 @@ export default function TechnicianSpace() {
           </Card>
         ) : (
           /* ---------- Technicien vérifié : missions & abonnement ---------- */
+          <div className="flex flex-col gap-4">
+          {/* GTEC PRO 2.0 : sanctions actives (bandeau rouge) */}
+          {mySanctions && mySanctions.activeCount > 0 && (
+            <Card className="card-layered border-destructive/40 bg-destructive/[0.04]">
+              <CardContent className="flex flex-wrap items-center gap-4 py-4">
+                <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-destructive/10 text-destructive">
+                  <XCircle className="size-5" />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-semibold text-destructive">
+                    Sanction active — niveau {mySanctions.maxLevel}
+                  </p>
+                  <p className="truncate text-xs text-muted-foreground">
+                    Vos accès peuvent être limités (missions, retraits). Vous pouvez contester chaque décision.
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+          {/* GTEC PRO 2.0 §24 : dette de commission (paiement cash) */}
+          {myCommissions && myCommissions.dueTotal > 0 && (
+            <Card className={cn(
+              "card-layered",
+              myCommissions.debtOverdue
+                ? "border-destructive/40 bg-destructive/[0.04]"
+                : "border-amber-500/40 bg-amber-500/[0.04]",
+            )}>
+              <CardContent className="flex flex-wrap items-center gap-4 py-4">
+                <span className={cn(
+                  "flex size-10 shrink-0 items-center justify-center rounded-xl",
+                  myCommissions.debtOverdue
+                    ? "bg-destructive/10 text-destructive"
+                    : "bg-amber-500/10 text-amber-600 dark:text-amber-400",
+                )}>
+                  <Percent className="size-5" />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-semibold">
+                    Commission à régulariser : {fcfa(myCommissions.dueTotal)}
+                  </p>
+                  <p className="truncate text-xs text-muted-foreground">
+                    {myCommissions.debtDeadline
+                      ? myCommissions.debtOverdue
+                        ? `Échéance dépassée (${formatDate(myCommissions.debtDeadline)}) — retraits et nouvelles missions bloqués.`
+                        : `À régler avant le ${formatDate(myCommissions.debtDeadline)} — sinon retraits et nouvelles missions seront bloqués.`
+                      : "Régularisez depuis l'onglet Gains."}
+                  </p>
+                </div>
+                <Button size="sm" variant="outline" asChild>
+                  <a href="#tab-gains">Régler maintenant</a>
+                </Button>
+              </CardContent>
+            </Card>
+          )}
+          {/* GTEC PRO 2.0 : disponibilité (§12) + score prestataire (§38) */}
+          {profile && (
+            <Card className="card-layered">
+              <CardContent className="flex flex-wrap items-center gap-4 py-4">
+                <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+                  <Label className="text-xs text-muted-foreground">Ma disponibilité (moteur d'affectation)</Label>
+                  <Select
+                    value={(profile.availability ?? "disponible") as AvailabilityKey}
+                    onValueChange={(v) => {
+                      setAvailability({ availability: v as AvailabilityKey }).catch((e) =>
+                        toast.error(e instanceof Error ? e.message : "Erreur"),
+                      );
+                    }}
+                  >
+                    <SelectTrigger className="w-full sm:w-56">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {AVAILABILITY_OPTIONS.map((o) => (
+                        <SelectItem key={o.key} value={o.key}>
+                          {o.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">
+                    Les statuts autres que « Disponible » vous retirent des propositions de missions.
+                  </p>
+                </div>
+                {myScore && (
+                  <div className="flex items-center gap-3 rounded-xl border border-border/70 px-4 py-3">
+                    <span className="flex size-10 items-center justify-center rounded-full bg-primary/10 text-sm font-bold text-primary">
+                      {myScore.score}
+                    </span>
+                    <div>
+                      <p className="text-xs font-medium">Score prestataire</p>
+                      <p className="text-xs text-muted-foreground">
+                        {myScore.completed} mission(s) réussie(s) · {myScore.completionRate} % de réalisation
+                        {myScore.reviewCount > 0 ? ` · ${myScore.satisfaction}/5` : ""}
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
           <Tabs defaultValue="missions">
             <TabsList>
               <TabsTrigger value="missions">
@@ -1797,7 +1914,7 @@ export default function TechnicianSpace() {
                       <CardHeader className="pb-2">
                         <CardTitle className="flex items-center gap-2 text-sm">
                           <Percent className="size-4 text-primary" /> Commission
-                          GTEC 15 %
+                          GTEC 10 %
                           {myCommissions.dueTotal > 0 && (
                             <span className="ml-auto rounded-full bg-amber-500/10 px-2.5 py-1 text-xs font-semibold text-amber-700 ring-1 ring-inset ring-amber-500/20 dark:text-amber-400">
                               {fcfa(myCommissions.dueTotal)} à régler
@@ -1805,8 +1922,8 @@ export default function TechnicianSpace() {
                           )}
                         </CardTitle>
                         <CardDescription>
-                          85 % équipe / 15 % GTEC PRO — réglez la part GTEC
-                          depuis une mission terminée ou contactez
+                          90 % équipe / 10 % GTEC PRO (§22) — réglez la part
+                          GTEC depuis une mission terminée ou contactez
                           l'administration.
                         </CardDescription>
                       </CardHeader>
@@ -1880,14 +1997,14 @@ export default function TechnicianSpace() {
                       </Card>
                     ))}
                   </div>
-                  {/* Commission GTEC 15 % — détail & régularisation */}
+                  {/* Commission GTEC 10 % (§22-24 cahier des charges 2.0) — détail & régularisation */}
                   {myCommissions && myCommissions.items.length > 0 && (
                     <Card className="card-layered border-primary/20">
                       <CardHeader className="pb-2">
                         <CardTitle className="flex items-center justify-between gap-2 text-sm">
                           <span className="flex items-center gap-2">
                             <Percent className="size-4 text-primary" /> Commission
-                            GTEC 15 %
+                            GTEC 10 %
                           </span>
                           <span
                             className={cn(
@@ -1903,10 +2020,10 @@ export default function TechnicianSpace() {
                           </span>
                         </CardTitle>
                         <CardDescription>
-                          Sur chaque intervention : 85 % pour l'équipe, 15 %
-                          pour GTEC PRO. Le chef d'équipe règle la
-                          part GTEC (Mobile Money ou virement) puis l'admin
-                          l'encaisse.
+                          Sur chaque mission : 90 % pour l'équipe, 10 % pour
+                          GTEC PRO (§22). Paiement en espèces = dette de
+                          commission à régulariser avant l'échéance (§24) —
+                          retraits et nouvelles missions restent bloqués sinon.
                         </CardDescription>
                       </CardHeader>
                       <CardContent className="flex flex-col gap-3">
@@ -1917,7 +2034,7 @@ export default function TechnicianSpace() {
                             {
                               label: "Répartition",
                               value: null,
-                              detail: "85 % équipe / 15 % GTEC",
+                              detail: "90 % équipe / 10 % GTEC",
                             },
                           ].map(({ label, value, detail }) => (
                             <div key={label} className="rounded-lg bg-muted/60 px-3 py-2">
@@ -1935,7 +2052,7 @@ export default function TechnicianSpace() {
                           >
                             <div className="min-w-0 flex-1">
                               <p className="truncate text-sm font-medium">
-                                {fcfa(c.baseAmount)} × 15 % ={" "}
+                                {fcfa(c.baseAmount)} × {c.ratePercent} % ={" "}
                                 <span className="text-primary">{fcfa(c.amount)}</span>
                                 {c.breakdown && (
                                   <span className="ml-2 text-xs font-normal text-muted-foreground">
@@ -2156,6 +2273,7 @@ export default function TechnicianSpace() {
               )}
             </TabsContent>
           </Tabs>
+          </div>
         )}
       </div>
     </AppShell>

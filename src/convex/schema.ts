@@ -16,6 +16,25 @@ export const roleValidator = v.union(
 );
 export type Role = Infer<typeof roleValidator>;
 
+/**
+ * GTEC PRO 2.0 (§3) : spécialisation des comptes administrateurs.
+ * "super_admin" a tous les droits ; les autres rôles limitent leur périmètre
+ * (les gardes serveur utilisent requireAdmin(ctx, scope)).
+ */
+export const ADMIN_ROLES = [
+  "super_admin",
+  "kyc",
+  "finance",
+  "missions",
+  "support",
+  "litiges",
+  "moderation",
+  "technique",
+] as const;
+export const adminRoleValidator = v.union(
+  ...ADMIN_ROLES.map((r) => v.literal(r)),
+);
+
 const schema = defineSchema(
   {
     // default auth tables using convex auth.
@@ -30,6 +49,8 @@ const schema = defineSchema(
       isAnonymous: v.optional(v.boolean()), // is the user anonymous. do not remove
 
       role: v.optional(roleValidator), // role of the user. do not remove
+      /** GTEC PRO 2.0 : périmètre du compte admin (super_admin = tous droits). */
+      adminRole: v.optional(adminRoleValidator),
 
       // GTEC PRO
       /** Espace choisi à l'inscription : "client" (défaut) ou "technicien". */
@@ -119,6 +140,11 @@ const schema = defineSchema(
       validUntil: v.number(),
       /** V6 : validation automatique GTEC dès l'envoi du devis terrain. */
       autoValidatedAt: v.optional(v.number()),
+      /** GTEC PRO 2.0 (§18) : version du devis (V1, V2…) — toute modification
+       * crée un nouveau devis lié, l'ancien n'est jamais écrasé. */
+      version: v.optional(v.number()),
+      /** 2.0 : devis révisé par celui-ci (chaîne de versionnage). */
+      revisedFromId: v.optional(v.id("quotes")),
     })
       .index("by_request", ["requestId"])
       .index("by_client", ["clientId"])
@@ -385,6 +411,18 @@ const schema = defineSchema(
       lastLocationAt: v.optional(v.number()),
       /** Partage GPS temps réel activé par le technicien. */
       locationSharing: v.optional(v.boolean()),
+      /** GTEC PRO 2.0 (§12) : disponibilité déclarée — un prestataire
+       * indisponible n'est jamais proposé par le moteur d'affectation. */
+      availability: v.optional(
+        v.union(
+          v.literal("disponible"),
+          v.literal("occupe"),
+          v.literal("hors_ligne"),
+          v.literal("indisponible"),
+          v.literal("en_intervention"),
+          v.literal("conge"),
+        ),
+      ),
     })
       .index("by_user", ["userId"])
       .index("by_status", ["status"]),
@@ -466,7 +504,7 @@ const schema = defineSchema(
     gtecCommissions: defineTable({
       requestId: v.id("serviceRequests"),
       quoteId: v.id("quotes"),
-      /** V6 : "team" = part de l'équipe (85 %) · "gtec" = commission (15 %). */
+      /** 2.0 : "team" = part de l'équipe (90 %) · "gtec" = commission (10 %). */
       breakdown: v.optional(
         v.object({
           teamAmount: v.number(),
@@ -477,7 +515,7 @@ const schema = defineSchema(
       techUserId: v.id("users"),
       /** Montant TTC de l'intervention, base du calcul. */
       baseAmount: v.number(),
-      ratePercent: v.number(), // 15 par défaut
+      ratePercent: v.number(), // 10 par défaut (§22 cahier des charges 2.0)
       amount: v.number(),
       currency: v.string(),
       status: v.union(
@@ -490,12 +528,22 @@ const schema = defineSchema(
           v.literal("mtn_momo"),
           v.literal("orange_money"),
           v.literal("virement"),
+          v.literal("especes"),
         ),
       ),
       payerPhone: v.optional(v.string()),
       externalRef: v.optional(v.string()),
       paidAt: v.optional(v.number()),
       validatedBy: v.optional(v.id("users")),
+      /** 2.0 (§24) : commission née d'un paiement cash — dette de commission
+       * du prestataire. Il dispose d'un délai pour la régulariser. */
+      commissionDebt: v.optional(
+        v.object({
+          /** 24 h par défaut (paramétrable par GTEC). */
+          deadlineAt: v.number(),
+          remindedAt: v.optional(v.number()),
+        }),
+      ),
     })
       .index("by_tech", ["techUserId", "status"])
       .index("by_request", ["requestId"])
@@ -641,6 +689,83 @@ const schema = defineSchema(
     })
       .index("by_payment", ["paymentId"])
       .index("by_provider_ref", ["providerRef"]),
+
+    // ===================== GTEC PRO 2.0 : litiges / sanctions / audit ======
+
+    /**
+     * Litige ouvert sur une mission (§36). Catégorie libre parmi la liste du
+     * cahier des charges ; l'admin rend une décision documentée.
+     */
+    disputes: defineTable({
+      requestId: v.id("serviceRequests"),
+      /** Ouverture par le client ou par un membre de l'équipe (technicien). */
+      openedById: v.id("users"),
+      category: v.union(
+        v.literal("travaux_non_conformes"),
+        v.literal("retard"),
+        v.literal("paiement"),
+        v.literal("comportement"),
+        v.literal("materiel"),
+        v.literal("devis"),
+        v.literal("contrat"),
+        v.literal("autre"),
+      ),
+      description: v.string(),
+      attachments: v.optional(v.array(v.string())), // data URLs compressées
+      status: v.union(
+        v.literal("ouverte"),
+        v.literal("en_cours"),
+        v.literal("resolue"),
+        v.literal("rejetee"),
+      ),
+      decision: v.optional(v.string()), // décision documentée de l'admin
+      resolvedById: v.optional(v.id("users")),
+      resolvedAt: v.optional(v.number()),
+    })
+      .index("by_request", ["requestId"])
+      .index("by_status", ["status"]),
+
+    /**
+     * Sanction graduée (§37) : 1 avertissement · 2 limitation · 3 suspension
+     * temporaire · 4 restriction financière · 5 résiliation/bannissement.
+     * Toujours motivée, notifiée et contestable.
+     */
+    sanctions: defineTable({
+      userId: v.id("users"),
+      level: v.number(), // 1 à 5
+      reason: v.string(), // motivation obligatoire
+      /** Contexte : demande de service liée, si pertinent. */
+      requestId: v.optional(v.id("serviceRequests")),
+      status: v.union(
+        v.literal("active"),
+        v.literal("levee"),
+        v.literal("contested"),
+      ),
+      contestReason: v.optional(v.string()),
+      contestAt: v.optional(v.number()),
+      /** Fin de suspension (niveau 3) — auto-expirée à la lecture. */
+      until: v.optional(v.number()),
+      issuedById: v.id("users"), // admin émetteur
+      issuedAt: v.number(),
+    })
+      .index("by_user", ["userId"])
+      .index("by_status", ["status"]),
+
+    /**
+     * Journal d'audit (§44) : chaque action sensible est tracée avec
+     * l'auteur, la cible, l'ancienne et la nouvelle valeur.
+     */
+    auditLogs: defineTable({
+      actorId: v.optional(v.id("users")), // système (crons) → undefined
+      actorRole: v.optional(v.string()), // admin:kyc, technicien, client, system…
+      action: v.string(), // ex. "commission.validated", "sanction.issued"
+      targetTable: v.optional(v.string()),
+      targetId: v.optional(v.string()),
+      oldValue: v.optional(v.string()), // sérialisé libre (texte court)
+      newValue: v.optional(v.string()),
+      detail: v.optional(v.string()),
+      at: v.number(),
+    }).index("by_at", ["at"]),
   },
   {
     schemaValidation: false,

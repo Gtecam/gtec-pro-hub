@@ -23,6 +23,9 @@ import {
   Plus,
   Receipt,
   RefreshCw,
+  Scale,
+  ScrollText,
+  ShieldAlert,
   ShieldCheck,
   Sparkles,
   Trash2,
@@ -916,6 +919,22 @@ export default function AdminConsole() {
   const waiveCommission = useMutation(api.gtec.adminWaiveCommission);
   const adminRequestWithdrawal = useMutation(api.gtec.requestWithdrawal);
 
+  // GTEC PRO 2.0 : litiges, sanctions, audit, rôles admin.
+  const disputes = useQuery(api.gtec.adminListDisputes);
+  const sanctions = useQuery(api.gtec.adminListSanctions);
+  const auditLogs = useQuery(api.gtec.adminAuditLogs);
+  const adminAdmins = useQuery(api.gtec.adminListAdmins);
+  const resolveDispute = useMutation(api.gtec.adminResolveDispute);
+  const issueSanction = useMutation(api.gtec.adminIssueSanction);
+  const liftSanction = useMutation(api.gtec.adminLiftSanction);
+  const setAdminRole = useMutation(api.gtec.adminSetAdminRole);
+  const [disputeNote, setDisputeNote] = useState("");
+  const [sanctionTarget, setSanctionTarget] = useState<string>("");
+  const [sanctionLevel, setSanctionLevel] = useState<string>("1");
+  const [sanctionReason, setSanctionReason] = useState("");
+  const [sanctionDays, setSanctionDays] = useState<string>("7");
+  const [adminRoleDrafts, setAdminRoleDrafts] = useState<Record<string, string>>({});
+
   // Exports comptables CSV (commissions 15 % et retraits).
   const exportCommissionsCsv = () => {
     if (!commissions || commissions.length === 0) {
@@ -929,8 +948,8 @@ export default function AdminConsole() {
         "Demande",
         "Redevable",
         "Base TTC (FCFA)",
-        "Part équipe 85% (FCFA)",
-        "Commission GTEC 15% (FCFA)",
+        "Part équipe 90% (FCFA)",
+        "Commission GTEC 10% (FCFA)",
         "Statut",
         "Moyen",
         "Numéro payeur",
@@ -1409,7 +1428,24 @@ export default function AdminConsole() {
               )}
             </TabsTrigger>
             <TabsTrigger value="commissions">
-              <Percent className="mr-1.5 size-4" /> Commissions 15 %
+              <Percent className="mr-1.5 size-4" /> Commissions 10 %
+            </TabsTrigger>
+            <TabsTrigger value="litiges">
+              <Scale className="mr-1.5 size-4" /> Litiges
+              {(disputes?.filter((d) => d.dispute.status === "ouverte" || d.dispute.status === "en_cours").length ?? 0) > 0 && (
+                <span className="ml-1.5 rounded-full bg-destructive px-1.5 py-0.5 text-[10px] font-bold text-white">
+                  {disputes?.filter((d) => d.dispute.status === "ouverte" || d.dispute.status === "en_cours").length}
+                </span>
+              )}
+            </TabsTrigger>
+            <TabsTrigger value="sanctions">
+              <ShieldAlert className="mr-1.5 size-4" /> Sanctions
+            </TabsTrigger>
+            <TabsTrigger value="audit">
+              <ScrollText className="mr-1.5 size-4" /> Audit
+            </TabsTrigger>
+            <TabsTrigger value="acces-admin">
+              <ShieldCheck className="mr-1.5 size-4" /> Accès admin
             </TabsTrigger>
             <TabsTrigger value="techniciens">
               <Users className="mr-1.5 size-4" /> Techniciens
@@ -3061,6 +3097,382 @@ export default function AdminConsole() {
                 </div>
               )}
             </div>
+          </TabsContent>
+
+          {/* GTEC PRO 2.0 : Litiges (§36) */}
+          <TabsContent value="litiges" className="mt-4">
+            {disputes === undefined ? (
+              <div className="h-40 animate-pulse rounded-xl bg-muted" />
+            ) : disputes.length === 0 ? (
+              <Card className="card-layered">
+                <CardContent className="flex flex-col items-center gap-3 py-10 text-center">
+                  <Scale className="size-8 text-muted-foreground" />
+                  <p className="font-display text-lg font-semibold">Aucun litige</p>
+                  <p className="max-w-sm text-sm text-muted-foreground">
+                    Les problèmes signalés par les clients ou les techniciens apparaissent ici pour instruction.
+                  </p>
+                </CardContent>
+              </Card>
+            ) : (
+              <div className="flex flex-col gap-2">
+                {disputes.map(({ dispute, request, openedByName }) => (
+                  <Card key={dispute._id} className="card-layered">
+                    <CardContent className="flex flex-col gap-3 py-4">
+                      <div className="flex flex-wrap items-center gap-3">
+                        <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-destructive/10 text-destructive">
+                          <Scale className="size-4" />
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-semibold">
+                            {dispute.category.replace(/_/g, " ")} · {request?.reference ?? "—"}
+                          </p>
+                          <p className="truncate text-xs text-muted-foreground">
+                            Signalé par {openedByName} · {new Date(dispute._creationTime).toLocaleString("fr-FR")}
+                          </p>
+                        </div>
+                        <span
+                          className={cn(
+                            "rounded-full px-2.5 py-1 text-xs font-medium ring-1 ring-inset",
+                            dispute.status === "ouverte"
+                              ? "bg-destructive/10 text-destructive ring-destructive/20"
+                              : dispute.status === "en_cours"
+                                ? "bg-amber-500/10 text-amber-700 ring-amber-500/20 dark:text-amber-400"
+                                : dispute.status === "resolue"
+                                  ? "bg-emerald-500/10 text-emerald-600 ring-emerald-500/20 dark:text-emerald-400"
+                                  : "bg-muted text-muted-foreground ring-border",
+                          )}
+                        >
+                          {dispute.status === "ouverte"
+                            ? "Ouverte"
+                            : dispute.status === "en_cours"
+                              ? "En instruction"
+                              : dispute.status === "resolue"
+                                ? "Résolue"
+                                : "Rejetée"}
+                        </span>
+                      </div>
+                      <p className="rounded-lg bg-muted/60 px-3 py-2 text-sm">{dispute.description}</p>
+                      {dispute.decision && (
+                        <p className="rounded-lg border border-border/70 px-3 py-2 text-xs text-muted-foreground">
+                          <span className="font-semibold">Décision GTEC :</span> {dispute.decision}
+                        </p>
+                      )}
+                      {dispute.status !== "resolue" && dispute.status !== "rejetee" && (
+                        <div className="flex flex-col gap-2 sm:flex-row">
+                          <Input
+                            value={disputeNote}
+                            onChange={(e) => setDisputeNote(e.target.value)}
+                            placeholder="Décision documentée (motif, mesures prises…)"
+                          />
+                          <div className="flex gap-2">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              disabled={busy || disputeNote.trim().length < 10}
+                              onClick={() =>
+                                run(
+                                  () =>
+                                    resolveDispute({
+                                      disputeId: dispute._id as never,
+                                      decision: "en_cours",
+                                      decisionNote: disputeNote.trim(),
+                                    }),
+                                  "Litige en cours d'instruction",
+                                )
+                              }
+                            >
+                              Instruire
+                            </Button>
+                            <Button
+                              size="sm"
+                              className="halo-amber"
+                              disabled={busy || disputeNote.trim().length < 10}
+                              onClick={() =>
+                                run(
+                                  () =>
+                                    resolveDispute({
+                                      disputeId: dispute._id as never,
+                                      decision: "resolue",
+                                      decisionNote: disputeNote.trim(),
+                                    }),
+                                  "Litige résolu",
+                                )
+                              }
+                            >
+                              <CheckCircle2 className="mr-1.5 size-4" /> Résoudre
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="text-destructive"
+                              disabled={busy || disputeNote.trim().length < 10}
+                              onClick={() =>
+                                run(
+                                  () =>
+                                    resolveDispute({
+                                      disputeId: dispute._id as never,
+                                      decision: "rejetee",
+                                      decisionNote: disputeNote.trim(),
+                                    }),
+                                  "Litige rejeté",
+                                )
+                              }
+                            >
+                              <XCircle className="mr-1.5 size-4" /> Rejeter
+                            </Button>
+                          </div>
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            )}
+          </TabsContent>
+
+          {/* GTEC PRO 2.0 : Sanctions graduées (§37) */}
+          <TabsContent value="sanctions" className="mt-4">
+            <Card className="card-layered mb-4 border-primary/20">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm">Émettre une sanction graduée</CardTitle>
+                <CardDescription>
+                  1 Avertissement · 2 Limitation · 3 Suspension temporaire · 4 Restriction financière · 5 Résiliation.
+                  Toute sanction doit être motivée, est notifiée et reste contestable.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="flex flex-col gap-2">
+                <div className="grid gap-2 sm:grid-cols-3">
+                  <Input
+                    value={sanctionTarget}
+                    onChange={(e) => setSanctionTarget(e.target.value)}
+                    placeholder="ID utilisateur (users…)"
+                  />
+                  <Select value={sanctionLevel} onValueChange={setSanctionLevel}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="1">Niveau 1 — Avertissement</SelectItem>
+                      <SelectItem value="2">Niveau 2 — Limitation</SelectItem>
+                      <SelectItem value="3">Niveau 3 — Suspension</SelectItem>
+                      <SelectItem value="4">Niveau 4 — Restriction financière</SelectItem>
+                      <SelectItem value="5">Niveau 5 — Résiliation</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  {sanctionLevel === "3" && (
+                    <Input
+                      value={sanctionDays}
+                      onChange={(e) => setSanctionDays(e.target.value)}
+                      placeholder="Durée (jours)"
+                      inputMode="numeric"
+                    />
+                  )}
+                </div>
+                <Textarea
+                  value={sanctionReason}
+                  onChange={(e) => setSanctionReason(e.target.value)}
+                  placeholder="Motif détaillé de la sanction (obligatoire, 10 caractères min.)"
+                  rows={2}
+                />
+                <Button
+                  size="sm"
+                  className="self-end"
+                  variant="destructive"
+                  disabled={
+                    busy ||
+                    !sanctionTarget.trim() ||
+                    sanctionReason.trim().length < 10
+                  }
+                  onClick={async () => {
+                    await run(
+                      () =>
+                        issueSanction({
+                          userId: sanctionTarget.trim() as never,
+                          level: Number(sanctionLevel),
+                          reason: sanctionReason.trim(),
+                          days:
+                            sanctionLevel === "3" && Number(sanctionDays) > 0
+                              ? Number(sanctionDays)
+                              : undefined,
+                        }),
+                      "Sanction notifiée",
+                    );
+                    setSanctionReason("");
+                  }}
+                >
+                  <ShieldAlert className="mr-1.5 size-4" /> Émettre la sanction
+                </Button>
+              </CardContent>
+            </Card>
+            {sanctions === undefined ? (
+              <div className="h-40 animate-pulse rounded-xl bg-muted" />
+            ) : sanctions.length === 0 ? (
+              <Card className="card-layered">
+                <CardContent className="py-10 text-center text-sm text-muted-foreground">
+                  Aucune sanction enregistrée.
+                </CardContent>
+              </Card>
+            ) : (
+              <div className="flex flex-col gap-2">
+                {sanctions.map(({ sanction, targetName, issuerName }) => (
+                  <div
+                    key={sanction._id}
+                    className="flex flex-wrap items-center gap-3 rounded-xl border border-border/70 bg-card px-4 py-3"
+                  >
+                    <span
+                      className={cn(
+                        "flex size-9 shrink-0 items-center justify-center rounded-full text-sm font-bold",
+                        sanction.level >= 4
+                          ? "bg-destructive/10 text-destructive"
+                          : "bg-amber-500/10 text-amber-600 dark:text-amber-400",
+                      )}
+                    >
+                      {sanction.level}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium">
+                        {targetName} — niveau {sanction.level}
+                        {sanction.until && sanction.level === 3
+                          ? ` · jusqu'au ${new Date(sanction.until).toLocaleDateString("fr-FR")}`
+                          : ""}
+                      </p>
+                      <p className="truncate text-xs text-muted-foreground">
+                        {sanction.reason} · par {issuerName} ·{" "}
+                        {new Date(sanction.issuedAt).toLocaleDateString("fr-FR")}
+                        {sanction.status === "contested" && sanction.contestReason
+                          ? ` · CONTESTÉE : ${sanction.contestReason}`
+                          : ""}
+                      </p>
+                    </div>
+                    {(sanction.status === "active" || sanction.status === "contested") && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={busy}
+                        onClick={() =>
+                          run(
+                            () => liftSanction({ sanctionId: sanction._id as never }),
+                            "Sanction levée",
+                          )
+                        }
+                      >
+                        <CheckCircle2 className="mr-1.5 size-4" /> Lever
+                      </Button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </TabsContent>
+
+          {/* GTEC PRO 2.0 : Rôles administrateurs (§3) — Super Admin uniquement */}
+          <TabsContent value="acces-admin" className="mt-4">
+            <Card className="card-layered mb-4 border-primary/20">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm">Périmètres d'administration (§3)</CardTitle>
+                <CardDescription>
+                  Attribuez à chaque compte admin son périmètre : Super Admin (tous droits), KYC, Finance, Missions, Support, Litiges, Modération ou Technique. Les actions hors périmètre sont refusées par le serveur et tracées.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="flex flex-col gap-2">
+                {adminAdmins === undefined ? (
+                  <div className="h-24 animate-pulse rounded-xl bg-muted" />
+                ) : adminAdmins.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">Aucun administrateur.</p>
+                ) : (
+                  adminAdmins.map((a) => (
+                    <div
+                      key={a._id}
+                      className="flex flex-wrap items-center gap-3 rounded-xl border border-border/70 px-4 py-3"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-medium">
+                          {a.name ?? "Admin"} {user?._id === a._id ? "(vous)" : ""}
+                        </p>
+                        <p className="truncate text-xs text-muted-foreground">
+                          {a.phone ?? a.email ?? a._id}
+                        </p>
+                      </div>
+                      <Select
+                        value={a.adminRole ?? "super_admin"}
+                        onValueChange={(v) =>
+                          setAdminRoleDrafts((prev) => ({ ...prev, [a._id]: v }))
+                        }
+                      >
+                        <SelectTrigger className="w-full sm:w-52">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="super_admin">Super Admin</SelectItem>
+                          <SelectItem value="kyc">Admin KYC</SelectItem>
+                          <SelectItem value="finance">Admin Finance</SelectItem>
+                          <SelectItem value="missions">Admin Missions</SelectItem>
+                          <SelectItem value="support">Admin Support</SelectItem>
+                          <SelectItem value="litiges">Admin Litiges</SelectItem>
+                          <SelectItem value="moderation">Admin Modération</SelectItem>
+                          <SelectItem value="technique">Admin Technique</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      {user?._id !== a._id && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={busy}
+                          onClick={() =>
+                            run(
+                              () =>
+                                setAdminRole({
+                                  userId: a._id as never,
+                                  adminRole:
+                                    (adminRoleDrafts[a._id] ?? a.adminRole ?? "super_admin") as never,
+                                  makeAdmin: true,
+                                }),
+                              "Périmètre mis à jour",
+                            )
+                          }
+                        >
+                          Appliquer
+                        </Button>
+                      )}
+                    </div>
+                  ))
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* GTEC PRO 2.0 : Journal d'audit (§44) */}
+          <TabsContent value="audit" className="mt-4">
+            {auditLogs === undefined ? (
+              <div className="h-40 animate-pulse rounded-xl bg-muted" />
+            ) : auditLogs.length === 0 ? (
+              <Card className="card-layered">
+                <CardContent className="py-10 text-center text-sm text-muted-foreground">
+                  Aucune entrée — le journal se remplit à chaque action sensible (commissions, litiges, sanctions, rôles, devis révisés).
+                </CardContent>
+              </Card>
+            ) : (
+              <div className="overflow-hidden rounded-xl border border-border/70">
+                {auditLogs.map((log) => (
+                  <div
+                    key={log._id}
+                    className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-border/60 bg-card px-4 py-2.5 text-sm last:border-0"
+                  >
+                    <span className="font-mono text-xs text-muted-foreground">
+                      {new Date(log.at).toLocaleString("fr-FR")}
+                    </span>
+                    <span className="rounded bg-primary/10 px-1.5 py-0.5 font-mono text-[11px] font-semibold text-primary">
+                      {log.action}
+                    </span>
+                    <span className="truncate text-xs">
+                      {log.actorRole ?? "système"}
+                      {log.oldValue ? ` · ${log.oldValue} → ${log.newValue ?? ""}` : log.newValue ? ` · ${log.newValue}` : ""}
+                      {log.detail ? ` · ${log.detail}` : ""}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
           </TabsContent>
 
           {/* Techniciens */}
