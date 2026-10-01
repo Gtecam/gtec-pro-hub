@@ -27,60 +27,8 @@ export const ADMIN_ROLES = [
   "technique",
 ] as const;
 export const adminRoleValidator = v.union(
-  v.literal("super_admin"),
-  v.literal("kyc"),
-  v.literal("finance"),
-  v.literal("missions"),
-  v.literal("support"),
-  v.literal("litiges"),
-  v.literal("moderation"),
-  v.literal("technique"),
+  ...ADMIN_ROLES.map((r) => v.literal(r)),
 );
-
-// ===================== SERVICE PACK AGILE (réf. client GTEC V2) =====
-
-/** Pôle de service client (cahier des charges §4). La clé est la valeur de serviceKey des demandes. */
-export const SERVICE_PACKS = [
-  { key: "cfo", label: "Courant Fort — CFO", description: "Électricité : installations, tableaux, défenses, câblage, éclairage.", events: "électricité" },
-  { key: "ht", label: "Haute Tension — HTA", description: "Postes de transformation, réseaux HT, mesures d'isolement.", events: "haute tension" },
-  { key: "industrie", label: "Industrie & Automatisme", description: "Moteurs, commandes, variateurs, automates, instrumentation.", events: "industrie" },
-  { key: "solaire", label: "Solaire & Énergie", description: "Photovoltaïque, stockage, onduleurs, systèmes autonomes.", events: "énergie" },
-  { key: "cfa", label: "Courant Faible — CFA", description: "Réseaux informatiques, fibre, vidéosurveillance, interphonie.", events: "réseaux" },
-  { key: "domotique", label: "Domotique & Confort", description: "Éclairage intelligent, automatisme, sécurité connectée.", events: "domotique" },
-  { key: "sinc", label: "Sécurité Incendie", description: "Détection, alarmes, désenfumage, extincteurs, contrôles de conformité.", events: "sécurité incendie" },
-  { key: "inspection", label: "Inspection & Diagnostic", description: "Mesures électriques, thermographie, audits énergétiques, contrôles.", events: "diagnostic" },
-  { key: "froid", label: "Climatisation, HVAC & Froid", description: "Clim, VMC, chambres froides, groupes froid, réfrigération.", events: "climatisation" },
-  { key: "bati", label: "Bâtiment & Infrastructure", description: "Maçonnerie, cloisons, chemins de câbles, locaux techniques.", events: "bâtiment" },
-  { key: "maintenance", label: "Maintenance & Contrats", description: "Préventive, corrective, prédictive, contrats et interventions.", events: "maintenance" },
-  { key: "fourniture", label: "Fourniture de Matériel", description: "Stock, commande et livraison du catalogue de matériel GTEC.", events: "fourniture" },
-] as const;
-
-export type ServiceKey = (typeof SERVICE_PACKS)[number]["key"];
-
-/** Catégories par pôle (§4). */
-export const CATEGORIES_BY_POLE: Record<ServiceKey, string[]> = {
-  cfo: ["Installation électrique", "Réhabilitation", "Éclairage", "Mise à la terre", "Protection", "Distribution"],
-  ht: ["Poste de transformation", "Réseau HT/MT", "Cellule HTA", "Maintenance HTA", "Mesures et contrôles"],
-  industrie: ["Moteurs", "Commande électrique", "Variateurs", "Automatisme", "Machines industrielles", "Instrumentation"],
-  solaire: ["Installation solaire", "Onduleurs", "Batteries", "Systèmes autonomes", "Gestion énergétique"],
-  cfa: ["Réseaux informatiques", "Fibre optique", "Vidéosurveillance", "Interphonie", "Contrôle d'accès"],
-  domotique: ["Éclairage intelligent", "Gestion bâtiment", "Sécurité connectée", "Confort", "Maintenance"],
-  sinc: ["Détection incendie", "Alarme incendie", "Désenfumage", "Extinction", "Contrôle et maintenance"],
-  inspection: ["Diagnostic électrique", "Mesures électriques", "Thermographie", "Audit énergétique", "Inspection"],
-  froid: ["Climatisation", "Maintenance", "HVAC", "Froid"],
-  bati: ["Travaux de bâtiment", "Supports électriques", "Génie civil léger", "Infrastructure électrique", "Réhabilitation"],
-  maintenance: ["Maintenance préventive", "Maintenance corrective", "Maintenance prédictive", "Contrats", "Gestion des interventions"],
-  fourniture: ["Matériel électrique", "Éclairage", "Solaire", "Courant faible", "Sécurité", "Climatisation & froid"],
-};
-
-export const getCategoriesByPole = (pole: ServiceKey): string[] => CATEGORIES_BY_POLE[pole];
-
-export const getCategories = (pole?: ServiceKey | null, all: boolean = false): string[] => {
-  if (!pole) return all ? Object.values(CATEGORIES_BY_POLE).flat() : [];
-  return CATEGORIES_BY_POLE[pole];
-};
-
-// ===================== GTEC PRO 2.0 : litiges / sanctions / audit =====
 
 export const schema = defineSchema(
   {
@@ -115,13 +63,15 @@ export const schema = defineSchema(
       companyName: v.optional(v.string()),
       taxId: v.optional(v.string()), // NUI / contribuable
       idDocumentUrl: v.optional(v.string()), // photo CNI (data URL)
-    }).index("email", ["email"]).index("phone", ["phone"]),
+    })
+      .index("email", ["email"])
+      .index("phone", ["phone"]),
 
     // service demandes de service
     serviceRequests: defineTable({
       clientId: v.id("users"),
       reference: v.string(), // GTC-0001
-      serviceKey: v.string(), // cfo | ht | industrie | solaire | cfa | domotique | sinc | inspection | froid | bati | maintenance | fourniture
+      serviceKey: v.string(),
       subcategory: v.optional(v.string()),
       title: v.string(),
       description: v.string(),
@@ -141,7 +91,9 @@ export const schema = defineSchema(
       ),
       scheduledAt: v.optional(v.number()),
       cancellationReason: v.optional(v.string()),
-      coords: v.optional(v.object({ lat: v.number(), lon: v.number(), accuracy: v.optional(v.number()) })),
+      coords: v.optional(
+        v.object({ lat: v.number(), lon: v.number(), accuracy: v.optional(v.number()) }),
+      ),
       coordsAt: v.optional(v.number()),
       specialtyCode: v.optional(v.string()), // NOMENCLATURE : spécialité professionnelle attendue (ex. ELEC-ELEC-IND…)
       requiredSkills: v.optional(v.array(v.string())), // compétences techniques requises
@@ -162,7 +114,9 @@ export const schema = defineSchema(
       beneficiaryValidatedAt: v.optional(v.number()),
       beneficiaryValidationCode: v.optional(v.string()), // code pour valider sans compte
       teamArrivalAt: v.optional(v.number()), // GÉO TERRAIN : arrivée de l'équipe confirmée
-      teamArrivalCoords: v.optional(v.object({ lat: v.number(), lon: v.number(), accuracy: v.optional(v.number()) })), // GÉO TERRAIN : coordonnées d'arrivée
+      teamArrivalCoords: v.optional(
+        v.object({ lat: v.number(), lon: v.number(), accuracy: v.optional(v.number()) }),
+      ), // GÉO TERRAIN : coordonnées d'arrivée
       interventionLabel: v.optional(v.string()), // libellé figé de l'intervention
       urgency: v.optional(v.union(v.literal("normale"), v.literal("urgente"), v.literal("critique"))), // niveau d'urgence
       desiredDate: v.optional(v.number()), // date souhaitée d'intervention
@@ -179,7 +133,7 @@ export const schema = defineSchema(
       authorId: v.optional(v.id("users")),
       authorRole: v.optional(v.union(v.literal("technicien"), v.literal("admin"))), // auteur du devis
       number: v.string(), // DEV-0001
-      items: v.array({ label: v.string(), qty: v.number(), unitPrice: v.number() }),
+      items: v.array(v.object({ label: v.string(), qty: v.number(), unitPrice: v.number() })),
       subtotal: v.number(),
       vatRate: v.number(), // TVA Cameroun
       total: v.number(),
@@ -203,7 +157,9 @@ export const schema = defineSchema(
       city: v.string(),
       quarter: v.optional(v.string()), // quartier
       address: v.optional(v.string()),
-      coords: v.optional(v.object({ lat: v.number(), lon: v.number(), accuracy: v.optional(v.number()) })),
+      coords: v.optional(
+        v.object({ lat: v.number(), lon: v.number(), accuracy: v.optional(v.number()) }),
+      ),
       accessInstructions: v.optional(v.string()),
       onSiteContactName: v.optional(v.string()),
       onSiteContactPhone: v.optional(v.string()),
@@ -216,7 +172,13 @@ export const schema = defineSchema(
       clientId: v.id("users"),
       amount: v.number(),
       currency: v.string(),
-      method: v.union(v.literal("mtn_momo"), v.literal("orange_money"), v.literal("especes"), v.literal("virement"), v.literal("carte_visa")),
+      method: v.union(
+        v.literal("mtn_momo"),
+        v.literal("orange_money"),
+        v.literal("especes"),
+        v.literal("virement"),
+        v.literal("carte_visa"),
+      ),
       payerPhone: v.string(),
       status: v.union(v.literal("en_attente"), v.literal("valide"), v.literal("echoue")),
       externalRef: v.optional(v.string()),
@@ -224,15 +186,17 @@ export const schema = defineSchema(
       bankName: v.optional(v.string()),
       bankRef: v.optional(v.string()),
       cardLast4: v.optional(v.string()),
-      international: v.optional(v.object({
-        provider: v.union(v.literal("stripe"), v.literal("cinetpay_card")),
-        amountMinor: v.number(),
-        currency: v.string(),
-        fxRateFromXaf: v.optional(v.number()),
-        feeXaf: v.optional(v.number()),
-        captured: v.optional(v.boolean()),
-        providerRef: v.optional(v.string()),
-      })),
+      international: v.optional(
+        v.object({
+          provider: v.union(v.literal("stripe"), v.literal("cinetpay_card")),
+          amountMinor: v.number(),
+          currency: v.string(),
+          fxRateFromXaf: v.optional(v.number()),
+          feeXaf: v.optional(v.number()),
+          captured: v.optional(v.boolean()),
+          providerRef: v.optional(v.string()),
+        }),
+      ),
       collectedBy: v.optional(v.id("users")),
       collectedAt: v.optional(v.number()),
       paidAt: v.optional(v.number()),
@@ -246,7 +210,7 @@ export const schema = defineSchema(
     assignments: defineTable({
       requestId: v.id("serviceRequests"),
       teamLeaderId: v.id("users"),
-      members: v.array({ id: v.id("users"), role: v.string() }),
+      members: v.array(v.object({ id: v.id("users"), role: v.string() })),
       scheduledAt: v.number(),
       notes: v.optional(v.string()),
       status: v.union(v.literal("planifiee"), v.literal("en_cours"), v.literal("terminee")),
@@ -256,7 +220,7 @@ export const schema = defineSchema(
       requestId: v.id("serviceRequests"),
       assignmentId: v.id("assignments"),
       workDone: v.string(),
-      partsUsed: v.array({ label: v.string(), qty: v.number() }),
+      partsUsed: v.array(v.object({ label: v.string(), qty: v.number() })),
       beforePhotos: v.array(v.string()),
       afterPhotos: v.array(v.string()),
       warrantyMonths: v.number(),
@@ -275,7 +239,9 @@ export const schema = defineSchema(
       currency: v.string(),
       status: v.union(v.literal("emise"), v.literal("payee")),
       issuedAt: v.number(),
-    }).index("by_request", ["requestId"]).index("by_client", ["clientId"]),
+    })
+      .index("by_request", ["requestId"])
+      .index("by_client", ["clientId"]),
 
     requestEvents: defineTable({
       requestId: v.id("serviceRequests"),
@@ -292,7 +258,9 @@ export const schema = defineSchema(
       rating: v.number(),
       comment: v.optional(v.string()),
       at: v.number(),
-    }).index("by_request", ["requestId"]).index("by_tech", ["techUserId"]),
+    })
+      .index("by_request", ["requestId"])
+      .index("by_tech", ["techUserId"]),
 
     maintenanceContracts: defineTable({
       reference: v.string(),
@@ -300,11 +268,21 @@ export const schema = defineSchema(
       serviceKey: v.string(),
       title: v.string(),
       description: v.optional(v.string()),
-      frequency: v.union(v.literal("mensuel"), v.literal("trimestriel"), v.literal("semestriel"), v.literal("annuel")),
+      frequency: v.union(
+        v.literal("mensuel"),
+        v.literal("trimestriel"),
+        v.literal("semestriel"),
+        v.literal("annuel"),
+      ),
       monthlyAmount: v.number(),
       city: v.string(),
       address: v.string(),
-      status: v.union(v.literal("actif"), v.literal("suspendu"), v.literal("expire"), v.literal("resilie")),
+      status: v.union(
+        v.literal("actif"),
+        v.literal("suspendu"),
+        v.literal("expire"),
+        v.literal("resilie"),
+      ),
       startDate: v.number(),
       endDate: v.number(),
       nextVisitAt: v.optional(v.number()),
@@ -319,7 +297,9 @@ export const schema = defineSchema(
       assignedTeamLeaderId: v.optional(v.id("users")),
       report: v.optional(v.string()),
       status: v.union(v.literal("planifiee"), v.literal("faite"), v.literal("annulee")),
-    }).index("by_contract", ["contractId"]).index("by_leader", ["assignedTeamLeaderId"]),
+    })
+      .index("by_contract", ["contractId"])
+      .index("by_leader", ["assignedTeamLeaderId"]),
 
     contractPayments: defineTable({
       contractId: v.id("maintenanceContracts"),
@@ -329,7 +309,12 @@ export const schema = defineSchema(
       periodEnd: v.number(),
       amount: v.number(),
       currency: v.string(),
-      method: v.union(v.literal("mtn_momo"), v.literal("orange_money"), v.literal("especes"), v.literal("virement")),
+      method: v.union(
+        v.literal("mtn_momo"),
+        v.literal("orange_money"),
+        v.literal("especes"),
+        v.literal("virement"),
+      ),
       payerPhone: v.string(),
       proofPhotoUrl: v.optional(v.string()),
       bankName: v.optional(v.string()),
@@ -360,21 +345,38 @@ export const schema = defineSchema(
       references: v.optional(v.string()),
       zones: v.array(v.string()),
       bio: v.optional(v.string()),
+      documents: v.array(
+        v.object({ kind: v.string(), label: v.string(), url: v.string() }),
+      ),
       highestDegree: v.string(),
       fieldOfStudy: v.optional(v.string()),
       school: v.optional(v.string()),
       graduationYear: v.optional(v.number()),
       institutionId: v.optional(v.id("higherEducationInstitutions")),
       institutionRequestId: v.optional(v.id("institutionVerificationRequests")),
-      credentialStatus: v.optional(v.union(v.literal("declare"), v.literal("en_attente"), v.literal("verifie"), v.literal("rejete"))),
+      credentialStatus: v.optional(
+        v.union(
+          v.literal("declare"),
+          v.literal("en_attente"),
+          v.literal("verifie"),
+          v.literal("rejete"),
+        ),
+      ),
       status: v.union(v.literal("en_attente"), v.literal("verifie"), v.literal("rejete")),
       reviewNote: v.optional(v.string()),
       kycFlag: v.optional(v.string()),
       kycDocHashes: v.optional(v.array(v.string())),
-      subscription: v.union(v.literal("aucun"), v.literal("mensuel"), v.literal("trimestriel"), v.literal("annuel")),
+      subscription: v.union(
+        v.literal("aucun"),
+        v.literal("mensuel"),
+        v.literal("trimestriel"),
+        v.literal("annuel"),
+      ),
       subscriptionUntil: v.optional(v.number()),
       subscriptionPrice: v.optional(v.number()),
-      lastLocation: v.optional(v.object({ lat: v.number(), lon: v.number(), accuracy: v.optional(v.number()) })),
+      lastLocation: v.optional(
+        v.object({ lat: v.number(), lon: v.number(), accuracy: v.optional(v.number()) }),
+      ),
       lastLocationAt: v.optional(v.number()),
       locationSharing: v.optional(v.boolean()),
       domainCode: v.optional(v.string()),
@@ -387,7 +389,16 @@ export const schema = defineSchema(
       experienceBand: v.optional(v.string()),
       district: v.optional(v.string()),
       radiusKm: v.optional(v.number()),
-      availability: v.optional(v.union(v.literal("disponible"), v.literal("occupe"), v.literal("hors_ligne"), v.literal("indisponible"), v.literal("en_intervention"), v.literal("conge"))),
+      availability: v.optional(
+        v.union(
+          v.literal("disponible"),
+          v.literal("occupe"),
+          v.literal("hors_ligne"),
+          v.literal("indisponible"),
+          v.literal("en_intervention"),
+          v.literal("conge"),
+        ),
+      ),
     })
       .index("by_user", ["userId"])
       .index("by_status", ["status"]),
@@ -397,9 +408,17 @@ export const schema = defineSchema(
       requestedById: v.id("users"),
       label: v.string(),
       qty: v.number(),
-      status: v.union(v.literal("demande"), v.literal("approuve"), v.literal("commande"), v.literal("livre"), v.literal("refuse")),
+      status: v.union(
+        v.literal("demande"),
+        v.literal("approuve"),
+        v.literal("commande"),
+        v.literal("livre"),
+        v.literal("refuse"),
+      ),
       adminNote: v.optional(v.string()),
-    }).index("by_request", ["requestId"]).index("by_status", ["status"]),
+    })
+      .index("by_request", ["requestId"])
+      .index("by_status", ["status"]),
 
     subscriptionPayments: defineTable({
       profileId: v.id("technicianProfiles"),
@@ -407,11 +426,18 @@ export const schema = defineSchema(
       plan: v.union(v.literal("mensuel"), v.literal("trimestriel"), v.literal("annuel")),
       amount: v.number(),
       currency: v.string(),
-      method: v.union(v.literal("mtn_momo"), v.literal("orange_money"), v.literal("especes"), v.literal("virement")),
+      method: v.union(
+        v.literal("mtn_momo"),
+        v.literal("orange_money"),
+        v.literal("especes"),
+        v.literal("virement"),
+      ),
       payerPhone: v.string(),
       status: v.union(v.literal("en_attente"), v.literal("valide"), v.literal("echoue")),
       externalRef: v.optional(v.string()),
-    }).index("by_profile", ["profileId"]).index("by_status", ["status"]),
+    })
+      .index("by_profile", ["profileId"])
+      .index("by_status", ["status"]),
 
     payouts: defineTable({
       techUserId: v.id("users"),
@@ -422,7 +448,9 @@ export const schema = defineSchema(
       status: v.union(v.literal("dû"), v.literal("payé")),
       paidAt: v.optional(v.number()),
       method: v.optional(v.string()),
-    }).index("by_tech", ["techUserId", "status"]).index("by_request", ["requestId"]),
+    })
+      .index("by_tech", ["techUserId", "status"])
+      .index("by_request", ["requestId"]),
 
     gtecCommissions: defineTable({
       requestId: v.id("serviceRequests"),
@@ -434,12 +462,16 @@ export const schema = defineSchema(
       amount: v.number(),
       currency: v.string(),
       status: v.union(v.literal("due"), v.literal("payee"), v.literal("exoneree")),
-      method: v.optional(v.union(v.literal("mtn_momo"), v.literal("orange_money"), v.literal("virement"), v.literal("especes"))),
+      method: v.optional(
+        v.union(v.literal("mtn_momo"), v.literal("orange_money"), v.literal("virement"), v.literal("especes")),
+      ),
       payerPhone: v.optional(v.string()),
       externalRef: v.optional(v.string()),
       paidAt: v.optional(v.number()),
       validatedBy: v.optional(v.id("users")),
-      commissionDebt: v.optional(v.object({ deadlineAt: v.number(), remindedAt: v.optional(v.number()) })),
+      commissionDebt: v.optional(
+        v.object({ deadlineAt: v.number(), remindedAt: v.optional(v.number()) }),
+      ),
     })
       .index("by_tech", ["techUserId", "status"])
       .index("by_request", ["requestId"])
@@ -450,7 +482,12 @@ export const schema = defineSchema(
       sourceRole: v.union(v.literal("technicien"), v.literal("admin")),
       amount: v.number(),
       currency: v.string(),
-      method: v.union(v.literal("mtn_momo"), v.literal("orange_money"), v.literal("especes"), v.literal("virement")),
+      method: v.union(
+        v.literal("mtn_momo"),
+        v.literal("orange_money"),
+        v.literal("especes"),
+        v.literal("virement"),
+      ),
       destination: v.string(),
       destinationLabel: v.optional(v.string()),
       status: v.union(v.literal("demande"), v.literal("approuve"), v.literal("payee"), v.literal("refuse")),
@@ -459,7 +496,9 @@ export const schema = defineSchema(
       processedBy: v.optional(v.id("users")),
       reference: v.string(),
       note: v.optional(v.string()),
-    }).index("by_user", ["userId", "status"]).index("by_status", ["status"]),
+    })
+      .index("by_user", ["userId", "status"])
+      .index("by_status", ["status"]),
 
     notifications: defineTable({
       userId: v.id("users"),
@@ -476,11 +515,12 @@ export const schema = defineSchema(
       label: v.string(),
       description: v.optional(v.string()),
       icon: v.optional(v.string()),
-      subcategories: v.array({ key: v.string(), label: v.string() }),
+      subcategories: v.array(v.object({ key: v.string(), label: v.string() })),
       active: v.boolean(),
       sortOrder: v.number(),
     }).index("by_key", ["key"]),
 
+    // Catalogue des interventions (12 pôles) : pôle → catégorie → intervention.
     serviceInterventions: defineTable({
       code: v.string(),
       serviceKey: v.string(),
@@ -496,22 +536,248 @@ export const schema = defineSchema(
       currency: v.string(),
     }).index("by_serviceKey", ["serviceKey"]),
 
-    serviceRequestsArchive: defineTable({
-      clientId: v.id("users"),
-      reference: v.string(),
-      serviceKey: v.string(),
-      title: v.string(),
-      status: v.string(),
-      archivedAt: v.number(),
-    }).index("by_client", ["clientId"]),
+    // Litiges (§36-37) — ouverts par le client ou l'équipe sur une mission.
+    disputes: defineTable({
+      requestId: v.id("serviceRequests"),
+      openedById: v.id("users"),
+      category: v.union(
+        v.literal("travaux_non_conformes"),
+        v.literal("retard"),
+        v.literal("paiement"),
+        v.literal("comportement"),
+        v.literal("materiel"),
+        v.literal("devis"),
+        v.literal("contrat"),
+        v.literal("autre"),
+      ),
+      description: v.string(),
+      attachments: v.optional(v.array(v.string())),
+      status: v.union(v.literal("ouverte"), v.literal("en_cours"), v.literal("resolue"), v.literal("rejetee")),
+      decision: v.optional(v.string()),
+      resolvedById: v.optional(v.id("users")),
+      resolvedAt: v.optional(v.number()),
+    })
+      .index("by_request", ["requestId"])
+      .index("by_status", ["status"]),
 
-    hopsSphere: defineTable({
-      id: v.string(),
-      name: v.string(),
-      type: v.string(),
-      metric: v.number(),
+    // Sanctions graduées (§37) — avertissement … bannissement.
+    sanctions: defineTable({
+      userId: v.id("users"),
+      level: v.number(), // 1..5
+      reason: v.string(),
+      requestId: v.optional(v.id("serviceRequests")),
+      status: v.union(v.literal("active"), v.literal("levee"), v.literal("contested")),
+      until: v.optional(v.number()), // niveau 3 : suspension temporaire
+      issuedById: v.id("users"),
+      issuedAt: v.number(),
+      contestReason: v.optional(v.string()),
+      contestAt: v.optional(v.number()),
+    }).index("by_user", ["userId"]),
+
+    // Journal d'audit (§44) — traçabilité des actions sensibles.
+    auditLogs: defineTable({
+      actorId: v.optional(v.id("users")),
+      actorRole: v.optional(v.string()),
+      action: v.string(),
+      targetTable: v.optional(v.string()),
+      targetId: v.optional(v.string()),
+      oldValue: v.optional(v.string()),
+      newValue: v.optional(v.string()),
+      detail: v.optional(v.string()),
       at: v.number(),
-    }).index("by_type", ["type"]),
+    }).index("by_at", ["at"]),
+
+    // OTP de vérification du numéro de téléphone (hashé, 10 min).
+    phoneVerifications: defineTable({
+      userId: v.id("users"),
+      phone: v.string(),
+      codeHash: v.string(),
+      attempts: v.number(),
+      expiresAt: v.number(),
+      consumedAt: v.optional(v.number()),
+    }).index("by_user", ["userId"]),
+
+    // Écho des codes de connexion SMS en mode démo (sans Twilio).
+    authSmsEcho: defineTable({
+      phone: v.string(),
+      code: v.string(),
+      createdAt: v.number(),
+      expiresAt: v.number(),
+    }).index("by_phone", ["phone"]),
+
+    // File d'envoi e-mail (Resend) alimentée par les notifications.
+    emails: defineTable({
+      userId: v.id("users"),
+      to: v.string(),
+      kind: v.string(),
+      title: v.string(),
+      body: v.string(),
+      requestId: v.optional(v.id("serviceRequests")),
+      sentAt: v.optional(v.number()),
+      error: v.optional(v.string()),
+    }).index("by_user", ["userId"]),
+
+    // Transactions Mobile Money (MTN Collections / Orange Web Payment).
+    momoTransactions: defineTable({
+      paymentId: v.id("payments"),
+      provider: v.union(v.literal("mtn"), v.literal("orange")),
+      providerRef: v.string(),
+      status: v.union(v.literal("en_attente"), v.literal("reussie"), v.literal("echouee"), v.literal("expiree")),
+      amount: v.number(),
+      currency: v.string(),
+      payerPhone: v.string(),
+      failureReason: v.optional(v.string()),
+      lastCheckedAt: v.optional(v.number()),
+    })
+      .index("by_payment", ["paymentId"])
+      .index("by_provider_ref", ["providerRef"]),
+
+    // ================= ÉDUCATION — référentiel MINESUP (§2-§12, §17, §20-21) =====
+
+    higherEducationInstitutions: defineTable({
+      code: v.string(), // code unique (ex. UY1, ISTMA)
+      name: v.string(),
+      shortName: v.optional(v.string()),
+      aliases: v.optional(v.array(v.string())), // anciennes appellations, acronymes
+      institutionType: v.union(
+        v.literal("STATE_UNIVERSITY"),
+        v.literal("PRIVATE_UNIVERSITY"),
+        v.literal("PUBLIC_SPECIAL_STATUS"),
+        v.literal("PRIVATE_HIGHER_INSTITUTE"),
+        v.literal("INTERNATIONAL_INSTITUTION"),
+        v.literal("INTERSTATE_INSTITUTION"),
+        v.literal("FOREIGN_RECOGNIZED_INSTITUTION"),
+      ),
+      ownership: v.union(v.literal("PUBLIC"), v.literal("PRIVATE"), v.literal("INTERNATIONAL"), v.literal("INTERSTATE")),
+      region: v.union(
+        v.literal("ADAMOUA"),
+        v.literal("CENTRE"),
+        v.literal("EST"),
+        v.literal("EXTREME_NORD"),
+        v.literal("LITTORAL"),
+        v.literal("NORD"),
+        v.literal("NORD_OUEST"),
+        v.literal("OUEST"),
+        v.literal("SUD"),
+        v.literal("SUD_OUEST"),
+      ),
+      city: v.optional(v.string()),
+      department: v.optional(v.string()),
+      address: v.optional(v.string()),
+      website: v.optional(v.string()),
+      phone: v.optional(v.string()),
+      email: v.optional(v.string()),
+      status: v.union(
+        v.literal("ACTIVE"),
+        v.literal("SUSPENDED"),
+        v.literal("CLOSED"),
+        v.literal("PENDING_VERIFICATION"),
+        v.literal("HISTORICAL"),
+      ),
+      authorizationStatus: v.union(
+        v.literal("AUTHORIZED"),
+        v.literal("APPROVED"),
+        v.literal("HOMOLOGATED"),
+        v.literal("NOT_APPLICABLE"),
+        v.literal("SUSPENDED"),
+        v.literal("WITHDRAWN"),
+        v.literal("UNKNOWN"),
+      ),
+      recognitionStatus: v.union(
+        v.literal("RECOGNIZED"),
+        v.literal("NOT_RECOGNIZED"),
+        v.literal("UNDER_REVIEW"),
+        v.literal("HISTORICAL"),
+      ),
+      canIssueNationalDiploma: v.optional(v.boolean()),
+      canIssuePrivateDiploma: v.optional(v.boolean()),
+      source: v.optional(v.string()),
+      sourceUrl: v.optional(v.string()),
+      lastVerifiedAt: v.optional(v.number()),
+      verifiedByAdminId: v.optional(v.id("users")),
+      notes: v.optional(v.string()),
+      isActive: v.boolean(),
+    })
+      .index("by_code", ["code"])
+      .index("by_active", ["isActive"])
+      .index("by_region", ["region"]),
+
+    institutionStatusHistory: defineTable({
+      institutionId: v.id("higherEducationInstitutions"),
+      oldStatus: v.optional(v.string()),
+      newStatus: v.string(),
+      oldRecognitionStatus: v.optional(v.string()),
+      newRecognitionStatus: v.optional(v.string()),
+      decisionReference: v.optional(v.string()), // arrêté / décision MINESUP
+      decisionDate: v.optional(v.number()),
+      sourceUrl: v.optional(v.string()),
+      reason: v.optional(v.string()),
+      changedById: v.id("users"),
+      at: v.number(),
+    }).index("by_institution", ["institutionId"]),
+
+    institutionVerificationRequests: defineTable({
+      userId: v.id("users"),
+      institutionName: v.string(),
+      city: v.optional(v.string()),
+      country: v.optional(v.string()),
+      region: v.optional(v.string()),
+      graduationYear: v.optional(v.number()),
+      diplomaTitle: v.optional(v.string()),
+      specialty: v.optional(v.string()),
+      note: v.optional(v.string()),
+      status: v.union(v.literal("PENDING"), v.literal("UNDER_REVIEW"), v.literal("APPROVED"), v.literal("REJECTED")),
+      adminNote: v.optional(v.string()),
+      reviewedById: v.optional(v.id("users")),
+      reviewedAt: v.optional(v.number()),
+      institutionId: v.optional(v.id("higherEducationInstitutions")), // si APPROVED + création
+    })
+      .index("by_user", ["userId"])
+      .index("by_status", ["status"]),
+
+    educationalCredentials: defineTable({
+      userId: v.id("users"),
+      institutionId: v.optional(v.id("higherEducationInstitutions")),
+      institutionName: v.string(),
+      diplomaLevel: v.optional(v.string()),
+      degreeKey: v.optional(v.string()),
+      fieldOfStudy: v.optional(v.string()),
+      specialtyTitle: v.optional(v.string()),
+      diplomaTitle: v.optional(v.string()),
+      graduationYear: v.optional(v.number()),
+      certificateNumber: v.optional(v.string()),
+      country: v.optional(v.string()),
+      institutionCity: v.optional(v.string()),
+      documentUrl: v.optional(v.string()),
+      documentHash: v.optional(v.string()),
+      verificationStatus: v.union(
+        v.literal("declare"),
+        v.literal("en_attente"),
+        v.literal("verifie"),
+        v.literal("rejete"),
+      ),
+      equivalenceStatus: v.union(
+        v.literal("NOT_REQUIRED"),
+        v.literal("PENDING"),
+        v.literal("GRANTED"),
+        v.literal("REJECTED"),
+      ),
+      reviewNote: v.optional(v.string()),
+      verifiedAt: v.optional(v.number()),
+      verifiedById: v.optional(v.id("users")),
+      createdAt: v.number(),
+      updatedAt: v.number(),
+    })
+      .index("by_user", ["userId"])
+      .index("by_institution", ["institutionId"])
+      .index("by_status", ["verificationStatus"]),
+
+    diplomaLevels: defineTable({
+      code: v.string(),
+      label: v.string(),
+      rank: v.number(),
+      active: v.boolean(),
+    }).index("by_code", ["code"]),
   },
   { schemaValidation: false },
 );
