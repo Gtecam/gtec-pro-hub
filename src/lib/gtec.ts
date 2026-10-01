@@ -538,6 +538,8 @@ export type CrewCandidate = {
   skills?: string[];
   /** Certifications / habilitations déclarées. */
   certifications?: string[];
+  /** RÉFÉRENTIEL : diplôme vérifié GTEC PRO (§12/§13) — bonus de confiance. */
+  credentialVerified?: boolean;
 };
 
 /** Chef d'équipe : score = expérience pondérée + note client + ancienneté. */
@@ -599,6 +601,9 @@ export function suggestTeam(
         matches(t.specialty, hint),
       );
       const kycBonus = t.verified === false ? -25 : 0;
+      // RÉFÉRENTIEL (§13) : le diplôme n'est qu'un critère parmi d'autres —
+      // un diplôme VÉRIFIÉ GTEC PRO apporte un léger bonus de confiance.
+      const credentialBonus = t.credentialVerified ? 4 : 0;
       // NOMENCLATURE GTEC PRO : bonus spécialité+métier+diplôme+compétences
       // (0-40) calculé par le moteur dédié — repli legacy si non renseigné.
       const nomenBonus = nomenMatchScore(
@@ -615,7 +620,7 @@ export function suggestTeam(
           skills: need?.requiredSkills,
         },
       );
-      const score = 100 - distance * 0.8 + (specialtyFit ? 20 : 0) + kycBonus + nomenBonus;
+      const score = 100 - distance * 0.8 + (specialtyFit ? 20 : 0) + kycBonus + credentialBonus + nomenBonus;
       return { tech: t, distance, score };
     })
     .sort((a, b) => b.score - a.score);

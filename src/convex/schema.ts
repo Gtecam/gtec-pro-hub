@@ -457,6 +457,19 @@ const schema = defineSchema(
       fieldOfStudy: v.optional(v.string()),
       school: v.optional(v.string()),
       graduationYear: v.optional(v.number()),
+      /** RÉFÉRENTIEL MINESUP : établissement choisi dans la table (jamais en dur). */
+      institutionId: v.optional(v.id("higherEducationInstitutions")),
+      /** Établissement déclaré hors référentiel → demande de vérification. */
+      institutionRequestId: v.optional(v.id("institutionVerificationRequests")),
+      /** Badge académique du profil (§12) — piloté par l'admin, jamais auto-attribué. */
+      credentialStatus: v.optional(
+        v.union(
+          v.literal("declare"),
+          v.literal("en_attente"),
+          v.literal("verifie"),
+          v.literal("rejete"),
+        ),
+      ),
 
       // Documents obligatoires (data URLs)
       documents: v.array(
@@ -798,6 +811,192 @@ const schema = defineSchema(
     })
       .index("by_payment", ["paymentId"])
       .index("by_provider_ref", ["providerRef"]),
+
+    // ============ GTEC PRO : RÉFÉRENTIEL ÉTABLISSEMENTS SUPÉRIEURS ========
+
+    /**
+     * RÉFÉRENTIEL NATIONAL des établissements d'enseignement supérieur du
+     * Cameroun (module MINESUP). Table administrable : l'UI ne contient
+     * aucune liste en dur — tout passe par ces lignes (CRUD admin,
+     * statuts, historique, source officielle).
+     */
+    higherEducationInstitutions: defineTable({
+      code: v.string(), // unique, ex. UNI-01, IPES-CE-07
+      name: v.string(),
+      shortName: v.optional(v.string()), // acronyme (UBa, IUC…)
+      aliases: v.optional(v.array(v.string())), // anciennes appellations
+      institutionType: v.union(
+        v.literal("STATE_UNIVERSITY"),
+        v.literal("PRIVATE_UNIVERSITY"),
+        v.literal("PUBLIC_SPECIAL_STATUS"),
+        v.literal("PRIVATE_HIGHER_INSTITUTE"),
+        v.literal("INTERNATIONAL_INSTITUTION"),
+        v.literal("INTERSTATE_INSTITUTION"),
+        v.literal("FOREIGN_RECOGNIZED_INSTITUTION"),
+      ),
+      ownership: v.union(
+        v.literal("PUBLIC"),
+        v.literal("PRIVATE"),
+        v.literal("INTERNATIONAL"),
+        v.literal("INTERSTATE"),
+      ),
+      region: v.union(
+        v.literal("ADAMOUA"),
+        v.literal("CENTRE"),
+        v.literal("EST"),
+        v.literal("EXTREME_NORD"),
+        v.literal("LITTORAL"),
+        v.literal("NORD"),
+        v.literal("NORD_OUEST"),
+        v.literal("OUEST"),
+        v.literal("SUD"),
+        v.literal("SUD_OUEST"),
+      ),
+      city: v.optional(v.string()),
+      department: v.optional(v.string()),
+      address: v.optional(v.string()),
+      latitude: v.optional(v.number()),
+      longitude: v.optional(v.number()),
+      website: v.optional(v.string()),
+      phone: v.optional(v.string()),
+      email: v.optional(v.string()),
+      /** Statut administré par GTEC — jamais déduit d'une saisie utilisateur. */
+      status: v.union(
+        v.literal("ACTIVE"),
+        v.literal("SUSPENDED"),
+        v.literal("CLOSED"),
+        v.literal("PENDING_VERIFICATION"),
+        v.literal("HISTORICAL"),
+      ),
+      authorizationStatus: v.union(
+        v.literal("AUTHORIZED"),
+        v.literal("APPROVED"),
+        v.literal("HOMOLOGATED"),
+        v.literal("NOT_APPLICABLE"),
+        v.literal("SUSPENDED"),
+        v.literal("WITHDRAWN"),
+        v.literal("UNKNOWN"),
+      ),
+      recognitionStatus: v.union(
+        v.literal("RECOGNIZED"),
+        v.literal("NOT_RECOGNIZED"),
+        v.literal("UNDER_REVIEW"),
+        v.literal("HISTORICAL"),
+      ),
+      canIssueNationalDiploma: v.optional(v.boolean()),
+      canIssuePrivateDiploma: v.optional(v.boolean()),
+      parentId: v.optional(v.id("higherEducationInstitutions")),
+      source: v.optional(v.string()),
+      sourceUrl: v.optional(v.string()),
+      lastVerifiedAt: v.optional(v.number()),
+      verifiedByAdminId: v.optional(v.id("users")),
+      notes: v.optional(v.string()),
+      isActive: v.boolean(),
+    })
+      .index("by_code", ["code"])
+      .index("by_region", ["region"])
+      .index("by_status", ["status"])
+      .index("by_active", ["isActive"]),
+
+    /**
+     * Historique des statuts d'un établissement (§14) : permet de savoir
+     * si l'établissement était reconnu au moment où le diplôme a été obtenu
+     * (institution_status_at_graduation = f(history, graduationYear)).
+     */
+    institutionStatusHistory: defineTable({
+      institutionId: v.id("higherEducationInstitutions"),
+      oldStatus: v.optional(v.string()),
+      newStatus: v.string(),
+      oldRecognitionStatus: v.optional(v.string()),
+      newRecognitionStatus: v.optional(v.string()),
+      decisionReference: v.optional(v.string()),
+      decisionDate: v.optional(v.number()),
+      sourceUrl: v.optional(v.string()),
+      reason: v.optional(v.string()),
+      changedById: v.optional(v.id("users")),
+      /** Horodatage de l'entrée — base du calcul statut-à-la-diplomation. */
+      at: v.number(),
+    })
+      .index("by_institution", ["institutionId"])
+      .index("by_decisionDate", ["decisionDate"]),
+
+    /**
+     * Demande « mon établissement n'est pas dans la liste » (§9).
+     * NE CRÉE JAMAIS d'établissement : l'admin décide après examen.
+     */
+    institutionVerificationRequests: defineTable({
+      userId: v.id("users"),
+      institutionName: v.string(),
+      city: v.optional(v.string()),
+      country: v.optional(v.string()),
+      region: v.optional(v.string()),
+      graduationYear: v.optional(v.number()),
+      diplomaTitle: v.optional(v.string()),
+      specialty: v.optional(v.string()),
+      note: v.optional(v.string()),
+      status: v.union(
+        v.literal("PENDING"),
+        v.literal("UNDER_REVIEW"),
+        v.literal("APPROVED"),
+        v.literal("REJECTED"),
+      ),
+      adminNote: v.optional(v.string()),
+      reviewedById: v.optional(v.id("users")),
+      reviewedAt: v.optional(v.number()),
+      /** Si approuvé : établissement créé dans le référentiel. */
+      institutionId: v.optional(v.id("higherEducationInstitutions")),
+    })
+      .index("by_user", ["userId"])
+      .index("by_status", ["status"]),
+
+    /** Diplômes / certifications déclarés par un utilisateur (§5, §10). */
+    educationalCredentials: defineTable({
+      userId: v.id("users"),
+      institutionId: v.optional(v.id("higherEducationInstitutions")),
+      institutionName: v.string(), // libellé saisi si établissement non trouvé
+      diplomaLevel: v.optional(v.string()), // code du référentiel diploma_levels
+      degreeKey: v.optional(v.string()), // clé nomenclature GTEC (BTS_ELTO…)
+      fieldOfStudy: v.optional(v.string()),
+      specialtyTitle: v.optional(v.string()),
+      diplomaTitle: v.optional(v.string()),
+      graduationYear: v.optional(v.number()),
+      certificateNumber: v.optional(v.string()),
+      country: v.optional(v.string()),
+      institutionCity: v.optional(v.string()),
+      documentUrl: v.optional(v.string()), // data URL, jamais publique
+      documentHash: v.optional(v.string()), // empreinte anti-fraude
+      verificationStatus: v.union(
+        v.literal("declare"),
+        v.literal("en_attente"),
+        v.literal("verifie"),
+        v.literal("rejete"),
+      ),
+      equivalenceStatus: v.optional(
+        v.union(
+          v.literal("NOT_REQUESTED"),
+          v.literal("PENDING"),
+          v.literal("GRANTED"),
+          v.literal("REFUSED"),
+          v.literal("NOT_REQUIRED"),
+        ),
+      ),
+      verifiedAt: v.optional(v.number()),
+      verifiedById: v.optional(v.id("users")),
+      reviewNote: v.optional(v.string()),
+      createdAt: v.number(),
+      updatedAt: v.number(),
+    })
+      .index("by_user", ["userId"])
+      .index("by_status", ["verificationStatus"])
+      .index("by_institution", ["institutionId"]),
+
+    /** Niveaux de diplômes du référentiel (§6) — seedé par l'admin. */
+    diplomaLevels: defineTable({
+      code: v.string(),
+      label: v.string(),
+      rank: v.number(),
+      active: v.boolean(),
+    }).index("by_code", ["code"]),
 
     // ===================== GTEC PRO 2.0 : litiges / sanctions / audit ======
 

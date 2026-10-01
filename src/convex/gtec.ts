@@ -80,7 +80,7 @@ export async function requireAdminScope(
 }
 
 /** Journal d'audit (§44) : trace une action sensible avec ancienne/nouvelle valeur. */
-async function auditLog(
+export async function auditLog(
   ctx: any,
   opts: {
     actorId?: Id<"users">;
@@ -127,7 +127,7 @@ function pad(n: number) {
 }
 
 /** V3 : notification in-app temps réel — poussée automatique par Convex. */
-async function notify(
+export async function notify(
   ctx: any,
   userId: Id<"users">,
   kind: string,
@@ -158,7 +158,7 @@ async function notify(
 }
 
 /** Notifie tous les administrateurs (file de travail de la console). */
-async function notifyAdmins(
+export async function notifyAdmins(
   ctx: any,
   kind: string,
   title: string,
@@ -1579,6 +1579,8 @@ export const suggestTeamForRequest = query({
           degreeLevel: profile?.degreeLevel,
           skills: profile?.skills,
           certifications: profile?.certifications,
+          // RÉFÉRENTIEL §12/§13 : bonus si le diplôme est vérifié GTEC PRO.
+          credentialVerified: profile?.credentialStatus === "verifie",
         };
       }),
     );
@@ -1916,6 +1918,10 @@ export const submitTechnicianApplication = mutation({
     fieldOfStudy: v.optional(v.string()),
     school: v.optional(v.string()),
     graduationYear: v.optional(v.number()),
+    // RÉFÉRENTIEL MINESUP (§8) : établissement choisi dans la table, ou
+    // demande de vérification si absent (§9) — jamais de création auto.
+    institutionId: v.optional(v.id("higherEducationInstitutions")),
+    institutionRequestId: v.optional(v.id("institutionVerificationRequests")),
     // NOMENCLATURE GTEC PRO (A→J)
     domainCode: v.optional(v.string()),
     specialtyCode: v.optional(v.string()),
@@ -1966,6 +1972,20 @@ export const submitTechnicianApplication = mutation({
     // Parcours académique
     if (!args.highestDegree.trim()) {
       throw new Error("Indiquez votre dernier diplôme obtenu.");
+    }
+    // RÉFÉRENTIEL : l'établissement doit exister et être actif (anti-fraude §17).
+    let institution: Doc<"higherEducationInstitutions"> | null = null;
+    if (args.institutionId) {
+      institution = await ctx.db.get(args.institutionId);
+      if (!institution || !institution.isActive) {
+        throw new Error("Établissement introuvable ou inactif dans le référentiel.");
+      }
+    }
+    if (args.institutionRequestId) {
+      const req = await ctx.db.get(args.institutionRequestId);
+      if (!req || req.userId !== user._id) {
+        throw new Error("Demande de vérification d'établissement invalide.");
+      }
     }
     // ===== NOMENCLATURE GTEC PRO : validation cohérente A→J =====
     if (args.specialtyCode) {
@@ -2131,8 +2151,14 @@ export const submitTechnicianApplication = mutation({
         ? (degreeByKey(args.degreeKey)?.label ?? args.highestDegree.trim())
         : args.highestDegree.trim(),
       fieldOfStudy: args.fieldOfStudy?.trim() || undefined,
-      school: args.school?.trim() || undefined,
+      school: institution?.name ?? args.school?.trim() ?? undefined,
       graduationYear: args.graduationYear || undefined,
+      // RÉFÉRENTIEL MINESUP : établissement choisi + badge déclaré (§12)
+      institutionId: args.institutionId,
+      institutionRequestId: args.institutionRequestId,
+      // Le diplôme est déposé avec documents → en attente d'instruction (§11).
+      credentialStatus:
+        institution?.name ?? args.school?.trim() ? "en_attente" : undefined,
       // NOMENCLATURE GTEC PRO (A→J)
       domainCode: args.domainCode || undefined,
       specialtyCode: args.specialtyCode || undefined,
@@ -2156,6 +2182,33 @@ export const submitTechnicianApplication = mutation({
       name: `${args.firstName.trim()} ${args.lastName.trim()}`.trim(),
       phone: cmE164(args.phone),
     });
+    // RÉFÉRENTIEL §5/§10 : enregistre le diplôme déclaré (les documents de la
+    // candidature servent de justificatifs — vérification admin séparée).
+    if (institution?.name ?? args.school?.trim()) {
+      const proofDoc = args.documents.find((d) =>
+        ["diploma", "certificate", "attestation"].includes(d.kind),
+      );
+      await ctx.db.insert("educationalCredentials", {
+        userId: user._id,
+        institutionId: institution?._id,
+        institutionName: institution?.name ?? args.school!.trim(),
+        degreeKey: args.degreeKey || undefined,
+        diplomaTitle: args.degreeKey
+          ? (degreeByKey(args.degreeKey)?.label ?? args.highestDegree.trim())
+          : args.highestDegree.trim(),
+        fieldOfStudy: args.fieldOfStudy?.trim() || undefined,
+        graduationYear: args.graduationYear || undefined,
+        country: "Cameroun",
+        institutionCity: institution?.city,
+        documentUrl: proofDoc?.url,
+        documentHash: proofDoc ? docFingerprint(proofDoc.url) : undefined,
+        // Déclaré sur candidature, en attente de l'instruction §11.
+        verificationStatus: "en_attente",
+        equivalenceStatus: "NOT_REQUIRED",
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+    }
   },
 });
 
