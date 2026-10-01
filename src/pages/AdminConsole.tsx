@@ -48,6 +48,7 @@ import { downloadCsv, todayStamp } from "@/lib/csv";
 import { ReportForm } from "@/components/ReportForm";
 import ServicesCatalog from "@/pages/ServicesCatalog";
 import { EducationAdmin } from "@/components/EducationAdmin";
+import { ProfileVerificationsAdmin } from "@/components/ProfileVerificationsAdmin";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -1696,6 +1697,9 @@ export default function AdminConsole() {
 
           {/* Vérification des candidatures */}
           <TabsContent value="verification" className="mt-4">
+            <div className="mb-4">
+              <ProfileVerificationsAdmin />
+            </div>
             {applications === undefined ? (
               <div className="h-40 animate-pulse rounded-xl bg-muted" />
             ) : applications.length === 0 ? (

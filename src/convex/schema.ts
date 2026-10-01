@@ -778,6 +778,178 @@ export const schema = defineSchema(
       rank: v.number(),
       active: v.boolean(),
     }).index("by_code", ["code"]),
+
+    // ===== PROFIL ÉVOLUTIF — « dossier professionnel vivant » (§26) =====
+    // Toute information a : status de vérification (DRAFT → SUBMITTED →
+    // UNDER_REVIEW → VERIFIED/REJECTED), verifiedAt/verifiedBy, isActive,
+    // createdAt/updatedAt. Une entrée vérifiée modifiée repasse en
+    // SUBMITTED (nouvelle validation). Rien n'est jamais supprimé.
+    professionalExperiences: defineTable({
+      userId: v.id("users"),
+      title: v.string(), // fonction / poste occupé
+      company: v.optional(v.string()),
+      domainCode: v.optional(v.string()),
+      domainLabel: v.optional(v.string()),
+      startDate: v.optional(v.string()), // YYYY-MM
+      endDate: v.optional(v.string()),
+      isCurrent: v.optional(v.boolean()),
+      description: v.optional(v.string()),
+      skillsUsed: v.optional(v.array(v.string())),
+      achievements: v.optional(v.string()),
+      city: v.optional(v.string()),
+      photos: v.optional(v.array(v.string())),
+      documentUrl: v.optional(v.string()),
+      referenceName: v.optional(v.string()),
+      referenceContact: v.optional(v.string()),
+      status: v.union(
+        v.literal("DRAFT"),
+        v.literal("SUBMITTED"),
+        v.literal("UNDER_REVIEW"),
+        v.literal("VERIFIED"),
+        v.literal("REJECTED"),
+      ),
+      verifiedAt: v.optional(v.number()),
+      verifiedBy: v.optional(v.id("users")),
+      reviewNote: v.optional(v.string()),
+      isActive: v.boolean(),
+      createdAt: v.number(),
+      updatedAt: v.number(),
+    })
+      .index("by_user", ["userId"])
+      .index("by_status", ["status"]),
+
+    technicianSkills: defineTable({
+      userId: v.id("users"),
+      domainCode: v.optional(v.string()),
+      domainLabel: v.optional(v.string()),
+      jobTitle: v.optional(v.string()),
+      skill: v.string(),
+      level: v.optional(
+        v.union(
+          v.literal("DEBUTANT"),
+          v.literal("INTERMEDIAIRE"),
+          v.literal("AVANCE"),
+          v.literal("EXPERT"),
+        ),
+      ),
+      yearsPracticed: v.optional(v.number()),
+      description: v.optional(v.string()),
+      acquiredAt: v.optional(v.string()),
+      documentUrl: v.optional(v.string()),
+      status: v.union(
+        v.literal("DRAFT"),
+        v.literal("SUBMITTED"),
+        v.literal("UNDER_REVIEW"),
+        v.literal("VERIFIED"),
+        v.literal("REJECTED"),
+      ),
+      verifiedAt: v.optional(v.number()),
+      verifiedBy: v.optional(v.id("users")),
+      reviewNote: v.optional(v.string()),
+      isActive: v.boolean(),
+      createdAt: v.number(),
+      updatedAt: v.number(),
+    })
+      .index("by_user", ["userId"])
+      .index("by_status", ["status"]),
+
+    profileCertifications: defineTable({
+      userId: v.id("users"),
+      name: v.string(),
+      organization: v.optional(v.string()),
+      domainCode: v.optional(v.string()),
+      domainLabel: v.optional(v.string()),
+      number: v.optional(v.string()),
+      obtainedAt: v.optional(v.number()),
+      expiresAt: v.optional(v.number()),
+      documentUrl: v.optional(v.string()),
+      status: v.union(
+        v.literal("DRAFT"),
+        v.literal("SUBMITTED"),
+        v.literal("UNDER_REVIEW"),
+        v.literal("VERIFIED"),
+        v.literal("REJECTED"),
+      ),
+      verifiedAt: v.optional(v.number()),
+      verifiedBy: v.optional(v.id("users")),
+      reviewNote: v.optional(v.string()),
+      isActive: v.boolean(),
+      createdAt: v.number(),
+      updatedAt: v.number(),
+    })
+      .index("by_user", ["userId"])
+      .index("by_status", ["status"]),
+
+    trainingRecords: defineTable({
+      userId: v.id("users"),
+      name: v.string(),
+      organization: v.optional(v.string()),
+      domainCode: v.optional(v.string()),
+      domainLabel: v.optional(v.string()),
+      completedAt: v.optional(v.number()),
+      durationHours: v.optional(v.number()),
+      skillsAcquired: v.optional(v.array(v.string())),
+      certificateUrl: v.optional(v.string()),
+      status: v.union(
+        v.literal("DRAFT"),
+        v.literal("SUBMITTED"),
+        v.literal("UNDER_REVIEW"),
+        v.literal("VERIFIED"),
+        v.literal("REJECTED"),
+      ),
+      verifiedAt: v.optional(v.number()),
+      verifiedBy: v.optional(v.id("users")),
+      reviewNote: v.optional(v.string()),
+      isActive: v.boolean(),
+      createdAt: v.number(),
+      updatedAt: v.number(),
+    })
+      .index("by_user", ["userId"])
+      .index("by_status", ["status"]),
+
+    portfolioProjects: defineTable({
+      userId: v.id("users"),
+      title: v.string(),
+      domainCode: v.optional(v.string()),
+      domainLabel: v.optional(v.string()),
+      description: v.optional(v.string()),
+      installationType: v.optional(v.string()),
+      completedAt: v.optional(v.number()),
+      city: v.optional(v.string()),
+      photosBefore: v.optional(v.array(v.string())),
+      photosDuring: v.optional(v.array(v.string())),
+      photosAfter: v.optional(v.array(v.string())),
+      materialsUsed: v.optional(v.string()),
+      skillsUsed: v.optional(v.array(v.string())),
+      difficulty: v.optional(v.string()),
+      outcome: v.optional(v.string()),
+      isPublic: v.optional(v.boolean()), // afficher dans le profil public
+      linkedRequestId: v.optional(v.id("serviceRequests")), // intervention GTEC PRO (client masqué)
+      status: v.union(
+        v.literal("DRAFT"),
+        v.literal("SUBMITTED"),
+        v.literal("UNDER_REVIEW"),
+        v.literal("VERIFIED"),
+        v.literal("REJECTED"),
+      ),
+      verifiedAt: v.optional(v.number()),
+      verifiedBy: v.optional(v.id("users")),
+      reviewNote: v.optional(v.string()),
+      isActive: v.boolean(),
+      createdAt: v.number(),
+      updatedAt: v.number(),
+    })
+      .index("by_user", ["userId"])
+      .index("by_status", ["status"]),
+
+    profileChanges: defineTable({
+      userId: v.id("users"),
+      kind: v.string(), // ex. certification.add / certification.verified
+      label: v.string(),
+      oldValue: v.optional(v.string()),
+      newValue: v.optional(v.string()),
+      at: v.number(),
+    }).index("by_user", ["userId"]),
   },
   { schemaValidation: false },
 );

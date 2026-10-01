@@ -40,6 +40,7 @@ import {
   CredentialForm,
   type InstitutionLite,
 } from "@/components/CredentialForm";
+import { MyProfile } from "@/components/MyProfile";
 import { credentialBadge } from "@/lib/institutions";
 import { useGeolocation } from "@/hooks/useGeolocation";
 import {
@@ -1614,6 +1615,9 @@ export default function TechnicianSpace() {
               <TabsTrigger value="abonnement">
                 <Crown className="mr-1.5 size-4" /> Abonnement
               </TabsTrigger>
+              <TabsTrigger value="profil">
+                <UserRound className="mr-1.5 size-4" /> Mon profil
+              </TabsTrigger>
               <TabsTrigger value="retraits">
                 <Landmark className="mr-1.5 size-4" /> Retraits
               </TabsTrigger>
@@ -1639,6 +1643,21 @@ export default function TechnicianSpace() {
               </TabsTrigger>
             </TabsList>
 
+            {/* MON PROFIL — dossier professionnel vivant */}
+            <TabsContent value="profil" className="mt-4">
+              <MyProfile />
+              <div className="mt-4 flex justify-center">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    toast.success("Profil enregistré.");
+                  }}
+                >
+                  <UserRound className="mr-1.5 size-4" /> Enregistrer mon profil
+</Button>
+              </div>
+            </TabsContent>
             {/* Missions */}
             <TabsContent value="missions" className="mt-4">
               {missions === undefined ? (
