@@ -8,7 +8,6 @@ export const ROLES = {
   USER: "user",
   MEMBER: "member",
 } as const;
-
 export const roleValidator = v.union(
   v.literal(ROLES.ADMIN),
   v.literal(ROLES.USER),
@@ -16,11 +15,7 @@ export const roleValidator = v.union(
 );
 export type Role = Infer<typeof roleValidator>;
 
-/**
- * GTEC PRO 2.0 (§3) : spécialisation des comptes administrateurs.
- * "super_admin" a tous les droits ; les autres rôles limitent leur périmètre
- * (les gardes serveur utilisent requireAdmin(ctx, scope)).
- */
+/** GTEC PRO 2.0 : spécialisation des comptes administrateurs. */
 export const ADMIN_ROLES = [
   "super_admin",
   "kyc",
@@ -32,13 +27,65 @@ export const ADMIN_ROLES = [
   "technique",
 ] as const;
 export const adminRoleValidator = v.union(
-  ...ADMIN_ROLES.map((r) => v.literal(r)),
+  v.literal("super_admin"),
+  v.literal("kyc"),
+  v.literal("finance"),
+  v.literal("missions"),
+  v.literal("support"),
+  v.literal("litiges"),
+  v.literal("moderation"),
+  v.literal("technique"),
 );
 
-const schema = defineSchema(
+// ===================== SERVICE PACK AGILE (réf. client GTEC V2) =====
+
+/** Pôle de service client (cahier des charges §4). La clé est la valeur de serviceKey des demandes. */
+export const SERVICE_PACKS = [
+  { key: "cfo", label: "Courant Fort — CFO", description: "Électricité : installations, tableaux, défenses, câblage, éclairage.", events: "électricité" },
+  { key: "ht", label: "Haute Tension — HTA", description: "Postes de transformation, réseaux HT, mesures d'isolement.", events: "haute tension" },
+  { key: "industrie", label: "Industrie & Automatisme", description: "Moteurs, commandes, variateurs, automates, instrumentation.", events: "industrie" },
+  { key: "solaire", label: "Solaire & Énergie", description: "Photovoltaïque, stockage, onduleurs, systèmes autonomes.", events: "énergie" },
+  { key: "cfa", label: "Courant Faible — CFA", description: "Réseaux informatiques, fibre, vidéosurveillance, interphonie.", events: "réseaux" },
+  { key: "domotique", label: "Domotique & Confort", description: "Éclairage intelligent, automatisme, sécurité connectée.", events: "domotique" },
+  { key: "sinc", label: "Sécurité Incendie", description: "Détection, alarmes, désenfumage, extincteurs, contrôles de conformité.", events: "sécurité incendie" },
+  { key: "inspection", label: "Inspection & Diagnostic", description: "Mesures électriques, thermographie, audits énergétiques, contrôles.", events: "diagnostic" },
+  { key: "froid", label: "Climatisation, HVAC & Froid", description: "Clim, VMC, chambres froides, groupes froid, réfrigération.", events: "climatisation" },
+  { key: "bati", label: "Bâtiment & Infrastructure", description: "Maçonnerie, cloisons, chemins de câbles, locaux techniques.", events: "bâtiment" },
+  { key: "maintenance", label: "Maintenance & Contrats", description: "Préventive, corrective, prédictive, contrats et interventions.", events: "maintenance" },
+  { key: "fourniture", label: "Fourniture de Matériel", description: "Stock, commande et livraison du catalogue de matériel GTEC.", events: "fourniture" },
+] as const;
+
+export type ServiceKey = (typeof SERVICE_PACKS)[number]["key"];
+
+/** Catégories par pôle (§4). */
+export const CATEGORIES_BY_POLE: Record<ServiceKey, string[]> = {
+  cfo: ["Installation électrique", "Réhabilitation", "Éclairage", "Mise à la terre", "Protection", "Distribution"],
+  ht: ["Poste de transformation", "Réseau HT/MT", "Cellule HTA", "Maintenance HTA", "Mesures et contrôles"],
+  industrie: ["Moteurs", "Commande électrique", "Variateurs", "Automatisme", "Machines industrielles", "Instrumentation"],
+  solaire: ["Installation solaire", "Onduleurs", "Batteries", "Systèmes autonomes", "Gestion énergétique"],
+  cfa: ["Réseaux informatiques", "Fibre optique", "Vidéosurveillance", "Interphonie", "Contrôle d'accès"],
+  domotique: ["Éclairage intelligent", "Gestion bâtiment", "Sécurité connectée", "Confort", "Maintenance"],
+  sinc: ["Détection incendie", "Alarme incendie", "Désenfumage", "Extinction", "Contrôle et maintenance"],
+  inspection: ["Diagnostic électrique", "Mesures électriques", "Thermographie", "Audit énergétique", "Inspection"],
+  froid: ["Climatisation", "Maintenance", "HVAC", "Froid"],
+  bati: ["Travaux de bâtiment", "Supports électriques", "Génie civil léger", "Infrastructure électrique", "Réhabilitation"],
+  maintenance: ["Maintenance préventive", "Maintenance corrective", "Maintenance prédictive", "Contrats", "Gestion des interventions"],
+  fourniture: ["Matériel électrique", "Éclairage", "Solaire", "Courant faible", "Sécurité", "Climatisation & froid"],
+};
+
+export const getCategoriesByPole = (pole: ServiceKey): string[] => CATEGORIES_BY_POLE[pole];
+
+export const getCategories = (pole?: ServiceKey | null, all: boolean = false): string[] => {
+  if (!pole) return all ? Object.values(CATEGORIES_BY_POLE).flat() : [];
+  return CATEGORIES_BY_POLE[pole];
+};
+
+// ===================== GTEC PRO 2.0 : litiges / sanctions / audit =====
+
+export const schema = defineSchema(
   {
-    // default auth tables using convex auth.
-    ...authTables, // do not remove or modify
+    // default auth tables using convex auth. do not remove or modify
+    ...authTables,
 
     // the users table is the default users table that is brought in by the authTables
     users: defineTable({
@@ -49,41 +96,33 @@ const schema = defineSchema(
       isAnonymous: v.optional(v.boolean()), // is the user anonymous. do not remove
 
       role: v.optional(roleValidator), // role of the user. do not remove
-      /** GTEC PRO 2.0 : périmètre du compte admin (super_admin = tous droits). */
-      adminRole: v.optional(adminRoleValidator),
-
-      // GTEC PRO
-      /** Espace choisi à l'inscription : "client" (défaut) ou "technicien". */
-      accountType: v.optional(v.union(v.literal("client"), v.literal("technicien"))),
+      adminRole: v.optional(adminRoleValidator), // GTEC admin role (super_admin = all rights)
+      accountType: v.optional(v.union(v.literal("client"), v.literal("technicien"))), // Espace choisi à l'inscription : client ou technicien
       phone: v.optional(v.string()),
       city: v.optional(v.string()),
 
       // Identité complète du client (profil client)
       firstName: v.optional(v.string()),
       lastName: v.optional(v.string()),
-      /** Vérification du téléphone par code SMS (OTP Twilio). */
-      phoneVerified: v.optional(v.boolean()),
+      phoneVerified: v.optional(v.boolean()), // OTP SMS
       nationalId: v.optional(v.string()), // CNI / passeport
       gender: v.optional(v.string()),
       birthDate: v.optional(v.string()), // YYYY-MM-DD
       altPhone: v.optional(v.string()),
       address: v.optional(v.string()),
-      quarter: v.optional(v.string()), // quartier
-      customerType: v.optional(v.string()), // particulier | professionnel | entreprise | hotel | industrie | promoteur | institution (7 types GTEC)
+      quarter: v.optional(v.string()),
+      customerType: v.optional(v.string()), // particulier | professionnel | entreprise | institution
       companyName: v.optional(v.string()),
       taxId: v.optional(v.string()), // NUI / contribuable
       idDocumentUrl: v.optional(v.string()), // photo CNI (data URL)
-    }).index("email", ["email"]) // index for the email. do not remove or modify
-      .index("phone", ["phone"]), // requis par Convex Auth (provider Phone / phone-otp)
+    }).index("email", ["email"]).index("phone", ["phone"]),
 
-    // ---- GTEC PRO V1 : one end-to-end client journey ----
-    // demande -> devis -> paiement -> affectation -> intervention -> rapport -> réception -> facture
-
+    // service demandes de service
     serviceRequests: defineTable({
       clientId: v.id("users"),
       reference: v.string(), // GTC-0001
-      serviceKey: v.string(), // electricite | plomberie | solaire | cctv | climatisation | maintenance
-      subcategory: v.optional(v.string()), // type de problème choisi dans la catégorie
+      serviceKey: v.string(), // cfo | ht | industrie | solaire | cfa | domotique | sinc | inspection | froid | bati | maintenance | fourniture
+      subcategory: v.optional(v.string()),
       title: v.string(),
       description: v.string(),
       address: v.string(),
@@ -102,29 +141,15 @@ const schema = defineSchema(
       ),
       scheduledAt: v.optional(v.number()),
       cancellationReason: v.optional(v.string()),
-      /** GPS du chantier saisi par le client (degrés décimaux). */
-      coords: v.optional(
-        v.object({ lat: v.number(), lon: v.number(), accuracy: v.optional(v.number()) }),
-      ),
-      /** Date de la dernière position GPS client enregistrée. */
+      coords: v.optional(v.object({ lat: v.number(), lon: v.number(), accuracy: v.optional(v.number()) })),
       coordsAt: v.optional(v.number()),
-      /** NOMENCLATURE : spécialité professionnelle attendue (code ELEC-ELEC-IND…). */
-      specialtyCode: v.optional(v.string()),
-      /** Compétences techniques requises pour l'intervention. */
-      requiredSkills: v.optional(v.array(v.string())),
-      /** CATALOGUE : intervention choisie (code unique CFO-INS-01…). */
-      interventionCode: v.optional(v.string()),
-      /** DIASPORA : commande passée pour un proche au Cameroun. */
+      specialtyCode: v.optional(v.string()), // NOMENCLATURE : spécialité professionnelle attendue (ex. ELEC-ELEC-IND…)
+      requiredSkills: v.optional(v.array(v.string())), // compétences techniques requises
+      interventionCode: v.optional(v.string()), // CATALOGUE : intervention choisie (code unique)
       beneficiaryId: v.optional(v.id("diasporaBeneficiaries")),
-      /** Mode diaspora : le demandeur est à l'étranger (affichages + suivi). */
-      isDiaspora: v.optional(v.boolean()),
-      /** Bénéficiaire à contacter sur place (nom + téléphone, si proche non compté). */
-      onSiteContact: v.optional(
-        v.object({ name: v.string(), phone: v.string() }),
-      ),
-      /** Instructions d'accès au chantier (portail, étage, repère…). */
-      accessInstructions: v.optional(v.string()),
-      /** DIASPORA §11 : validation du proche sur place. */
+      isDiaspora: v.optional(v.boolean()), // mode diaspora : le demandeur est à l'étranger
+      onSiteContact: v.optional(v.object({ name: v.string(), phone: v.string() })), // bénéficiaire à contacter sur place
+      accessInstructions: v.optional(v.string()), // instructions d'accès au chantier
       beneficiaryValidation: v.optional(
         v.union(
           v.literal("en_attente"),
@@ -135,25 +160,14 @@ const schema = defineSchema(
       ),
       beneficiaryValidationNote: v.optional(v.string()),
       beneficiaryValidatedAt: v.optional(v.number()),
-      /** Code remis au bénéficiaire pour valider sans compte (notifié au demandeur). */
-      beneficiaryValidationCode: v.optional(v.string()),
-      /** GÉO TERRAIN : arrivée de l'équipe confirmée sur le chantier (§9). */
-      teamArrivalAt: v.optional(v.number()),
-      teamArrivalCoords: v.optional(
-        v.object({ lat: v.number(), lon: v.number(), accuracy: v.optional(v.number()) }),
-      ),
-      /** Libellé de l'intervention figé à la création (affichage). */
-      interventionLabel: v.optional(v.string()),
-      /** Niveau d'urgence déclaré : normale | urgente | critique. */
-      urgency: v.optional(
-        v.union(v.literal("normale"), v.literal("urgente"), v.literal("critique")),
-      ),
-      /** Date souhaitée d'intervention (timestamp). */
-      desiredDate: v.optional(v.number()),
-      /** Budget indicatif du client (FCFA), facultatif. */
-      budgetHint: v.optional(v.number()),
-      /** Message vocal (data URL audio, compressé côté client). */
-      voiceNoteUrl: v.optional(v.string()),
+      beneficiaryValidationCode: v.optional(v.string()), // code pour valider sans compte
+      teamArrivalAt: v.optional(v.number()), // GÉO TERRAIN : arrivée de l'équipe confirmée
+      teamArrivalCoords: v.optional(v.object({ lat: v.number(), lon: v.number(), accuracy: v.optional(v.number()) })), // GÉO TERRAIN : coordonnées d'arrivée
+      interventionLabel: v.optional(v.string()), // libellé figé de l'intervention
+      urgency: v.optional(v.union(v.literal("normale"), v.literal("urgente"), v.literal("critique"))), // niveau d'urgence
+      desiredDate: v.optional(v.number()), // date souhaitée d'intervention
+      budgetHint: v.optional(v.number()), // budget indicatif client (FCFA)
+      voiceNoteUrl: v.optional(v.string()), // message vocal (data URL)
     })
       .index("by_client", ["clientId"])
       .index("by_status", ["status"])
@@ -162,46 +176,26 @@ const schema = defineSchema(
     quotes: defineTable({
       requestId: v.id("serviceRequests"),
       clientId: v.id("users"),
-      /** V6 : auteur du devis — le technicien le rédige sur le terrain. */
       authorId: v.optional(v.id("users")),
-      authorRole: v.optional(v.union(v.literal("technicien"), v.literal("admin"))),
+      authorRole: v.optional(v.union(v.literal("technicien"), v.literal("admin"))), // auteur du devis
       number: v.string(), // DEV-0001
-      items: v.array(
-        v.object({
-          label: v.string(),
-          qty: v.number(),
-          unitPrice: v.number(),
-        }),
-      ),
+      items: v.array({ label: v.string(), qty: v.number(), unitPrice: v.number() }),
       subtotal: v.number(),
-      vatRate: v.number(), // e.g. 19.25 (Cameroun)
+      vatRate: v.number(), // TVA Cameroun
       total: v.number(),
       currency: v.string(), // FCFA
-      status: v.union(
-        v.literal("emis"),
-        v.literal("accepte"),
-        v.literal("refuse"),
-        v.literal("expire"),
-      ),
+      status: v.union(v.literal("emis"), v.literal("accepte"), v.literal("refuse"), v.literal("expire")),
       validUntil: v.number(),
-      /** V6 : validation automatique GTEC dès l'envoi du devis terrain. */
-      autoValidatedAt: v.optional(v.number()),
-      /** GTEC PRO 2.0 (§18) : version du devis (V1, V2…) — toute modification
-       * crée un nouveau devis lié, l'ancien n'est jamais écrasé. */
-      version: v.optional(v.number()),
-      /** 2.0 : devis révisé par celui-ci (chaîne de versionnage). */
-      revisedFromId: v.optional(v.id("quotes")),
+      autoValidatedAt: v.optional(v.number()), // validation automatique GTEC
+      version: v.optional(v.number()), // version du devis
+      revisedFromId: v.optional(v.id("quotes")), // devis révisé
     })
       .index("by_request", ["requestId"])
       .index("by_client", ["clientId"])
       .index("by_author", ["authorId"]),
 
-    /**
-     * DIASPORA — bénéficiaires d'un client vivant à l'étranger : proches,
-     * locataires, maison familiale ou entreprise au Cameroun (§2, §15).
-     */
     diasporaBeneficiaries: defineTable({
-      ownerId: v.id("users"), // client diaspora (payeur, à l'étranger)
+      ownerId: v.id("users"), // client diaspora
       firstName: v.string(),
       lastName: v.string(),
       phone: v.string(), // numéro camerounais du bénéficiaire
@@ -209,15 +203,12 @@ const schema = defineSchema(
       city: v.string(),
       quarter: v.optional(v.string()), // quartier
       address: v.optional(v.string()),
-      coords: v.optional(
-        v.object({ lat: v.number(), lon: v.number(), accuracy: v.optional(v.number()) }),
-      ),
+      coords: v.optional(v.object({ lat: v.number(), lon: v.number(), accuracy: v.optional(v.number()) })),
       accessInstructions: v.optional(v.string()),
       onSiteContactName: v.optional(v.string()),
       onSiteContactPhone: v.optional(v.string()),
       archived: v.optional(v.boolean()),
-    })
-      .index("by_owner", ["ownerId"]),
+    }).index("by_owner", ["ownerId"]),
 
     payments: defineTable({
       quoteId: v.id("quotes"),
@@ -225,48 +216,27 @@ const schema = defineSchema(
       clientId: v.id("users"),
       amount: v.number(),
       currency: v.string(),
-      method: v.union(
-        v.literal("mtn_momo"),
-        v.literal("orange_money"),
-        v.literal("especes"),
-        v.literal("virement"),
-        v.literal("carte_visa"),
-      ),
+      method: v.union(v.literal("mtn_momo"), v.literal("orange_money"), v.literal("especes"), v.literal("virement"), v.literal("carte_visa")),
       payerPhone: v.string(),
-      status: v.union(
-        v.literal("en_attente"),
-        v.literal("valide"),
-        v.literal("echoue"),
-      ),
+      status: v.union(v.literal("en_attente"), v.literal("valide"), v.literal("echoue")),
       externalRef: v.optional(v.string()),
-
-      // Preuves & références (cash, virement, carte)
-      proofPhotoUrl: v.optional(v.string()), // reçu/reçu de paiement (data URL)
+      proofPhotoUrl: v.optional(v.string()),
       bankName: v.optional(v.string()),
-      bankRef: v.optional(v.string()), // référence transaction bancaire
-      cardLast4: v.optional(v.string()), // 4 derniers chiffres Visa
-      /** DIASPORA §7 : paiement international (tokenisé chez le PSP, jamais de
-       * donnée de carte chez GTEC PRO). Montant + devise du payeur + conversion. */
-      international: v.optional(
-        v.object({
-          provider: v.union(v.literal("stripe"), v.literal("cinetpay_card")),
-          amountMinor: v.number(), // centimes (ou unités zéro-décimale pour XAF)
-          currency: v.string(), // EUR, USD, GBP, CAD…
-          fxRateFromXaf: v.optional(v.number()), // taux appliqué (indicatif)
-          feeXaf: v.optional(v.number()), // frais éventuels affichés avant validation
-          /** §8 : fonds capturés seulement après validation de l'intervention. */
-          captured: v.optional(v.boolean()),
-          providerRef: v.optional(v.string()),
-        }),
-      ),
-      collectedBy: v.optional(v.id("users")), // technicien encaisseur (cash)
+      bankRef: v.optional(v.string()),
+      cardLast4: v.optional(v.string()),
+      international: v.optional(v.object({
+        provider: v.union(v.literal("stripe"), v.literal("cinetpay_card")),
+        amountMinor: v.number(),
+        currency: v.string(),
+        fxRateFromXaf: v.optional(v.number()),
+        feeXaf: v.optional(v.number()),
+        captured: v.optional(v.boolean()),
+        providerRef: v.optional(v.string()),
+      })),
+      collectedBy: v.optional(v.id("users")),
       collectedAt: v.optional(v.number()),
-      paidAt: v.optional(v.number()), // date réelle d'encaissement (démo/rapports)
-
-      // ===== V6 : paiement en 2 tranches (50 % avant / 50 % après) =====
-      /** "avance" = 50 % avant travaux · "solde" = 50 % à la fin des travaux. */
+      paidAt: v.optional(v.number()),
       milestone: v.optional(v.union(v.literal("avance"), v.literal("solde"))),
-      /** Part du total TTC couverte par ce paiement (50 par défaut). */
       percent: v.optional(v.number()),
     })
       .index("by_request", ["requestId"])
@@ -276,808 +246,274 @@ const schema = defineSchema(
     assignments: defineTable({
       requestId: v.id("serviceRequests"),
       teamLeaderId: v.id("users"),
-      members: v.array(v.object({ id: v.id("users"), role: v.string() })),
+      members: v.array({ id: v.id("users"), role: v.string() }),
       scheduledAt: v.number(),
       notes: v.optional(v.string()),
-      status: v.union(
-        v.literal("planifiee"),
-        v.literal("en_cours"),
-        v.literal("terminee"),
-      ),
+      status: v.union(v.literal("planifiee"), v.literal("en_cours"), v.literal("terminee")),
     }).index("by_request", ["requestId"]),
 
     interventionReports: defineTable({
       requestId: v.id("serviceRequests"),
       assignmentId: v.id("assignments"),
       workDone: v.string(),
-      partsUsed: v.array(
-        v.object({ label: v.string(), qty: v.number() }),
-      ),
+      partsUsed: v.array({ label: v.string(), qty: v.number() }),
       beforePhotos: v.array(v.string()),
       afterPhotos: v.array(v.string()),
       warrantyMonths: v.number(),
       recommendations: v.optional(v.string()),
-      status: v.union(
-        v.literal("transmis"),
-        v.literal("receptionne"),
-      ),
+      status: v.union(v.literal("transmis"), v.literal("receptionne")),
       receptionNote: v.optional(v.string()),
-      clientSignature: v.optional(v.string()), // data URL du PV
+      clientSignature: v.optional(v.string()),
       receivedAt: v.optional(v.number()),
     }).index("by_request", ["requestId"]),
 
     invoices: defineTable({
       requestId: v.id("serviceRequests"),
       clientId: v.id("users"),
-      number: v.string(), // FAC-0001
+      number: v.string(),
       amount: v.number(),
       currency: v.string(),
       status: v.union(v.literal("emise"), v.literal("payee")),
       issuedAt: v.number(),
-    })
-      .index("by_request", ["requestId"])
-      .index("by_client", ["clientId"]),
+    }).index("by_request", ["requestId"]).index("by_client", ["clientId"]),
 
     requestEvents: defineTable({
       requestId: v.id("serviceRequests"),
-      kind: v.string(), // demande, devis, paiement, affectation, intervention, rapport, reception, facture, annulation
+      kind: v.string(),
       label: v.string(),
       detail: v.optional(v.string()),
       at: v.number(),
     }).index("by_request", ["requestId"]),
 
-    /** Avis client sur une intervention terminée (1 seul par demande). */
     reviews: defineTable({
       requestId: v.id("serviceRequests"),
       clientId: v.id("users"),
-      /** Technicien ciblé : le chef d'équipe de la mission. */
       techUserId: v.id("users"),
-      rating: v.number(), // 1 à 5
+      rating: v.number(),
       comment: v.optional(v.string()),
       at: v.number(),
-    })
-      .index("by_request", ["requestId"])
-      .index("by_tech", ["techUserId"]),
+    }).index("by_request", ["requestId"]).index("by_tech", ["techUserId"]),
 
-    // ===================== V2 : contrats de maintenance =====================
-
-    /**
-     * Contrat de maintenance préventive — visites périodiques planifiées
-     * (ex. : entretien clim 4 fois/an, contrôle électrique semestriel).
-     */
     maintenanceContracts: defineTable({
-      reference: v.string(), // CTR-0001
+      reference: v.string(),
       clientId: v.id("users"),
-      serviceKey: v.string(), // pôle couvert par le contrat
+      serviceKey: v.string(),
       title: v.string(),
       description: v.optional(v.string()),
-      /** Fréquence des visites. */
-      frequency: v.union(
-        v.literal("mensuel"),
-        v.literal("trimestriel"),
-        v.literal("semestriel"),
-        v.literal("annuel"),
-      ),
-      /** Montant annuel ou par visite, en FCFA. */
+      frequency: v.union(v.literal("mensuel"), v.literal("trimestriel"), v.literal("semestriel"), v.literal("annuel")),
       monthlyAmount: v.number(),
       city: v.string(),
       address: v.string(),
-      status: v.union(
-        v.literal("actif"),
-        v.literal("suspendu"),
-        v.literal("expire"),
-        v.literal("resilie"),
-      ),
+      status: v.union(v.literal("actif"), v.literal("suspendu"), v.literal("expire"), v.literal("resilie")),
       startDate: v.number(),
       endDate: v.number(),
-      /** Dernière / prochaine visite planifiée. */
       nextVisitAt: v.optional(v.number()),
     })
       .index("by_client", ["clientId"])
       .index("by_status", ["status"]),
 
-    /** Visite de maintenance réalisée ou planifiée dans un contrat. */
     contractVisits: defineTable({
       contractId: v.id("maintenanceContracts"),
       scheduledAt: v.number(),
       doneAt: v.optional(v.number()),
       assignedTeamLeaderId: v.optional(v.id("users")),
       report: v.optional(v.string()),
-      status: v.union(
-        v.literal("planifiee"),
-        v.literal("faite"),
-        v.literal("annulee"),
-      ),
-    }).index("by_contract", ["contractId"])
-      .index("by_leader", ["assignedTeamLeaderId"]),
+      status: v.union(v.literal("planifiee"), v.literal("faite"), v.literal("annulee")),
+    }).index("by_contract", ["contractId"]).index("by_leader", ["assignedTeamLeaderId"]),
 
-    /**
-     * Mensualité d'un contrat de maintenance (paiement vérifié par
-     * l'administration, même modèle que les paiements de devis).
-     */
     contractPayments: defineTable({
       contractId: v.id("maintenanceContracts"),
       clientId: v.id("users"),
-      /** Numéro d'échéance (1 = première mensualité). */
       periodIndex: v.number(),
-      /** Date de couverture de la mensualité (début de période). */
       periodStart: v.number(),
       periodEnd: v.number(),
       amount: v.number(),
       currency: v.string(),
-      method: v.union(
-        v.literal("mtn_momo"),
-        v.literal("orange_money"),
-        v.literal("especes"),
-        v.literal("virement"),
-      ),
+      method: v.union(v.literal("mtn_momo"), v.literal("orange_money"), v.literal("especes"), v.literal("virement")),
       payerPhone: v.string(),
       proofPhotoUrl: v.optional(v.string()),
       bankName: v.optional(v.string()),
       bankRef: v.optional(v.string()),
-      status: v.union(
-        v.literal("en_attente"),
-        v.literal("valide"),
-        v.literal("echoue"),
-      ),
+      status: v.union(v.literal("en_attente"), v.literal("valide"), v.literal("echoue")),
       externalRef: v.optional(v.string()),
       validatedAt: v.optional(v.number()),
-    }).index("by_contract", ["contractId"])
+    })
+      .index("by_contract", ["contractId"])
       .index("by_client", ["clientId"])
       .index("by_status", ["status"]),
 
-    // ---- Espace technicien (V1.1) ----
-
-    /** Profil de candidature technicien — un par utilisateur. */
     technicianProfiles: defineTable({
       userId: v.id("users"),
-
-      // Identité
       firstName: v.string(),
       lastName: v.string(),
-      nationalId: v.string(), // CNI / passeport
+      nationalId: v.string(),
       gender: v.optional(v.string()),
-      birthDate: v.optional(v.string()), // YYYY-MM-DD
+      birthDate: v.optional(v.string()),
       phone: v.string(),
       altPhone: v.optional(v.string()),
-      city: v.string(), // ville de résidence
+      city: v.string(),
       address: v.optional(v.string()),
-
-      // Profession
-      specialty: v.string(), // ex. "Électricité CFO/CATE"
-      profession: v.optional(v.string()), // métier exact
+      specialty: v.string(),
+      profession: v.optional(v.string()),
       experienceYears: v.number(),
       currentEmployer: v.optional(v.string()),
-      references: v.optional(v.string()), // chantiers / clients de référence
-      zones: v.array(v.string()), // villes d'intervention
+      references: v.optional(v.string()),
+      zones: v.array(v.string()),
       bio: v.optional(v.string()),
-
-      // Parcours académique
-      highestDegree: v.string(), // ex. CAP, BT, Licence, BTS, Ingénieur
+      highestDegree: v.string(),
       fieldOfStudy: v.optional(v.string()),
       school: v.optional(v.string()),
       graduationYear: v.optional(v.number()),
-      /** RÉFÉRENTIEL MINESUP : établissement choisi dans la table (jamais en dur). */
       institutionId: v.optional(v.id("higherEducationInstitutions")),
-      /** Établissement déclaré hors référentiel → demande de vérification. */
       institutionRequestId: v.optional(v.id("institutionVerificationRequests")),
-      /** Badge académique du profil (§12) — piloté par l'admin, jamais auto-attribué. */
-      credentialStatus: v.optional(
-        v.union(
-          v.literal("declare"),
-          v.literal("en_attente"),
-          v.literal("verifie"),
-          v.literal("rejete"),
-        ),
-      ),
-
-      // Documents obligatoires (data URLs)
-      documents: v.array(
-        v.object({
-          kind: v.string(), // cni | diploma | certificate | other
-          label: v.string(),
-          url: v.string(),
-        }),
-      ),
-
-      status: v.union(
-        v.literal("en_attente"), // dossier soumis, en cours de vérification GTEC
-        v.literal("verifie"), // validé par l'admin
-        v.literal("rejete"),
-      ),
-      reviewNote: v.optional(v.string()), // motif admin en cas de rejet
-      /** V6 : source du doublon détecté (candidature rejetée automatiquement). */
+      credentialStatus: v.optional(v.union(v.literal("declare"), v.literal("en_attente"), v.literal("verifie"), v.literal("rejete"))),
+      status: v.union(v.literal("en_attente"), v.literal("verifie"), v.literal("rejete")),
+      reviewNote: v.optional(v.string()),
       kycFlag: v.optional(v.string()),
-      /** V6 : empreintes SHA-256 des documents (anti-doublon de pièces). */
       kycDocHashes: v.optional(v.array(v.string())),
-      subscription: v.union(
-        v.literal("aucun"),
-        v.literal("mensuel"),
-        v.literal("trimestriel"),
-        v.literal("annuel"),
-      ),
+      subscription: v.union(v.literal("aucun"), v.literal("mensuel"), v.literal("trimestriel"), v.literal("annuel")),
       subscriptionUntil: v.optional(v.number()),
       subscriptionPrice: v.optional(v.number()),
-
-      /** Dernière position GPS connue du technicien (degrés décimaux). */
-      lastLocation: v.optional(
-        v.object({ lat: v.number(), lon: v.number(), accuracy: v.optional(v.number()) }),
-      ),
-      /** Horodatage de la dernière position GPS. */
+      lastLocation: v.optional(v.object({ lat: v.number(), lon: v.number(), accuracy: v.optional(v.number()) })),
       lastLocationAt: v.optional(v.number()),
-      /** Partage GPS temps réel activé par le technicien. */
       locationSharing: v.optional(v.boolean()),
-
-      /**
-       * NOMENCLATURE GTEC PRO : Domaine → Spécialité professionnelle →
-       * Métier → Compétences → Diplôme → Spécialité du diplôme → Niveau →
-       * Certifications (+ expérience, zone d'intervention détaillée).
-       */
-      /** Domaine (code racine : ELEC, HTA, IND, ENE, FROID, INFO, RES, BTP, PLB, MNT, MEC, SEC, ENT). */
       domainCode: v.optional(v.string()),
-      /** Spécialité professionnelle (code unique : ELEC-ELEC-IND…). */
       specialtyCode: v.optional(v.string()),
-      /** Métier officiel de la nomenclature (ex. "Électricien industriel"). */
       jobTitle: v.optional(v.string()),
-      /** Compétences réellement exercées. */
       skills: v.optional(v.array(v.string())),
-      /** Clé du diplôme (BTS_ELTO, LIC_GE, ING_GE…) — voir src/lib/nomenclature.ts. */
       degreeKey: v.optional(v.string()),
-      /** Niveau d'études lisible (ex. "Bac+2"). */
       degreeLevel: v.optional(v.string()),
-      /** Certifications / habilitations (HTA, photovoltaïque, sécurité…). */
       certifications: v.optional(v.array(v.string())),
-      /** Palier d'expérience déclaré (0-1, 2-3, 4-5, 6-10, 10+). */
       experienceBand: v.optional(v.string()),
-      /** Arrondissement / quartier principal d'intervention. */
       district: v.optional(v.string()),
-      /** Rayon d'intervention accepté autour de la ville (km). */
       radiusKm: v.optional(v.number()),
-      /** GTEC PRO 2.0 (§12) : disponibilité déclarée — un prestataire
-       * indisponible n'est jamais proposé par le moteur d'affectation. */
-      availability: v.optional(
-        v.union(
-          v.literal("disponible"),
-          v.literal("occupe"),
-          v.literal("hors_ligne"),
-          v.literal("indisponible"),
-          v.literal("en_intervention"),
-          v.literal("conge"),
-        ),
-      ),
+      availability: v.optional(v.union(v.literal("disponible"), v.literal("occupe"), v.literal("hors_ligne"), v.literal("indisponible"), v.literal("en_intervention"), v.literal("conge"))),
     })
       .index("by_user", ["userId"])
       .index("by_status", ["status"]),
 
-    /** Demande de matériel faite par un technicien pendant l'intervention. */
     materialRequests: defineTable({
       requestId: v.id("serviceRequests"),
       requestedById: v.id("users"),
       label: v.string(),
       qty: v.number(),
-      status: v.union(
-        v.literal("demande"),
-        v.literal("approuve"),
-        v.literal("commande"),
-        v.literal("livre"),
-        v.literal("refuse"),
-      ),
+      status: v.union(v.literal("demande"), v.literal("approuve"), v.literal("commande"), v.literal("livre"), v.literal("refuse")),
       adminNote: v.optional(v.string()),
-    })
-      .index("by_request", ["requestId"])
-      .index("by_status", ["status"]),
+    }).index("by_request", ["requestId"]).index("by_status", ["status"]),
 
-    /**
-     * Paiement d'abonnement technicien (Mobile Money — vérification manuelle V1,
-     * même modèle que les paiements de devis).
-     */
     subscriptionPayments: defineTable({
       profileId: v.id("technicianProfiles"),
       techUserId: v.id("users"),
-      plan: v.union(
-        v.literal("mensuel"),
-        v.literal("trimestriel"),
-        v.literal("annuel"),
-      ),
+      plan: v.union(v.literal("mensuel"), v.literal("trimestriel"), v.literal("annuel")),
       amount: v.number(),
       currency: v.string(),
-      method: v.union(
-        v.literal("mtn_momo"),
-        v.literal("orange_money"),
-        v.literal("especes"),
-        v.literal("virement"),
-      ),
+      method: v.union(v.literal("mtn_momo"), v.literal("orange_money"), v.literal("especes"), v.literal("virement")),
       payerPhone: v.string(),
-      status: v.union(
-        v.literal("en_attente"),
-        v.literal("valide"),
-        v.literal("echoue"),
-      ),
+      status: v.union(v.literal("en_attente"), v.literal("valide"), v.literal("echoue")),
       externalRef: v.optional(v.string()),
-    })
-      .index("by_profile", ["profileId"])
-      .index("by_status", ["status"]),
+    }).index("by_profile", ["profileId"]).index("by_status", ["status"]),
 
-    /**
-     * Rémunération technicien — calculée quand le client signe le PV,
-     * payée à la fin du mois par l'admin.
-     */
     payouts: defineTable({
       techUserId: v.id("users"),
       requestId: v.id("serviceRequests"),
       amount: v.number(),
       sharePercent: v.number(),
-      role: v.string(), // "Chef d'équipe" | "Technicien"
-      status: v.union(
-        v.literal("dû"),
-        v.literal("payé"),
-      ),
+      role: v.string(),
+      status: v.union(v.literal("dû"), v.literal("payé")),
       paidAt: v.optional(v.number()),
       method: v.optional(v.string()),
-    })
-      .index("by_tech", ["techUserId", "status"])
-      .index("by_request", ["requestId"]),
+    }).index("by_tech", ["techUserId", "status"]).index("by_request", ["requestId"]),
 
-    /**
-     * Commission GTEC de 15 % — créée automatiquement quand le client paie un
-     * devis (§10 du cahier des charges). Le technicien la règle à GTEC par
-     * Mobile Money ; la clôture financière exige sa régularisation.
-     */
     gtecCommissions: defineTable({
       requestId: v.id("serviceRequests"),
       quoteId: v.id("quotes"),
-      /** 2.0 : "team" = part de l'équipe (90 %) · "gtec" = commission (10 %). */
-      breakdown: v.optional(
-        v.object({
-          teamAmount: v.number(),
-          gtecAmount: v.number(),
-        }),
-      ),
-      /** Chef d'équipe redevable (débite la mission au nom de l'équipe). */
+      breakdown: v.optional(v.object({ teamAmount: v.number(), gtecAmount: v.number() })),
       techUserId: v.id("users"),
-      /** Montant TTC de l'intervention, base du calcul. */
       baseAmount: v.number(),
-      ratePercent: v.number(), // 10 par défaut (§22 cahier des charges 2.0)
+      ratePercent: v.number(),
       amount: v.number(),
       currency: v.string(),
-      status: v.union(
-        v.literal("due"), // commission générée, en attente de paiement
-        v.literal("payee"), // réglée et validée par l'administration
-        v.literal("exoneree"), // annulée par autorisation administrative
-      ),
-      method: v.optional(
-        v.union(
-          v.literal("mtn_momo"),
-          v.literal("orange_money"),
-          v.literal("virement"),
-          v.literal("especes"),
-        ),
-      ),
+      status: v.union(v.literal("due"), v.literal("payee"), v.literal("exoneree")),
+      method: v.optional(v.union(v.literal("mtn_momo"), v.literal("orange_money"), v.literal("virement"), v.literal("especes"))),
       payerPhone: v.optional(v.string()),
       externalRef: v.optional(v.string()),
       paidAt: v.optional(v.number()),
       validatedBy: v.optional(v.id("users")),
-      /** 2.0 (§24) : commission née d'un paiement cash — dette de commission
-       * du prestataire. Il dispose d'un délai pour la régulariser. */
-      commissionDebt: v.optional(
-        v.object({
-          /** 24 h par défaut (paramétrable par GTEC). */
-          deadlineAt: v.number(),
-          remindedAt: v.optional(v.number()),
-        }),
-      ),
+      commissionDebt: v.optional(v.object({ deadlineAt: v.number(), remindedAt: v.optional(v.number()) })),
     })
       .index("by_tech", ["techUserId", "status"])
       .index("by_request", ["requestId"])
       .index("by_status", ["status"]),
 
-    // ===================== V6 : retraits (techniciens + administration) =====
-
-    /**
-     * Demande de retrait d'un solde disponible. Pour un technicien, le solde
-     * provient de ses rémunérations "payé" moins ses retraits déjà payés.
-     * Pour l'administration, le solde provient des commissions GTEC payées
-     * (85/15) moins les retraits déjà payés.
-     */
     withdrawals: defineTable({
-      /** Bénéficiaire du retrait (technicien ou administrateur). */
       userId: v.id("users"),
-      /** "technicien" = gains · "admin" = commissions GTEC encaissées. */
       sourceRole: v.union(v.literal("technicien"), v.literal("admin")),
       amount: v.number(),
-      currency: v.string(), // FCFA
-      method: v.union(
-        v.literal("mtn_momo"),
-        v.literal("orange_money"),
-        v.literal("virement"),
-        v.literal("especes"),
-      ),
-      /** Numéro MoMo ou IBAN selon le moyen choisi. */
+      currency: v.string(),
+      method: v.union(v.literal("mtn_momo"), v.literal("orange_money"), v.literal("especes"), v.literal("virement")),
       destination: v.string(),
-      destinationLabel: v.optional(v.string()), // nom du titulaire / banque
-      status: v.union(
-        v.literal("demande"), // créée par le bénéficiaire
-        v.literal("approuve"), // validée par l'administration
-        v.literal("payee"), // transfert effectué
-        v.literal("refuse"),
-      ),
+      destinationLabel: v.optional(v.string()),
+      status: v.union(v.literal("demande"), v.literal("approuve"), v.literal("payee"), v.literal("refuse")),
       requestedAt: v.number(),
       processedAt: v.optional(v.number()),
       processedBy: v.optional(v.id("users")),
-      reference: v.string(), // RET-0001
-      note: v.optional(v.string()), // motif de refus ou note de traitement
-    })
-      .index("by_user", ["userId", "status"])
-      .index("by_status", ["status"]),
+      reference: v.string(),
+      note: v.optional(v.string()),
+    }).index("by_user", ["userId", "status"]).index("by_status", ["status"]),
 
-    // ===================== V3 : notifications in-app =====================
-
-    // ===================== V4 : catalogue de services dynamique =====================
-
-    /**
-     * Catégorie de service gérée par l'administration (cahier des charges §4).
-     * L'admin peut ajouter, modifier, désactiver ou supprimer des catégories
-     * et leurs sous-catégories (types de problèmes du formulaire client).
-     */
-    serviceCategories: defineTable({
-      key: v.string(), // slug stable, ex. "cfo"
-      label: v.string(), // ex. "Courant Fort — CFO"
-      description: v.optional(v.string()),
-      icon: v.optional(v.string()), // nom d'icône lucide, ex. "Zap"
-      subcategories: v.array(
-        v.object({ key: v.string(), label: v.string() }),
-      ),
-      active: v.boolean(),
-      sortOrder: v.number(),
-    }).index("by_key", ["key"]),
-
-    /**
-     * Notification in-app temps réel (Convex = poussée automatique au client).
-     * Les étapes clés des 3 espaces créent une notification ciblée.
-     */
     notifications: defineTable({
       userId: v.id("users"),
       title: v.string(),
       body: v.string(),
-      kind: v.string(), // devis | paiement | affectation | intervention | rapport | reception | facture | visite | abonnement | materiel | avis | general
+      kind: v.string(),
       requestId: v.optional(v.id("serviceRequests")),
       readAt: v.optional(v.number()),
       at: v.number(),
-    })
-      .index("by_user", ["userId"]),
-
-    // ===================== V5 : vérification SMS + Mobile Money =====================
-
-    /**
-     * Code OTP de vérification de téléphone (envoyé par SMS via Twilio).
-     * Un seul enregistrement actif par utilisateur.
-     */
-    phoneVerifications: defineTable({
-      userId: v.id("users"),
-      phone: v.string(), // format E.164 (+237…)
-      codeHash: v.string(), // SHA-256 du code à 6 chiffres
-      attempts: v.number(), // tentatives de vérification échouées
-      expiresAt: v.number(),
-      consumedAt: v.optional(v.number()),
     }).index("by_user", ["userId"]),
 
-    /**
-     * Écho de l'OTP de connexion (provider phone-otp) — utilisé uniquement
-     * quand l'envoi SMS est impossible (Twilio non configuré) : le client
-     * peut alors consulter son dernier code via une query dédiée.
-     * En production (clés Twilio présentes), aucune ligne n'est écrite.
-     */
-    authSmsEcho: defineTable({
-      phone: v.string(), // E.164
-      code: v.string(), // code en clair — UNIQUEMENT en mode démo
-      createdAt: v.number(),
-      expiresAt: v.number(),
-    }).index("by_phone", ["phone"]),
-
-    /**
-     * File d'envoi des e-mails transactionnels (Resend) — un enregistrement
-     * par e-mail à envoyer, alimenté par les notifications du parcours.
-     */
-    emails: defineTable({
-      userId: v.id("users"),
-      to: v.string(),
-      kind: v.string(),
-      title: v.string(),
-      body: v.string(),
-      requestId: v.optional(v.id("serviceRequests")),
-      sentAt: v.optional(v.number()),
-      error: v.optional(v.string()),
-    }).index("by_user", ["userId"]),
-
-    /**
-     * Référence d'une transaction Mobile Money automatique (MTN Collections
-     * ou Orange Web Payment) — reliée au paiement GTEC correspondant.
-     */
-    momoTransactions: defineTable({
-      paymentId: v.id("payments"),
-      provider: v.union(v.literal("mtn"), v.literal("orange")),
-      providerRef: v.string(), // referenceId MTN / payToken ou orderId Orange
-      status: v.union(
-        v.literal("en_attente"),
-        v.literal("reussie"),
-        v.literal("echouee"),
-        v.literal("expiree"),
-      ),
-      amount: v.number(),
-      currency: v.string(),
-      payerPhone: v.string(),
-      lastCheckedAt: v.optional(v.number()),
-      failureReason: v.optional(v.string()),
-    })
-      .index("by_payment", ["paymentId"])
-      .index("by_provider_ref", ["providerRef"]),
-
-    // ============ GTEC PRO : RÉFÉRENTIEL ÉTABLISSEMENTS SUPÉRIEURS ========
-
-    /**
-     * RÉFÉRENTIEL NATIONAL des établissements d'enseignement supérieur du
-     * Cameroun (module MINESUP). Table administrable : l'UI ne contient
-     * aucune liste en dur — tout passe par ces lignes (CRUD admin,
-     * statuts, historique, source officielle).
-     */
-    higherEducationInstitutions: defineTable({
-      code: v.string(), // unique, ex. UNI-01, IPES-CE-07
-      name: v.string(),
-      shortName: v.optional(v.string()), // acronyme (UBa, IUC…)
-      aliases: v.optional(v.array(v.string())), // anciennes appellations
-      institutionType: v.union(
-        v.literal("STATE_UNIVERSITY"),
-        v.literal("PRIVATE_UNIVERSITY"),
-        v.literal("PUBLIC_SPECIAL_STATUS"),
-        v.literal("PRIVATE_HIGHER_INSTITUTE"),
-        v.literal("INTERNATIONAL_INSTITUTION"),
-        v.literal("INTERSTATE_INSTITUTION"),
-        v.literal("FOREIGN_RECOGNIZED_INSTITUTION"),
-      ),
-      ownership: v.union(
-        v.literal("PUBLIC"),
-        v.literal("PRIVATE"),
-        v.literal("INTERNATIONAL"),
-        v.literal("INTERSTATE"),
-      ),
-      region: v.union(
-        v.literal("ADAMOUA"),
-        v.literal("CENTRE"),
-        v.literal("EST"),
-        v.literal("EXTREME_NORD"),
-        v.literal("LITTORAL"),
-        v.literal("NORD"),
-        v.literal("NORD_OUEST"),
-        v.literal("OUEST"),
-        v.literal("SUD"),
-        v.literal("SUD_OUEST"),
-      ),
-      city: v.optional(v.string()),
-      department: v.optional(v.string()),
-      address: v.optional(v.string()),
-      latitude: v.optional(v.number()),
-      longitude: v.optional(v.number()),
-      website: v.optional(v.string()),
-      phone: v.optional(v.string()),
-      email: v.optional(v.string()),
-      /** Statut administré par GTEC — jamais déduit d'une saisie utilisateur. */
-      status: v.union(
-        v.literal("ACTIVE"),
-        v.literal("SUSPENDED"),
-        v.literal("CLOSED"),
-        v.literal("PENDING_VERIFICATION"),
-        v.literal("HISTORICAL"),
-      ),
-      authorizationStatus: v.union(
-        v.literal("AUTHORIZED"),
-        v.literal("APPROVED"),
-        v.literal("HOMOLOGATED"),
-        v.literal("NOT_APPLICABLE"),
-        v.literal("SUSPENDED"),
-        v.literal("WITHDRAWN"),
-        v.literal("UNKNOWN"),
-      ),
-      recognitionStatus: v.union(
-        v.literal("RECOGNIZED"),
-        v.literal("NOT_RECOGNIZED"),
-        v.literal("UNDER_REVIEW"),
-        v.literal("HISTORICAL"),
-      ),
-      canIssueNationalDiploma: v.optional(v.boolean()),
-      canIssuePrivateDiploma: v.optional(v.boolean()),
-      parentId: v.optional(v.id("higherEducationInstitutions")),
-      source: v.optional(v.string()),
-      sourceUrl: v.optional(v.string()),
-      lastVerifiedAt: v.optional(v.number()),
-      verifiedByAdminId: v.optional(v.id("users")),
-      notes: v.optional(v.string()),
-      isActive: v.boolean(),
-    })
-      .index("by_code", ["code"])
-      .index("by_region", ["region"])
-      .index("by_status", ["status"])
-      .index("by_active", ["isActive"]),
-
-    /**
-     * Historique des statuts d'un établissement (§14) : permet de savoir
-     * si l'établissement était reconnu au moment où le diplôme a été obtenu
-     * (institution_status_at_graduation = f(history, graduationYear)).
-     */
-    institutionStatusHistory: defineTable({
-      institutionId: v.id("higherEducationInstitutions"),
-      oldStatus: v.optional(v.string()),
-      newStatus: v.string(),
-      oldRecognitionStatus: v.optional(v.string()),
-      newRecognitionStatus: v.optional(v.string()),
-      decisionReference: v.optional(v.string()),
-      decisionDate: v.optional(v.number()),
-      sourceUrl: v.optional(v.string()),
-      reason: v.optional(v.string()),
-      changedById: v.optional(v.id("users")),
-      /** Horodatage de l'entrée — base du calcul statut-à-la-diplomation. */
-      at: v.number(),
-    })
-      .index("by_institution", ["institutionId"])
-      .index("by_decisionDate", ["decisionDate"]),
-
-    /**
-     * Demande « mon établissement n'est pas dans la liste » (§9).
-     * NE CRÉE JAMAIS d'établissement : l'admin décide après examen.
-     */
-    institutionVerificationRequests: defineTable({
-      userId: v.id("users"),
-      institutionName: v.string(),
-      city: v.optional(v.string()),
-      country: v.optional(v.string()),
-      region: v.optional(v.string()),
-      graduationYear: v.optional(v.number()),
-      diplomaTitle: v.optional(v.string()),
-      specialty: v.optional(v.string()),
-      note: v.optional(v.string()),
-      status: v.union(
-        v.literal("PENDING"),
-        v.literal("UNDER_REVIEW"),
-        v.literal("APPROVED"),
-        v.literal("REJECTED"),
-      ),
-      adminNote: v.optional(v.string()),
-      reviewedById: v.optional(v.id("users")),
-      reviewedAt: v.optional(v.number()),
-      /** Si approuvé : établissement créé dans le référentiel. */
-      institutionId: v.optional(v.id("higherEducationInstitutions")),
-    })
-      .index("by_user", ["userId"])
-      .index("by_status", ["status"]),
-
-    /** Diplômes / certifications déclarés par un utilisateur (§5, §10). */
-    educationalCredentials: defineTable({
-      userId: v.id("users"),
-      institutionId: v.optional(v.id("higherEducationInstitutions")),
-      institutionName: v.string(), // libellé saisi si établissement non trouvé
-      diplomaLevel: v.optional(v.string()), // code du référentiel diploma_levels
-      degreeKey: v.optional(v.string()), // clé nomenclature GTEC (BTS_ELTO…)
-      fieldOfStudy: v.optional(v.string()),
-      specialtyTitle: v.optional(v.string()),
-      diplomaTitle: v.optional(v.string()),
-      graduationYear: v.optional(v.number()),
-      certificateNumber: v.optional(v.string()),
-      country: v.optional(v.string()),
-      institutionCity: v.optional(v.string()),
-      documentUrl: v.optional(v.string()), // data URL, jamais publique
-      documentHash: v.optional(v.string()), // empreinte anti-fraude
-      verificationStatus: v.union(
-        v.literal("declare"),
-        v.literal("en_attente"),
-        v.literal("verifie"),
-        v.literal("rejete"),
-      ),
-      equivalenceStatus: v.optional(
-        v.union(
-          v.literal("NOT_REQUESTED"),
-          v.literal("PENDING"),
-          v.literal("GRANTED"),
-          v.literal("REFUSED"),
-          v.literal("NOT_REQUIRED"),
-        ),
-      ),
-      verifiedAt: v.optional(v.number()),
-      verifiedById: v.optional(v.id("users")),
-      reviewNote: v.optional(v.string()),
-      createdAt: v.number(),
-      updatedAt: v.number(),
-    })
-      .index("by_user", ["userId"])
-      .index("by_status", ["verificationStatus"])
-      .index("by_institution", ["institutionId"]),
-
-    /** Niveaux de diplômes du référentiel (§6) — seedé par l'admin. */
-    diplomaLevels: defineTable({
-      code: v.string(),
+    serviceCategories: defineTable({
+      key: v.string(),
       label: v.string(),
-      rank: v.number(),
+      description: v.optional(v.string()),
+      icon: v.optional(v.string()),
+      subcategories: v.array({ key: v.string(), label: v.string() }),
       active: v.boolean(),
-    }).index("by_code", ["code"]),
+      sortOrder: v.number(),
+    }).index("by_key", ["key"]),
 
-    // ===================== GTEC PRO 2.0 : litiges / sanctions / audit ======
+    serviceInterventions: defineTable({
+      code: v.string(),
+      serviceKey: v.string(),
+      category: v.optional(v.string()),
+      label: v.string(),
+      subtitle: v.optional(v.string()),
+      actions: v.array(v.string()),
+      skills: v.array(v.string()),
+      level: v.string(),
+      duration: v.number(),
+      durationUnit: v.string(),
+      price: v.number(),
+      currency: v.string(),
+    }).index("by_serviceKey", ["serviceKey"]),
 
-    /**
-     * Litige ouvert sur une mission (§36). Catégorie libre parmi la liste du
-     * cahier des charges ; l'admin rend une décision documentée.
-     */
-    disputes: defineTable({
-      requestId: v.id("serviceRequests"),
-      /** Ouverture par le client ou par un membre de l'équipe (technicien). */
-      openedById: v.id("users"),
-      category: v.union(
-        v.literal("travaux_non_conformes"),
-        v.literal("retard"),
-        v.literal("paiement"),
-        v.literal("comportement"),
-        v.literal("materiel"),
-        v.literal("devis"),
-        v.literal("contrat"),
-        v.literal("autre"),
-      ),
-      description: v.string(),
-      attachments: v.optional(v.array(v.string())), // data URLs compressées
-      status: v.union(
-        v.literal("ouverte"),
-        v.literal("en_cours"),
-        v.literal("resolue"),
-        v.literal("rejetee"),
-      ),
-      decision: v.optional(v.string()), // décision documentée de l'admin
-      resolvedById: v.optional(v.id("users")),
-      resolvedAt: v.optional(v.number()),
-    })
-      .index("by_request", ["requestId"])
-      .index("by_status", ["status"]),
+    serviceRequestsArchive: defineTable({
+      clientId: v.id("users"),
+      reference: v.string(),
+      serviceKey: v.string(),
+      title: v.string(),
+      status: v.string(),
+      archivedAt: v.number(),
+    }).index("by_client", ["clientId"]),
 
-    /**
-     * Sanction graduée (§37) : 1 avertissement · 2 limitation · 3 suspension
-     * temporaire · 4 restriction financière · 5 résiliation/bannissement.
-     * Toujours motivée, notifiée et contestable.
-     */
-    sanctions: defineTable({
-      userId: v.id("users"),
-      level: v.number(), // 1 à 5
-      reason: v.string(), // motivation obligatoire
-      /** Contexte : demande de service liée, si pertinent. */
-      requestId: v.optional(v.id("serviceRequests")),
-      status: v.union(
-        v.literal("active"),
-        v.literal("levee"),
-        v.literal("contested"),
-      ),
-      contestReason: v.optional(v.string()),
-      contestAt: v.optional(v.number()),
-      /** Fin de suspension (niveau 3) — auto-expirée à la lecture. */
-      until: v.optional(v.number()),
-      issuedById: v.id("users"), // admin émetteur
-      issuedAt: v.number(),
-    })
-      .index("by_user", ["userId"])
-      .index("by_status", ["status"]),
-
-    /**
-     * Journal d'audit (§44) : chaque action sensible est tracée avec
-     * l'auteur, la cible, l'ancienne et la nouvelle valeur.
-     */
-    auditLogs: defineTable({
-      actorId: v.optional(v.id("users")), // système (crons) → undefined
-      actorRole: v.optional(v.string()), // admin:kyc, technicien, client, system…
-      action: v.string(), // ex. "commission.validated", "sanction.issued"
-      targetTable: v.optional(v.string()),
-      targetId: v.optional(v.string()),
-      oldValue: v.optional(v.string()), // sérialisé libre (texte court)
-      newValue: v.optional(v.string()),
-      detail: v.optional(v.string()),
+    hopsSphere: defineTable({
+      id: v.string(),
+      name: v.string(),
+      type: v.string(),
+      metric: v.number(),
       at: v.number(),
-    }).index("by_at", ["at"]),
+    }).index("by_type", ["type"]),
   },
-  {
-    schemaValidation: false,
-  },
+  { schemaValidation: false },
 );
 
 export default schema;
