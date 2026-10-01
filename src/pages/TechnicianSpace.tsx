@@ -36,6 +36,11 @@ import { api } from "@/convex/_generated/api";
 import { AppShell } from "@/components/gtec";
 import { PhoneVerifiedBadge } from "@/components/PhoneVerifiedBadge";
 import { ReportForm } from "@/components/ReportForm";
+import {
+  CredentialForm,
+  type InstitutionLite,
+} from "@/components/CredentialForm";
+import { credentialBadge } from "@/lib/institutions";
 import { useGeolocation } from "@/hooks/useGeolocation";
 import {
   formatGps,
@@ -572,6 +577,11 @@ export default function TechnicianSpace() {
   const [graduationYear, setGraduationYear] = useState<number | "">("");
   const [documents, setDocuments] = useState<DocumentItem[]>([]);
   const [busy, setBusy] = useState(false);
+
+  // RÉFÉRENTIEL MINESUP : établissement sélectionné pour la déclaration de
+  // diplôme (§8) + diplômes déjà déclarés avec leur statut de vérification.
+  const [selectedInstitution, setSelectedInstitution] = useState<InstitutionLite | null>(null);
+  const myCredentials = useQuery(api.institutions.myCredentials, {});
 
   // Paiement d'abonnement
   const [subPlan, setSubPlan] = useState<"mensuel" | "trimestriel" | "annuel" | null>(null);
@@ -1373,9 +1383,26 @@ export default function TechnicianSpace() {
                   </div>
                 </section>
 
-                {/* Documents obligatoires */}
+                {/* Déclaration de diplôme branchée sur le référentiel MINESUP */}
                 <section className="flex flex-col gap-3">
                   <p className="flex items-center gap-1.5 text-sm font-semibold">
+                    <GraduationCap className="size-4 text-primary" /> Déclaration de diplôme
+                  </p>
+                  <CredentialForm
+                    busy={busy}
+                    degreeGroup={degreeGroup}
+                    degreeKey={degreeKey}
+                    diplomaTitle={highestDegree}
+                    fieldOfStudy={fieldOfStudy}
+                    graduationYear={graduationYear}
+                    documents={documents}
+                    onChangeDocuments={setDocuments}
+                    school={school}
+                    onChangeSchool={setSchool}
+                    selected={selectedInstitution}
+                    onSelect={setSelectedInstitution}
+                  />
+                  <p className="mt-1 flex items-center gap-1.5 text-sm font-semibold">
                     <FileBadge className="size-4 text-primary" /> Documents justificatifs *
                   </p>
                   <p className="text-xs text-muted-foreground">
@@ -1389,6 +1416,30 @@ export default function TechnicianSpace() {
                     requiredKinds={["cni", "diploma"]}
                     disabled={busy}
                   />
+                  {myCredentials !== undefined && myCredentials.length > 0 && (
+                    <div className="flex flex-col gap-1">
+                      <p className="text-xs font-medium text-muted-foreground">
+                        Mes diplômes déclarés (statut de vérification)
+                      </p>
+                      {myCredentials.map((c) => {
+                        const badge = credentialBadge(c.verificationStatus);
+                        return (
+                          <div
+                            key={c._id}
+                            className="flex items-center justify-between gap-2 rounded-md border px-2.5 py-1.5 text-xs"
+                          >
+                            <span className="truncate font-medium">
+                              {c.diplomaTitle ?? c.degreeKey ?? "Diplôme"} · {c.institutionName}
+                              {c.graduationYear ? ` · ${c.graduationYear}` : ""}
+                            </span>
+                            <span className={cn("shrink-0", badge.tone)}>
+                              {badge.emoji} {badge.label}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
                 </section>
 
                 <Button
