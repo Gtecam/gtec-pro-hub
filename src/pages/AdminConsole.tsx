@@ -15,6 +15,7 @@ import {
   FileSignature,
   FileText,
   FolderDown,
+  GraduationCap,
   ImagePlus,
   Lightbulb,
   Loader2,
@@ -46,6 +47,7 @@ import { openDossierPdf, openMaintenancePdf, openMaintenanceReceiptPdf } from "@
 import { downloadCsv, todayStamp } from "@/lib/csv";
 import { ReportForm } from "@/components/ReportForm";
 import ServicesCatalog from "@/pages/ServicesCatalog";
+import { EducationAdmin } from "@/components/EducationAdmin";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -1498,6 +1500,9 @@ export default function AdminConsole() {
                 </span>
               )}
             </TabsTrigger>
+            <TabsTrigger value="education">
+              <GraduationCap className="mr-1.5 size-4" /> Éducation
+            </TabsTrigger>
               <TabsTrigger value="mensualites">
                 <FileSignature className="mr-1.5 size-4" /> Mensualités
                 {(contractPays?.length ?? 0) > 0 && (
@@ -1724,6 +1729,11 @@ export default function AdminConsole() {
                 ))}
               </div>
             )}
+          </TabsContent>
+
+          {/* Éducation & Diplômes — référentiel MINESUP */}
+          <TabsContent value="education" className="mt-4">
+            <EducationAdmin />
           </TabsContent>
 
           {/* Demandes de matériel */}
