@@ -8,12 +8,17 @@ import {
   CheckCircle2,
   Clock,
   Eye,
+  FileDown,
   GraduationCap,
   History,
+  Pencil,
   Plus,
   Send,
   Sparkles,
+  UserPlus,
+  Users,
   Wrench,
+  XCircle,
 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -45,6 +50,7 @@ import { cn } from "@/lib/utils";
 import { NOMENCLATURE } from "@/lib/nomenclature";
 import { credentialBadge } from "@/lib/institutions";
 import { formatDate } from "@/lib/gtec";
+import { openProfilePdf } from "@/lib/profilePdf";
 
 const STATUS_META: Record<string, { label: string; cls: string }> = {
   DRAFT: { label: "Brouillon", cls: "text-muted-foreground" },
@@ -486,6 +492,10 @@ export function MyProfile() {
   const setProjectPublic = useMutation(api.profile.setProjectPublic);
   const addGtec = useMutation(api.profile.addGtecExperienceToPortfolio);
 
+  // Entreprise & équipe (§10-§11) — alimente le bloc dédié et le passeport PDF.
+  const companyData = useQuery(api.profile.myCompany, {});
+  const techProfile = useQuery(api.gtec.myTechnicianProfile, {});
+
   const [busy, setBusy] = useState(false);
   const [dialogKind, setDialogKind] = useState<Kind | null>(null);
 
@@ -510,11 +520,110 @@ export function MyProfile() {
     else run(() => upsertProject(payload as never), "Réalisation ajoutée à votre portfolio");
   };
 
-  if (data === undefined || completion === undefined) {
+  if (data === undefined || companyData === undefined || completion === undefined) {
     return <div className="h-64 animate-pulse rounded-xl bg-muted" />;
   }
 
   const doneCount = completion.items.filter((i) => i.done).length;
+
+  // Passeport professionnel (§19) — export PDF imprimable du dossier vivant.
+  const activeExperiences = data.experiences.filter((e) => e.isActive);
+  const activeSkills = data.skills.filter((s) => s.isActive);
+  const activeCertifications = data.certifications.filter((c) => c.isActive);
+  const activeTrainings = data.trainings.filter((t) => t.isActive);
+  const activeProjects = data.projects.filter((p) => p.isActive);
+  const company = companyData.company;
+  const teamCount = companyData.team.filter((m) => m.status === "ACTIVE").length;
+  const dom = NOMENCLATURE.find((d) => d.code === techProfile?.domainCode);
+  const specLabel = Array.isArray(dom?.specialties)
+    ? (dom?.specialties as Array<{ code?: string; label?: string }>).find(
+        (s) => s?.code === techProfile?.specialtyCode,
+      )?.label
+    : undefined;
+
+  const generatePdf = () => {
+    try {
+      openProfilePdf({
+        generatedAt: Date.now(),
+        fullName:
+          [techProfile?.firstName, techProfile?.lastName].filter(Boolean).join(" ") ||
+          "Adhérent GTEC PRO",
+        jobTitle: techProfile?.jobTitle ?? techProfile?.profession ?? undefined,
+        domainLabel: dom?.label,
+        specialtyLabel: specLabel,
+        city: techProfile?.city ?? undefined,
+        phone: techProfile?.phone ?? undefined,
+        bio: techProfile?.bio ?? undefined,
+        experienceYears: techProfile?.experienceYears ?? undefined,
+        completionPercent: completion.percent,
+        highestDegree: techProfile?.highestDegree ?? undefined,
+        credentials: data.credentials.map((c) => ({
+          title: c.diplomaTitle ?? c.degreeKey ?? "Diplôme",
+          institution: c.institutionName,
+          year: c.graduationYear ?? undefined,
+          verified: c.verificationStatus === "verifie",
+        })),
+        skills: activeSkills.map((s) => ({
+          label: s.skill,
+          levelLabel: s.level ? SKILL_LEVEL_LABELS[s.level] : undefined,
+          years: s.yearsPracticed ?? undefined,
+          verified: s.status === "VERIFIED",
+        })),
+        certifications: activeCertifications.map((c) => ({
+          name: c.name,
+          organization: c.organization ?? undefined,
+          obtainedLabel: c.obtainedAt ? formatDate(c.obtainedAt) : undefined,
+          expiresLabel: c.expiresAt ? formatDate(c.expiresAt) : undefined,
+          verified: c.status === "VERIFIED",
+        })),
+        trainings: activeTrainings.map((t) => ({
+          name: t.name,
+          organization: t.organization ?? undefined,
+          dateLabel: t.completedAt ? formatDate(t.completedAt) : undefined,
+          hours: t.durationHours ?? undefined,
+        })),
+        experiences: activeExperiences.map((e) => ({
+          title: e.title,
+          company: e.company ?? undefined,
+          periodLabel: `${e.startDate ?? "?"} → ${e.isCurrent ? "aujourd'hui" : (e.endDate ?? "?")}`,
+          city: e.city ?? undefined,
+          description: e.description ?? undefined,
+          verified: e.status === "VERIFIED",
+        })),
+        projects: activeProjects.map((p) => ({
+          title: p.title,
+          domainLabel: p.domainLabel ?? undefined,
+          city: p.city ?? undefined,
+          dateLabel: p.completedAt ? formatDate(p.completedAt) : undefined,
+          description: p.description ?? undefined,
+          outcome: p.outcome ?? undefined,
+          verified: p.status === "VERIFIED",
+        })),
+        gtecInterventions: (gtecExps ?? [])
+          .filter((g) => g.finished)
+          .map((g) => ({
+            reference: g.reference,
+            title: g.title,
+            dateLabel: formatDate(g.date),
+            city: g.city ?? undefined,
+            rating: g.rating ?? undefined,
+          })),
+        company: company
+          ? {
+              name: company.name,
+              status: company.status,
+              city: company.city ?? undefined,
+              phone: company.phone ?? undefined,
+              email: company.email ?? undefined,
+              domains: company.domains ?? undefined,
+              teamCount,
+            }
+          : null,
+      });
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Impression impossible — réessayez.");
+    }
+  };
 
   return (
     <div className="flex flex-col gap-4">
@@ -575,6 +684,9 @@ export function MyProfile() {
         </Button>
         <Button size="sm" variant="outline" onClick={() => setDialogKind("project")}>
           <Plus className="mr-1.5 size-4" /> Réalisation
+        </Button>
+        <Button size="sm" variant="outline" onClick={generatePdf}>
+          <FileDown className="mr-1.5 size-4" /> Générer mon profil PDF
         </Button>
       </div>
 
@@ -965,6 +1077,9 @@ export function MyProfile() {
         </Card>
       )}
 
+      {/* Entreprise & équipe (§10-§11) */}
+      <TeamCompanyCard />
+
       {/* Historique des modifications (§15) */}
       <Card className="card-layered">
         <CardContent className="flex flex-col gap-2 px-4 py-4">
@@ -1000,6 +1115,430 @@ export function MyProfile() {
           busy={busy}
         />
       )}
+    </div>
+  );
+}
+
+// ==================== ENTREPRISE & ÉQUIPE (§10-§11) =========================
+
+const COMPANY_STATUS_META: Record<string, { label: string; cls: string }> = {
+  DRAFT: { label: "Brouillon", cls: "text-muted-foreground" },
+  SUBMITTED: { label: "Soumise — à vérifier", cls: "text-amber-600 dark:text-amber-400" },
+  UNDER_REVIEW: { label: "En cours d'examen", cls: "text-amber-600 dark:text-amber-400" },
+  VERIFIED: { label: "Vérifiée GTEC PRO ✓", cls: "text-emerald-600 dark:text-emerald-400" },
+  REJECTED: { label: "Refusée", cls: "text-destructive" },
+};
+
+const MEMBER_ROLE_META: Record<string, { label: string; cls: string }> = {
+  INVITED: { label: "Invitation en attente", cls: "text-amber-600 dark:text-amber-400" },
+  ACTIVE: { label: "Membre actif", cls: "text-emerald-600 dark:text-emerald-400" },
+  DECLINED: { label: "Invitation refusée", cls: "text-muted-foreground" },
+};
+
+const TEAM_ROLES = [
+  "Technicien",
+  "Chef d'équipe",
+  "Électricien",
+  "Frigoriste",
+  "Plombier",
+  "Chargé clientèle",
+  "Stagiaire",
+];
+
+/**
+ * Profil entreprise (§10) et équipe (§11) : création/modification, soumission
+ * à la vérification, invitations par téléphone (le technicien doit accepter)
+ * et retrait traçable — les données personnelles des membres restent intangibles.
+ */
+function TeamCompanyCard() {
+  const companyData = useQuery(api.profile.myCompany, {});
+  const upsertCompany = useMutation(api.profile.upsertCompany);
+  const submitCompany = useMutation(api.profile.submitCompanyForVerification);
+  const invite = useMutation(api.profile.inviteTeamMember);
+  const respond = useMutation(api.profile.respondToTeamInvite);
+  const removeMember = useMutation(api.profile.removeTeamMember);
+
+  const [busy, setBusy] = useState(false);
+  const [companyOpen, setCompanyOpen] = useState(false);
+  const [cName, setCName] = useState("");
+  const [cRccm, setCrcm] = useState("");
+  const [cNiu, setCniu] = useState("");
+  const [cCity, setCCity] = useState("");
+  const [cPhone, setCPhone] = useState("");
+  const [cEmail, setCEmail] = useState("");
+  const [cYear, setCYear] = useState("");
+  const [cTechCount, setCTechCount] = useState("");
+  const [cDomains, setCDomains] = useState("");
+  const [cZones, setCZones] = useState("");
+  const [cDesc, setCDesc] = useState("");
+  const [cCapabilities, setCCapabilities] = useState("");
+  const [inviteOpen, setInviteOpen] = useState(false);
+  const [iPhone, setIPhone] = useState("");
+  const [iRole, setIRole] = useState(TEAM_ROLES[0]);
+
+  const run = async (fn: () => Promise<unknown>, ok: string): Promise<boolean> => {
+    setBusy(true);
+    try {
+      await fn();
+      toast.success(ok);
+      return true;
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Erreur");
+      return false;
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (companyData === undefined) {
+    return <div className="h-40 animate-pulse rounded-xl bg-muted" />;
+  }
+
+  const { company, team, invitations } = companyData;
+  const activeMembers = team.filter((m) => m.status === "ACTIVE");
+
+  const openCompany = () => {
+    setCName(company?.name ?? "");
+    setCrcm(company?.rccm ?? "");
+    setCniu(company?.niu ?? "");
+    setCCity(company?.city ?? "");
+    setCPhone(company?.phone ?? "");
+    setCEmail(company?.email ?? "");
+    setCYear(company?.yearCreated ? String(company.yearCreated) : "");
+    setCTechCount(company?.technicianCount ? String(company.technicianCount) : "");
+    setCDomains((company?.domains ?? []).join(", "));
+    setCZones((company?.zones ?? []).join(", "));
+    setCDesc(company?.description ?? "");
+    setCCapabilities(company?.capabilities ?? "");
+    setCompanyOpen(true);
+  };
+
+  const saveCompany = async () => {
+    if (cName.trim().length < 2) {
+      toast.error("Indiquez le nom commercial de l'entreprise.");
+      return;
+    }
+    const ok = await run(
+      () =>
+        upsertCompany({
+          id: company?._id as never,
+          name: cName,
+          rccm: cRccm.trim() || undefined,
+          niu: cNiu.trim() || undefined,
+          city: cCity.trim() || undefined,
+          phone: cPhone.trim() || undefined,
+          email: cEmail.trim() || undefined,
+          yearCreated: cYear ? Number(cYear) : undefined,
+          technicianCount: cTechCount ? Number(cTechCount) : undefined,
+          domains: cDomains.split(",").map((s) => s.trim()).filter(Boolean),
+          zones: cZones.split(",").map((s) => s.trim()).filter(Boolean),
+          description: cDesc.trim() || undefined,
+          capabilities: cCapabilities.trim() || undefined,
+        }),
+      company ? "Entreprise mise à jour" : "Profil entreprise créé",
+    );
+    if (ok) setCompanyOpen(false);
+  };
+
+  const sendInvite = async () => {
+    if (!company) {
+      toast.error("Créez d'abord le profil entreprise.");
+      return;
+    }
+    if (!/^\+?[0-9 ]{8,}$/.test(iPhone.trim())) {
+      toast.error("Numéro de téléphone invalide.");
+      return;
+    }
+    const ok = await run(
+      () => invite({ companyId: company._id as never, phone: iPhone.trim(), role: iRole }),
+      "Invitation envoyée — le technicien doit l'accepter depuis son espace",
+    );
+    if (ok) {
+      setIPhone("");
+      setInviteOpen(false);
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-4">
+      {/* Invitations reçues (le technicien reste maître de son rattachement) */}
+      {invitations.length > 0 && (
+        <Card className="card-layered border-amber-500/40 bg-amber-500/[0.04]">
+          <CardContent className="flex flex-col gap-2 px-4 py-4">
+            <p className="flex items-center gap-1.5 text-sm font-semibold">
+              <UserPlus className="size-4 text-amber-600 dark:text-amber-400" /> Invitations à rejoindre une équipe
+            </p>
+            {invitations.map((inv) => (
+              <div key={inv._id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border px-3 py-2">
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium">{inv.companyName}</p>
+                  <p className="text-[11px] text-muted-foreground">
+                    Fonction proposée : {inv.role} · invitée le {formatDate(inv.invitedAt)}
+                  </p>
+                </div>
+                <div className="flex gap-1.5">
+                  <Button
+                    size="sm"
+                    className="h-7 text-xs"
+                    disabled={busy}
+                    onClick={() => run(() => respond({ inviteId: inv._id as never, accept: true }), "Rattachement accepté — bienvenue dans l'équipe")}
+                  >
+                    <CheckCircle2 className="mr-1 size-3.5" /> Accepter
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7 text-xs"
+                    disabled={busy}
+                    onClick={() => run(() => respond({ inviteId: inv._id as never, accept: false }), "Invitation refusée")}
+                  >
+                    <XCircle className="mr-1 size-3.5" /> Refuser
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
+
+      <Card className="card-layered">
+        <CardContent className="flex flex-col gap-2 px-4 py-4">
+          <p className="flex items-center gap-1.5 text-sm font-semibold">
+            <Building2 className="size-4 text-primary" /> Mon entreprise
+          </p>
+          {!company ? (
+            <>
+              <p className="text-xs text-muted-foreground">
+                Vous dirigez une société ou un atelier ? Créez son profil : il
+                sera vérifié par GTEC PRO puis mis en avant auprès des clients.
+              </p>
+              <Button size="sm" className="self-start" onClick={openCompany}>
+                <Plus className="mr-1.5 size-4" /> Créer le profil entreprise
+              </Button>
+            </>
+          ) : (
+            <>
+              <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border px-3 py-2">
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium">{company.name}</p>
+                  <p className="text-[11px] text-muted-foreground">
+                    {[company.city, company.phone, company.email].filter(Boolean).join(" · ") || "—"}
+                    {company.rccm ? ` · RCCM ${company.rccm}` : ""}
+                  </p>
+                </div>
+                <span
+                  className={cn(
+                    "shrink-0 text-xs font-medium",
+                    (COMPANY_STATUS_META[company.status] ?? COMPANY_STATUS_META.DRAFT).cls,
+                  )}
+                >
+                  {(COMPANY_STATUS_META[company.status] ?? COMPANY_STATUS_META.DRAFT).label}
+                </span>
+              </div>
+              {company.description && (
+                <p className="text-xs text-muted-foreground">{company.description}</p>
+              )}
+              {company.status === "REJECTED" && company.reviewNote && (
+                <p className="text-xs text-destructive">Motif du refus : {company.reviewNote}</p>
+              )}
+              <div className="flex flex-wrap gap-1.5">
+                <Button size="sm" variant="outline" onClick={openCompany}>
+                  <Pencil className="mr-1.5 size-3.5" /> Modifier
+                </Button>
+                {(company.status === "DRAFT" || company.status === "REJECTED") && (
+                  <Button
+                    size="sm"
+                    disabled={busy}
+                    onClick={() =>
+                      run(
+                        () => submitCompany({ id: company._id as never }),
+                        "Entreprise soumise à vérification — l'administration est notifiée",
+                      )
+                    }
+                  >
+                    <Send className="mr-1.5 size-3.5" /> Soumettre à vérification
+                  </Button>
+                )}
+                <Button size="sm" variant="outline" onClick={() => setInviteOpen(true)}>
+                  <UserPlus className="mr-1.5 size-3.5" /> Inviter un technicien
+                </Button>
+              </div>
+              <div className="mt-1 flex flex-col gap-1.5">
+                <p className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground">
+                  <Users className="size-3.5" /> Équipe ({activeMembers.length} actif{activeMembers.length > 1 ? "s" : ""} ·{" "}
+                  {team.length} rattachement{team.length > 1 ? "s" : ""})
+                </p>
+                {team.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">
+                    Aucun rattachement — invitez vos techniciens par numéro de téléphone.
+                  </p>
+                ) : (
+                  team.map((m) => {
+                    const meta = MEMBER_ROLE_META[m.status] ?? MEMBER_ROLE_META.INVITED;
+                    return (
+                      <div key={m._id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border px-3 py-2">
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-medium">
+                            {m.userName ?? m.userPhone ?? "Compte GTEC PRO"}
+                          </p>
+                          <p className="text-[11px] text-muted-foreground">
+                            {m.role} · invité le {formatDate(m.invitedAt)}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className={cn("shrink-0 text-xs font-medium", meta.cls)}>{meta.label}</span>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-7 text-xs text-destructive"
+                            disabled={busy}
+                            onClick={() => {
+                              if (confirm(`Retirer ${m.userName ?? "ce membre"} de l'équipe ? Ses données personnelles restent inchangées.`)) {
+                                void run(
+                                  () => removeMember({ memberId: m._id as never }),
+                                  "Membre retiré de l'équipe",
+                                );
+                              }
+                            }}
+                          >
+                            <Archive className="mr-1 size-3" /> Retirer
+                          </Button>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+              <p className="text-[11px] text-muted-foreground">
+                Le rattachement n'efface jamais les données personnelles du technicien :
+                il doit accepter l'invitation depuis son propre espace (§11).
+              </p>
+            </>
+          )}
+        </CardContent>
+
+        <Dialog open={companyOpen} onOpenChange={setCompanyOpen}>
+          <DialogContent className="max-w-lg">
+            <DialogHeader>
+              <DialogTitle>
+                {company ? "Modifier le profil entreprise" : "Créer le profil entreprise"}
+              </DialogTitle>
+              <DialogDescription>
+                Identité, contacts et capacités techniques. Après modification
+                d'un profil vérifié, il repasse automatiquement en vérification (§14).
+              </DialogDescription>
+            </DialogHeader>
+            <div className="grid max-h-[60vh] gap-3 overflow-y-auto pr-1">
+              <div className="flex flex-col gap-1.5">
+                <Label className="text-sm">Nom commercial *</Label>
+                <Input value={cName} onChange={(e) => setCName(e.target.value)} placeholder="Ex. : GTEC Services & Énergie" />
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="flex flex-col gap-1.5">
+                  <Label className="text-sm">RCCM</Label>
+                  <Input value={cRccm} onChange={(e) => setCrcm(e.target.value)} />
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <Label className="text-sm">NIU</Label>
+                  <Input value={cNiu} onChange={(e) => setCniu(e.target.value)} />
+                </div>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-3">
+                <div className="flex flex-col gap-1.5">
+                  <Label className="text-sm">Ville</Label>
+                  <Input value={cCity} onChange={(e) => setCCity(e.target.value)} />
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <Label className="text-sm">Téléphone</Label>
+                  <Input value={cPhone} onChange={(e) => setCPhone(e.target.value)} />
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <Label className="text-sm">E-mail</Label>
+                  <Input value={cEmail} onChange={(e) => setCEmail(e.target.value)} />
+                </div>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="flex flex-col gap-1.5">
+                  <Label className="text-sm">Année de création</Label>
+                  <Input type="number" min={1950} max={2100} value={cYear} onChange={(e) => setCYear(e.target.value)} />
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <Label className="text-sm">Nombre de techniciens</Label>
+                  <Input type="number" min={0} value={cTechCount} onChange={(e) => setCTechCount(e.target.value)} />
+                </div>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="flex flex-col gap-1.5">
+                  <Label className="text-sm">Domaines (codes, séparés par des virgules)</Label>
+                  <Input value={cDomains} onChange={(e) => setCDomains(e.target.value)} placeholder="ELEC, SOLAIRE, FROID" />
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <Label className="text-sm">Zones d'intervention (séparées par des virgules)</Label>
+                  <Input value={cZones} onChange={(e) => setCZones(e.target.value)} placeholder="Douala, Yaoundé, Bafoussam" />
+                </div>
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <Label className="text-sm">Capacités techniques (équipements, véhicules…)</Label>
+                <Textarea rows={2} value={cCapabilities} onChange={(e) => setCCapabilities(e.target.value)} />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <Label className="text-sm">Description</Label>
+                <Textarea rows={3} value={cDesc} onChange={(e) => setCDesc(e.target.value)} />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setCompanyOpen(false)}>
+                Annuler
+              </Button>
+              <Button onClick={saveCompany} disabled={busy}>
+                {company ? "Enregistrer" : "Créer"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog open={inviteOpen} onOpenChange={setInviteOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Inviter un technicien dans l'équipe</DialogTitle>
+              <DialogDescription>
+                Entrez le numéro de téléphone de son compte GTEC PRO : il recevra
+                une invitation et devra l'accepter — ses données personnelles ne
+                sont jamais modifiées par l'entreprise (§11).
+              </DialogDescription>
+            </DialogHeader>
+            <div className="grid gap-3">
+              <div className="flex flex-col gap-1.5">
+                <Label className="text-sm">Téléphone du compte GTEC PRO *</Label>
+                <Input value={iPhone} onChange={(e) => setIPhone(e.target.value)} placeholder="Ex. : 655 09 42 28" />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <Label className="text-sm">Fonction dans l'entreprise</Label>
+                <Select value={iRole} onValueChange={setIRole}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {TEAM_ROLES.map((r) => (
+                      <SelectItem key={r} value={r}>
+                        {r}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setInviteOpen(false)}>
+                Annuler
+              </Button>
+              <Button onClick={sendInvite} disabled={busy}>
+                <UserPlus className="mr-1.5 size-4" /> Envoyer l'invitation
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </Card>
     </div>
   );
 }

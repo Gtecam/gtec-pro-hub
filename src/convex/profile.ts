@@ -704,3 +704,429 @@ export const adminReviewProfileItem = mutation({
     );
   },
 });
+
+// ==================== ADRESSES CLIENT (§2 « MES ADRESSES ») =================
+
+/** Mes adresses enregistrées. */
+export const myAddresses = query({
+  args: {},
+  handler: async (ctx) => {
+    const user = await requireUser(ctx);
+    const rows = (await ctx.db
+      .query("clientAddresses")
+      .withIndex("by_user", (q: any) => q.eq("userId", user._id))
+      .collect()) as any[];
+    return rows
+      .filter((a) => a.isActive !== false)
+      .sort((a, b) => (b.isDefault ? 1 : 0) - (a.isDefault ? 1 : 0) || b.createdAt - a.createdAt);
+  },
+});
+
+/** Ajout/modification d'une adresse enregistrée (domicile, bureau…). */
+export const upsertAddress = mutation({
+  args: {
+    id: v.optional(v.id("clientAddresses")),
+    label: v.string(),
+    kind: v.union(
+      v.literal("DOMICILE"),
+      v.literal("BUREAU"),
+      v.literal("COMMERCE"),
+      v.literal("RESIDENCE_SECONDAIRE"),
+      v.literal("AUTRE"),
+    ),
+    region: v.optional(v.string()),
+    city: v.string(),
+    quarter: v.optional(v.string()),
+    address: v.string(),
+    isDefault: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args) => {
+    const user = await requireUser(ctx);
+    const label = args.label.trim();
+    const city = args.city.trim();
+    const address = args.address.trim();
+    if (label.length < 2) throw new Error("Indiquez un libellé (Domicile, Bureau…).");
+    if (city.length < 2) throw new Error("Indiquez la ville.");
+    if (address.length < 5) throw new Error("Indiquez l'adresse complète.");
+    // Une seule adresse par défaut : on désactive les autres.
+    if (args.isDefault) {
+      const others = (await ctx.db
+        .query("clientAddresses")
+        .withIndex("by_user", (q: any) => q.eq("userId", user._id))
+        .collect()) as any[];
+      for (const o of others.filter((a) => a.isActive !== false && a.isDefault && a._id !== args.id)) {
+        await ctx.db.patch(o._id, { isDefault: false, updatedAt: Date.now() });
+      }
+    }
+    const payload = {
+      userId: user._id,
+      label,
+      kind: args.kind,
+      region: args.region?.trim() || undefined,
+      city,
+      quarter: args.quarter?.trim() || undefined,
+      address,
+      isDefault: args.isDefault ?? false,
+    };
+    if (args.id) {
+      const row = (await ctx.db.get(args.id)) as { userId: Id<"users"> } | null;
+      if (!row || row.userId !== user._id) throw new Error("Adresse introuvable.");
+      await ctx.db.patch(args.id, { ...payload, updatedAt: Date.now() });
+      await logChange(ctx, user._id, "address.update", `Modification de l'adresse « ${label} »`, undefined, `${address}, ${city}`);
+    } else {
+      await ctx.db.insert("clientAddresses", {
+        ...payload,
+        isActive: true,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+      await logChange(ctx, user._id, "address.add", `Ajout de l'adresse « ${label} »`, undefined, `${address}, ${city}`);
+    }
+  },
+});
+
+/** Archivage d'une adresse (jamais de suppression définitive). */
+export const removeAddress = mutation({
+  args: { id: v.id("clientAddresses") },
+  handler: async (ctx, args) => {
+    const user = await requireUser(ctx);
+    const row = (await ctx.db.get(args.id)) as { userId: Id<"users">; label: string } | null;
+    if (!row || row.userId !== user._id) throw new Error("Adresse introuvable.");
+    await ctx.db.patch(args.id, { isActive: false, isDefault: false, updatedAt: Date.now() });
+    await logChange(ctx, user._id, "address.remove", `Suppression de l'adresse « ${row.label} »`);
+  },
+});
+
+/** Préférences client (langue, notifications, contact d'urgence). */
+export const updateClientPreferences = mutation({
+  args: {
+    emergencyName: v.optional(v.string()),
+    emergencyPhone: v.optional(v.string()),
+    prefLangue: v.optional(v.string()),
+    prefNotifEmail: v.optional(v.boolean()),
+    prefNotifSms: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args) => {
+    const user = await requireUser(ctx);
+    const emergencyContact =
+      args.emergencyName?.trim() && args.emergencyPhone?.trim()
+        ? { name: args.emergencyName.trim(), phone: args.emergencyPhone.trim() }
+        : undefined;
+    await ctx.db.patch(user._id, {
+      emergencyContact,
+      prefLangue: args.prefLangue || undefined,
+      prefNotifEmail: args.prefNotifEmail,
+      prefNotifSms: args.prefNotifSms,
+    });
+    await logChange(ctx, user._id, "preferences.update", "Mise à jour des préférences client");
+  },
+});
+
+// ============ ENTREPRISE / SOCIÉTÉ PRESTATAIRE (§10-§11) ============
+
+/** Mon entreprise (celle que je dirige) + membres + invitations reçues. */
+export const myCompany = query({
+  args: {},
+  handler: async (ctx) => {
+    const user = await requireUser(ctx);
+    const owned = (await ctx.db
+      .query("companies")
+      .withIndex("by_owner", (q: any) => q.eq("ownerUserId", user._id))
+      .collect()) as any[];
+    const company = owned.sort((a, b) => b.createdAt - a.createdAt)[0] ?? null;
+    const memberships = (await ctx.db
+      .query("companyMembers").collect()) as any[];
+    const myMemberships = memberships.filter((m) => m.userId === user._id && m.isActive);
+    const invitations = [] as any[];
+    const team = [] as any[];
+    if (company) {
+      const rows = memberships.filter((m) => m.companyId === company._id && m.isActive);
+      for (const m of rows) {
+        const u = (await ctx.db.get(m.userId as never)) as { name?: string; phone?: string } | null;
+        team.push({
+          _id: m._id,
+          userId: m.userId,
+          role: m.role,
+          status: m.status,
+          invitedAt: m.invitedAt,
+          userName: u?.name ?? null,
+          userPhone: u?.phone ?? null,
+        });
+      }
+    }
+    for (const m of myMemberships.filter((x) => x.status === "INVITED")) {
+      const c = (await ctx.db.get(m.companyId as never)) as { name: string } | null;
+      invitations.push({ _id: m._id, companyId: m.companyId, companyName: c?.name ?? "", role: m.role, invitedAt: m.invitedAt });
+    }
+    return { company, team, invitations, myMemberships: myMemberships.map((m) => ({ _id: m._id, companyId: m.companyId, role: m.role, status: m.status })) };
+  },
+});
+
+/** Création / mise à jour du profil entreprise (§10). */
+export const upsertCompany = mutation({
+  args: {
+    id: v.optional(v.id("companies")),
+    name: v.string(),
+    legalName: v.optional(v.string()),
+    rccm: v.optional(v.string()),
+    niu: v.optional(v.string()),
+    logoUrl: v.optional(v.string()),
+    address: v.optional(v.string()),
+    region: v.optional(v.string()),
+    city: v.optional(v.string()),
+    phone: v.optional(v.string()),
+    email: v.optional(v.string()),
+    website: v.optional(v.string()),
+    socials: v.optional(v.array(v.string())),
+    yearCreated: v.optional(v.number()),
+    description: v.optional(v.string()),
+    domains: v.optional(v.array(v.string())),
+    zones: v.optional(v.array(v.string())),
+    capabilities: v.optional(v.string()),
+    technicianCount: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const user = await requireUser(ctx);
+    const name = args.name.trim();
+    if (name.length < 2) throw new Error("Indiquez le nom commercial.");
+    const payload = {
+      ownerUserId: user._id,
+      name,
+      legalName: args.legalName?.trim() || undefined,
+      rccm: args.rccm?.trim() || undefined,
+      niu: args.niu?.trim() || undefined,
+      logoUrl: args.logoUrl || undefined,
+      address: args.address?.trim() || undefined,
+      region: args.region?.trim() || undefined,
+      city: args.city?.trim() || undefined,
+      phone: args.phone?.trim() || undefined,
+      email: args.email?.trim() || undefined,
+      website: args.website?.trim() || undefined,
+      socials: args.socials,
+      yearCreated: args.yearCreated,
+      description: args.description?.trim() || undefined,
+      domains: args.domains,
+      zones: args.zones,
+      capabilities: args.capabilities?.trim() || undefined,
+      technicianCount: args.technicianCount,
+    };
+    if (args.id) {
+      const row = (await ctx.db.get(args.id)) as {
+        ownerUserId: Id<"users">;
+        status: "DRAFT" | "SUBMITTED" | "UNDER_REVIEW" | "VERIFIED" | "REJECTED";
+        name: string;
+      } | null;
+      if (!row || row.ownerUserId !== user._id) throw new Error("Entreprise introuvable.");
+      const wasVerified = row.status === "VERIFIED";
+      await ctx.db.patch(args.id, {
+        ...payload,
+        status: wasVerified ? "SUBMITTED" : row.status === "DRAFT" ? "DRAFT" : row.status,
+        verifiedAt: undefined,
+        verifiedBy: undefined,
+        updatedAt: Date.now(),
+      });
+      await logChange(ctx, user._id, "company.update", `Modification de l'entreprise « ${name} »`, row.name, name);
+    } else {
+      await ctx.db.insert("companies", {
+        ...payload,
+        status: "DRAFT",
+        isActive: true,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+      await logChange(ctx, user._id, "company.add", `Création du profil entreprise « ${name} »`, undefined, name);
+    }
+  },
+});
+
+/** Soumission du profil entreprise à la vérification (§14). */
+export const submitCompanyForVerification = mutation({
+  args: { id: v.id("companies") },
+  handler: async (ctx, args) => {
+    const user = await requireUser(ctx);
+    const row = (await ctx.db.get(args.id)) as { ownerUserId: Id<"users">; name: string } | null;
+    if (!row || row.ownerUserId !== user._id) throw new Error("Entreprise introuvable.");
+    await ctx.db.patch(args.id, { status: "SUBMITTED", updatedAt: Date.now() });
+    await logChange(ctx, user._id, "company.submitted", `Entreprise « ${row.name} » soumise à vérification`);
+    await notifyAdmins(ctx, "general", "Nouvelle entreprise à vérifier", `${user.name ?? "Un adhérent"} a soumis « ${row.name} ».`);
+  },
+});
+
+/** Invitation d'un technicien dans l'équipe (§11) — il doit accepter. */
+export const inviteTeamMember = mutation({
+  args: { companyId: v.id("companies"), phone: v.string(), role: v.string() },
+  handler: async (ctx, args) => {
+    const user = await requireUser(ctx);
+    const company = (await ctx.db.get(args.companyId)) as { ownerUserId: Id<"users">; name: string } | null;
+    if (!company || company.ownerUserId !== user._id) throw new Error("Entreprise introuvable.");
+    const phone = args.phone.replace(/\s+/g, "");
+    if (phone.length < 9) throw new Error("Numéro de téléphone invalide.");
+    const role = args.role.trim() || "Technicien";
+    // Le rattachement se fait sur un compte GTEC PRO existant (§11 : l'entreprise
+    // ne modifie jamais les données personnelles du technicien).
+    const target = (await ctx.db
+      .query("users")
+      .withIndex("phone", (q: any) => q.eq("phone", phone))
+      .first()) as { _id: Id<"users">; name?: string } | null;
+    if (!target) throw new Error("Aucun compte GTEC PRO avec ce numéro. La personne doit d'abord créer son compte.");
+    if (target._id === user._id) throw new Error("Vous dirigez déjà cette entreprise.");
+    const existing = (await ctx.db
+      .query("companyMembers")
+      .withIndex("by_company", (q: any) => q.eq("companyId", args.companyId))
+      .collect()) as any[];
+    const dup = existing.find((m) => m.userId === target._id && m.isActive && m.status !== "DECLINED");
+    if (dup) throw new Error(dup.status === "INVITED" ? "Une invitation est déjà en attente pour ce numéro." : "Cette personne fait déjà partie de l'équipe.");
+    await ctx.db.insert("companyMembers", {
+      companyId: args.companyId,
+      userId: target._id,
+      role,
+      status: "INVITED",
+      invitedAt: Date.now(),
+      isActive: true,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    });
+    await logChange(ctx, user._id, "team.invite", `Invitation envoyée à ${target.name ?? phone} (${role}) pour « ${company.name} »`);
+    await notify(
+      ctx,
+      target._id,
+      "general",
+      "Invitation à rejoindre une équipe",
+      `${company.name} vous invite à rejoindre son équipe en tant que « ${role} ». Répondez depuis votre espace profil.`,
+    );
+  },
+});
+
+/** Réponse du technicien à une invitation d'équipe (§11) : ACCEPT / DECLINE. */
+export const respondToTeamInvite = mutation({
+  args: { inviteId: v.id("companyMembers"), accept: v.boolean() },
+  handler: async (ctx, args) => {
+    const user = await requireUser(ctx);
+    const invite = (await ctx.db.get(args.inviteId)) as {
+      userId: Id<"users">;
+      status: string;
+      companyId: Id<"companies">;
+      role: string;
+    } | null;
+    if (!invite || invite.userId !== user._id) throw new Error("Invitation introuvable.");
+    if (invite.status !== "INVITED") throw new Error("Cette invitation a déjà été traitée.");
+    const company = (await ctx.db.get(invite.companyId)) as { name: string; ownerUserId: Id<"users"> } | null;
+    await ctx.db.patch(args.inviteId, {
+      status: args.accept ? "ACTIVE" : "DECLINED",
+      respondedAt: Date.now(),
+      updatedAt: Date.now(),
+    });
+    await logChange(
+      ctx,
+      user._id,
+      args.accept ? "team.accept" : "team.decline",
+      args.accept
+        ? `Rattachement accepté : ${company?.name ?? "entreprise"} (${invite.role})`
+        : `Invitation refusée : ${company?.name ?? "entreprise"} (${invite.role})`,
+    );
+    if (company) {
+      await notify(
+        ctx,
+        company.ownerUserId,
+        "general",
+        args.accept ? "Invitation acceptée" : "Invitation refusée",
+        args.accept
+          ? `${user.name ?? "Un technicien"} a rejoint votre équipe en tant que « ${invite.role} ».`
+          : `${user.name ?? "Un technicien"} a décliné l'invitation (« ${invite.role} »).`,
+      );
+    }
+  },
+});
+
+/** Retrait d'un membre de l'équipe (dirigeant uniquement, traçable §11). */
+export const removeTeamMember = mutation({
+  args: { memberId: v.id("companyMembers") },
+  handler: async (ctx, args) => {
+    const user = await requireUser(ctx);
+    const member = (await ctx.db.get(args.memberId)) as {
+      companyId: Id<"companies">;
+      userId: Id<"users">;
+      role: string;
+    } | null;
+    if (!member) throw new Error("Membre introuvable.");
+    const company = (await ctx.db.get(member.companyId)) as { ownerUserId: Id<"users">; name: string } | null;
+    if (!company || company.ownerUserId !== user._id) throw new Error("Seul le dirigeant peut retirer un membre.");
+    const u = (await ctx.db.get(member.userId)) as { name?: string } | null;
+    await ctx.db.patch(args.memberId, { isActive: false, updatedAt: Date.now() });
+    await logChange(ctx, user._id, "team.remove", `Retrait de ${u?.name ?? "un membre"} (${member.role}) de « ${company.name} »`);
+    await notify(
+      ctx,
+      member.userId,
+      "general",
+      "Rattachement retiré",
+      `${company.name} a retiré votre rattachement (« ${member.role} »). Vos données personnelles restent inchangées.`,
+    );
+  },
+});
+
+// ============ ADMIN : VÉRIFICATION DES ENTREPRISES (§14, §16) ============
+
+/** Liste des entreprises pour l'administration (tous statuts). */
+export const adminListCompanies = query({
+  args: {},
+  handler: async (ctx) => {
+    const admin = await requireUser(ctx);
+    if (admin.role !== "admin") throw new Error("Action réservée à l'administration.");
+    const rows = (await ctx.db.query("companies").collect()) as any[];
+    const sorted = rows.sort((a, b) => b.createdAt - a.createdAt);
+    return await Promise.all(
+      sorted.map(async (c) => {
+        const owner = (await ctx.db.get(c.ownerUserId as never)) as { name?: string; phone?: string } | null;
+        return {
+          kind: "company" as const,
+          id: c._id as string,
+          row: c,
+          user: owner ? { name: owner.name ?? null, phone: owner.phone ?? null } : null,
+        };
+      }),
+    );
+  },
+});
+
+/** Validation admin d'un profil entreprise : VERIFIED / REJECTED / UNDER_REVIEW. */
+export const adminReviewCompany = mutation({
+  args: {
+    id: v.id("companies"),
+    decision: v.union(v.literal("VERIFIED"), v.literal("REJECTED"), v.literal("UNDER_REVIEW")),
+    note: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const admin = await requireUser(ctx);
+    if (admin.role !== "admin") throw new Error("Action réservée à l'administration.");
+    const row = (await ctx.db.get(args.id)) as { ownerUserId: Id<"users">; name: string } | null;
+    if (!row) throw new Error("Entreprise introuvable.");
+    await ctx.db.patch(args.id, {
+      status: args.decision,
+      reviewNote: args.note?.trim() || undefined,
+      verifiedAt: args.decision === "VERIFIED" ? Date.now() : undefined,
+      verifiedBy: args.decision === "VERIFIED" ? admin._id : undefined,
+      ...nowFields(),
+    });
+    await logChange(
+      ctx,
+      row.ownerUserId,
+      `company.${args.decision.toLowerCase()}`,
+      args.decision === "VERIFIED"
+        ? `Entreprise « ${row.name} » vérifiée par GTEC PRO ✓`
+        : args.decision === "REJECTED"
+          ? `Entreprise « ${row.name} » refusée`
+          : `Entreprise « ${row.name} » en cours d'examen`,
+    );
+    await notify(
+      ctx,
+      row.ownerUserId,
+      "general",
+      args.decision === "VERIFIED" ? "Entreprise vérifiée ✓" : args.decision === "REJECTED" ? "Entreprise refusée" : "Vérification en cours",
+      args.decision === "VERIFIED"
+        ? `Le profil de « ${row.name} » est vérifié par GTEC PRO. Il sera mis en avant auprès des clients.`
+        : args.decision === "REJECTED"
+          ? `Le profil de « ${row.name} » n'a pas été validé. ${args.note ?? ""}`.trim()
+          : `Le profil de « ${row.name} » est en cours d'examen par l'administration.`,
+    );
+  },
+});

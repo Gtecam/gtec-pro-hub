@@ -21,6 +21,7 @@ import { toast } from "sonner";
 import { useNavigate } from "react-router";
 import { api } from "@/convex/_generated/api";
 import { AppShell, StatusBadge } from "@/components/gtec";
+import { MyClientProfile } from "@/components/MyClientProfile";
 import { PhoneVerifiedBadge } from "@/components/PhoneVerifiedBadge";
 import { Button } from "@/components/ui/button";
 import {
@@ -418,6 +419,9 @@ export default function ClientDashboard() {
             </Button>
           </CardContent>
         </Card>
+
+        {/* Mon profil client (§2) : adresses enregistrées + préférences */}
+        <MyClientProfile />
 
         {/* Parcours garanti V1 */}
         <Card className="card-layered border-primary/15 bg-gradient-to-br from-primary/[0.04] to-transparent">

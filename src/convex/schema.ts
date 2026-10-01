@@ -63,6 +63,10 @@ export const schema = defineSchema(
       companyName: v.optional(v.string()),
       taxId: v.optional(v.string()), // NUI / contribuable
       idDocumentUrl: v.optional(v.string()), // photo CNI (data URL)
+      emergencyContact: v.optional(v.object({ name: v.string(), phone: v.string() })), // contact d'urgence (§2)
+      prefLangue: v.optional(v.string()), // fr | en (préférences)
+      prefNotifEmail: v.optional(v.boolean()),
+      prefNotifSms: v.optional(v.boolean()),
     })
       .index("email", ["email"])
       .index("phone", ["phone"]),
@@ -950,6 +954,81 @@ export const schema = defineSchema(
       newValue: v.optional(v.string()),
       at: v.number(),
     }).index("by_user", ["userId"]),
+
+    // Adresses enregistrées du client (§2 « MES ADRESSES »).
+    clientAddresses: defineTable({
+      userId: v.id("users"),
+      label: v.string(), // « Domicile », « Bureau »…
+      kind: v.union(
+        v.literal("DOMICILE"),
+        v.literal("BUREAU"),
+        v.literal("COMMERCE"),
+        v.literal("RESIDENCE_SECONDAIRE"),
+        v.literal("AUTRE"),
+      ),
+      region: v.optional(v.string()),
+      city: v.string(),
+      quarter: v.optional(v.string()),
+      address: v.string(),
+      isDefault: v.optional(v.boolean()),
+      isActive: v.boolean(),
+      createdAt: v.number(),
+      updatedAt: v.number(),
+    }).index("by_user", ["userId"]),
+
+    // Entreprise / société prestataire (§10) — profil vérifiable.
+    companies: defineTable({
+      ownerUserId: v.id("users"),
+      name: v.string(), // nom commercial
+      legalName: v.optional(v.string()), // raison sociale
+      rccm: v.optional(v.string()),
+      niu: v.optional(v.string()),
+      logoUrl: v.optional(v.string()),
+      address: v.optional(v.string()),
+      region: v.optional(v.string()),
+      city: v.optional(v.string()),
+      phone: v.optional(v.string()),
+      email: v.optional(v.string()),
+      website: v.optional(v.string()),
+      socials: v.optional(v.array(v.string())), // réseaux sociaux professionnels
+      yearCreated: v.optional(v.number()),
+      description: v.optional(v.string()),
+      domains: v.optional(v.array(v.string())), // codes nomenclature GTEC PRO
+      zones: v.optional(v.array(v.string())),
+      capabilities: v.optional(v.string()), // capacités techniques, équipements, véhicules
+      technicianCount: v.optional(v.number()),
+      status: v.union(
+        v.literal("DRAFT"),
+        v.literal("SUBMITTED"),
+        v.literal("UNDER_REVIEW"),
+        v.literal("VERIFIED"),
+        v.literal("REJECTED"),
+      ),
+      verifiedAt: v.optional(v.number()),
+      verifiedBy: v.optional(v.id("users")),
+      reviewNote: v.optional(v.string()),
+      isActive: v.boolean(),
+      createdAt: v.number(),
+      updatedAt: v.number(),
+    })
+      .index("by_owner", ["ownerUserId"])
+      .index("by_status", ["status"]),
+
+    // Équipe de l'entreprise (§11) — le technicien doit ACCEPTER son
+    // rattachement ; l'entreprise ne modifie jamais ses données personnelles.
+    companyMembers: defineTable({
+      companyId: v.id("companies"),
+      userId: v.id("users"),
+      role: v.string(), // fonction dans l'entreprise
+      status: v.union(v.literal("INVITED"), v.literal("ACTIVE"), v.literal("DECLINED")),
+      invitedAt: v.number(),
+      respondedAt: v.optional(v.number()),
+      isActive: v.boolean(),
+      createdAt: v.number(),
+      updatedAt: v.number(),
+    })
+      .index("by_company", ["companyId"])
+      .index("by_user", ["userId"]),
   },
   { schemaValidation: false },
 );
