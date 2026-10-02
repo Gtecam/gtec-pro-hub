@@ -36,6 +36,7 @@ import { api } from "@/convex/_generated/api";
 import { AppShell } from "@/components/gtec";
 import { PhoneVerifiedBadge } from "@/components/PhoneVerifiedBadge";
 import { ReportForm } from "@/components/ReportForm";
+import { MissionChecklist } from "@/components/MissionChecklist";
 import {
   CredentialForm,
   type InstitutionLite,
@@ -1955,6 +1956,12 @@ export default function TechnicianSpace() {
                                     </Button>
                                   )}
                                 </div>
+
+                                {/* EXTENSION F°10 : check-list de sécurité — exigée avant clôture */}
+                                <MissionChecklist
+                                  requestId={request._id}
+                                  isLeader={assignment.teamLeaderId === user?._id}
+                                />
 
                                 <ReportForm
                                   requestId={request._id}

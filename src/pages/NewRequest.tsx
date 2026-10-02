@@ -49,6 +49,7 @@ import {
   interventionByCode,
 } from "@/lib/interventions";
 import { compressImageIfNeeded, dataUrlBytes, humanSize } from "@/lib/imageCompress";
+import { AdvisorCard } from "@/components/AdvisorCard";
 import { relationIcon } from "@/lib/diaspora";
 import { useSearchParams } from "react-router";
 
@@ -601,6 +602,16 @@ export default function NewRequest() {
                     </div>
                   )}
                 </div>
+                {/* EXTENSIONS GTEC PRO : conseiller (F°1 pré-diagnostic + F°2 estimation) */}
+                <AdvisorCard
+                  serviceKey={serviceKey}
+                  onApply={(p) => {
+                    if (p.description) setDescription((d) => (d.trim().length > 0 ? d : p.description!));
+                    if (p.urgency) setUrgency(p.urgency);
+                    if (p.budgetHint != null) setBudgetHint(String(p.budgetHint));
+                  }}
+                />
+
                 <div className="flex flex-col gap-1.5">
                   <label className="text-sm font-medium">Titre</label>
                   <Input

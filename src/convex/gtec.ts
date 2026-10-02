@@ -2840,6 +2840,17 @@ export const clientReception = mutation({
       issuedAt: Date.now(),
     });
     await ctx.db.patch(args.requestId, { status: "terminee" });
+    // EXTENSION F°10 : la check-list obligatoire doit être complète avant clôture.
+    const cl = (await ctx.db
+      .query("missionChecklists")
+      .withIndex("by_request", (q) => q.eq("requestId", args.requestId))
+      .collect()) as any[];
+    const extChecklist = cl[0];
+    if (extChecklist && extChecklist.status !== "COMPLETE") {
+      throw new Error(
+        "Check-list de sécurité incomplète : l'équipe doit valider tous les points obligatoires avant la clôture.",
+      );
+    }
     await addEvent(ctx, args.requestId, "reception", "PV de réception signé");
     await addEvent(ctx, args.requestId, "facture", `Facture ${number} émise`);
     await notify(

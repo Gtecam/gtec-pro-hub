@@ -21,6 +21,7 @@ import { toast } from "sonner";
 import { useNavigate } from "react-router";
 import { api } from "@/convex/_generated/api";
 import { AppShell, StatusBadge } from "@/components/gtec";
+import { Building2 } from "lucide-react";
 import { MyClientProfile } from "@/components/MyClientProfile";
 import { PhoneVerifiedBadge } from "@/components/PhoneVerifiedBadge";
 import { Button } from "@/components/ui/button";
@@ -378,6 +379,25 @@ export default function ClientDashboard() {
 
         {/* Numéro de téléphone vérifié */}
         <PhoneVerifiedBadge variant="full" />
+
+        {/* EXTENSION F°5/F°33 : dossier technique des bâtiments */}
+        <Card className="card-layered border-primary/15 bg-gradient-to-br from-primary/[0.04] to-transparent">
+          <CardContent className="flex flex-wrap items-center gap-3 py-4">
+            <span className="flex size-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
+              <Building2 className="size-5" />
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-semibold">Dossier technique de mes bâtiments</p>
+              <p className="text-xs text-muted-foreground">
+                Équipements, QR codes, garanties, documents et historique — un
+                dossier permanent par site, avec accès temporaires pour vos techniciens.
+              </p>
+            </div>
+            <Button variant="outline" size="sm" onClick={() => navigate("/buildings")}>
+              Ouvrir <ArrowRight className="ml-1.5 size-4" />
+            </Button>
+          </CardContent>
+        </Card>
 
         {/* Identité client */}
         <Card

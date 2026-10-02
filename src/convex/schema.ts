@@ -1,6 +1,7 @@
 import { authTables } from "@convex-dev/auth/server";
 import { defineSchema, defineTable } from "convex/server";
 import { Infer, v } from "convex/values";
+import { extensionTables } from "./schemaExtensions";
 
 // default user roles. can add / remove based on the project as needed
 export const ROLES = {
@@ -1029,6 +1030,9 @@ export const schema = defineSchema(
     })
       .index("by_company", ["companyId"])
       .index("by_user", ["userId"]),
+
+    // ============ EXTENSIONS GTEC PRO — DOSSIER TECHNIQUE (PHASES 2-4) ============
+    ...extensionTables,
   },
   { schemaValidation: false },
 );

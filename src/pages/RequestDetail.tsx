@@ -65,6 +65,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/use-auth";
+import { BadgeCheck } from "lucide-react";
 import {
   BANK_DETAILS,
   fcfa,
@@ -77,6 +78,7 @@ import {
   splitFiftyFifty,
   SERVICES,
   statusMeta,
+  formatDate,
 } from "@/lib/gtec";
 import { URGENCY_BADGE } from "@/lib/interventions";
 import { formatGps, gmapsCoordsUrl, haversineKm } from "@/lib/gps";
@@ -100,6 +102,14 @@ export default function RequestDetail() {
   const refuseQuote = useMutation(api.gtec.refuseQuote);
   const initiatePayment = useMutation(api.gtec.initiatePayment);
   const clientReception = useMutation(api.gtec.clientReception);
+  // EXTENSIONS GTEC PRO : garantie de travaux (F°13) + certificat numérique (F°12).
+  const ensureGuarantee = useMutation(api.missions.ensureWorkGuarantee);
+  const issueCertificate = useMutation(api.missions.issueDigitalCertificate);
+  const certificate = useQuery(
+    api.missions.getCertificateByRequest,
+    requestId ? { requestId: requestId as never } : "skip",
+  );
+  const guarantees = useQuery(api.missions.myActiveGuarantees, {});
   const startMomoPayment = useAction(api.momo.startMomoPayment);
   const checkMomoPayment = useAction(api.momo.checkMomoPayment);
 
@@ -486,6 +496,14 @@ export default function RequestDetail() {
     if (ok) {
       setSignature(null);
       setReceptionNote("");
+      // EXTENSIONS GTEC PRO : garantie de travaux (F°13) + certificat numérique (F°12).
+      try {
+        await ensureGuarantee({ requestId: request._id as never });
+        await issueCertificate({ requestId: request._id as never });
+        toast.success("Garantie de travaux activée — certificat numérique disponible via QR.");
+      } catch {
+        /* non bloquant : le certificat peut être émis plus tard */
+      }
     }
   };
 
@@ -1550,6 +1568,53 @@ export default function RequestDetail() {
                       <CheckCircle2 className="mr-2 size-4" />
                       Signer et réceptionner
                     </Button>
+                  </CardContent>
+                </Card>
+              </motion.div>
+            )}
+
+            {/* EXTENSIONS GTEC PRO : certificat numérique + garantie (F°12, F°13) */}
+            {request.status === "terminee" && (
+              <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
+                <Card className="card-layered border-emerald-500/30 bg-emerald-500/[0.04]">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="flex items-center gap-2 text-base">
+                      <BadgeCheck className="size-5 text-emerald-600 dark:text-emerald-400" />
+                      Certificat numérique d'intervention
+                    </CardTitle>
+                    <CardDescription>
+                      Preuve vérifiable par QR code : hash des preuves, check-list,
+                      signature client. Garantie de travaux incluse.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="flex flex-col gap-2">
+                    {certificate ? (
+                      <>
+                        <p className="text-sm font-medium">
+                          {certificate.number} — émis le {formatDate(certificate.issuedAt)}
+                        </p>
+                        <p className="break-all text-[11px] text-muted-foreground/80">
+                          Empreinte SHA-256 : {certificate.payloadHash.slice(0, 40)}…
+                        </p>
+                        <a
+                          href={`${window.location.origin}/verify/${certificate.verifyToken}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-xs font-medium text-primary hover:underline"
+                        >
+                          Lien de vérification publique (/verify/{certificate.verifyToken.slice(0, 10)}…)
+                        </a>
+                      </>
+                    ) : (
+                      <p className="text-xs text-muted-foreground">
+                        Le certificat sera émis automatiquement à la réception des travaux.
+                      </p>
+                    )}
+                    {guarantees?.some((g) => g.requestId === request._id) && (
+                      <p className="text-xs text-emerald-600 dark:text-emerald-400">
+                        🛡️ Garantie de travaux active jusqu'au {formatDate(guarantees.find((g) => g.requestId === request._id)!.until)} — tout signalement sera rattaché à cette mission.
+                      </p>
+                    )}
                   </CardContent>
                 </Card>
               </motion.div>

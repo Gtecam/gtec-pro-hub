@@ -19,6 +19,9 @@ const RequestDetail = lazy(() => import("./pages/RequestDetail.tsx"));
 const TechnicianSpace = lazy(() => import("./pages/TechnicianSpace.tsx"));
 const AdminApp = lazy(() => import("./pages/AdminApp.tsx"));
 const DiasporaPage = lazy(() => import("./pages/DiasporaPage.tsx"));
+const BuildingsPage = lazy(() => import("./pages/BuildingsPage.tsx"));
+const AssetScanPage = lazy(() => import("./pages/AssetScanPage.tsx"));
+const VerifyPage = lazy(() => import("./pages/VerifyPage.tsx"));
 const NotFound = lazy(() => import("./pages/NotFound.tsx"));
 
 // Simple loading fallback for route transitions
@@ -177,6 +180,16 @@ createRoot(document.getElementById("root")!).render(
                   </RequireAuth>
                 }
               />
+              <Route
+                path="/buildings"
+                element={
+                  <RequireAuth>
+                    <BuildingsPage />
+                  </RequireAuth>
+                }
+              />
+              <Route path="/asset/:token" element={<AssetScanPage />} />
+              <Route path="/verify/:token" element={<VerifyPage />} />
               <Route path="*" element={<NotFound />} />
             </Routes>
           </Suspense>
