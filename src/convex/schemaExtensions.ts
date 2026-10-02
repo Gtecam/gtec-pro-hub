@@ -213,4 +213,69 @@ export const extensionTables = {
     userId: v.id("users"),
     confirmedAt: v.number(),
   }).index("by_user", ["userId"]),
+
+  // Client entreprise (§14) : déclinaison client du profil entreprise —
+  // RCCM/NIU vérifiables par GTEC, jamais auto-certifiés.
+  clientCompanies: defineTable({
+    ownerUserId: v.id("users"),
+    name: v.string(), // raison sociale
+    tradeName: v.optional(v.string()), // nom commercial
+    rccm: v.optional(v.string()),
+    niu: v.optional(v.string()),
+    sector: v.optional(v.string()), // secteur d'activité
+    logoUrl: v.optional(v.string()),
+    address: v.optional(v.string()),
+    region: v.optional(v.string()),
+    city: v.optional(v.string()),
+    phone: v.optional(v.string()),
+    email: v.optional(v.string()),
+    status: v.union(
+      v.literal("DRAFT"),
+      v.literal("SUBMITTED"),
+      v.literal("UNDER_REVIEW"),
+      v.literal("VERIFIED"),
+      v.literal("REJECTED"),
+    ),
+    verifiedAt: v.optional(v.number()),
+    verifiedBy: v.optional(v.id("users")),
+    reviewNote: v.optional(v.string()),
+    isActive: v.boolean(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_owner", ["ownerUserId"])
+    .index("by_status", ["status"]),
+
+  // Sites / agences du client entreprise (§14) — lieux d'intervention.
+  clientSites: defineTable({
+    companyId: v.id("clientCompanies"),
+    label: v.string(), // « Siège », « Agence Bonapriso »…
+    region: v.optional(v.string()),
+    city: v.string(),
+    quarter: v.optional(v.string()),
+    address: v.string(),
+    isDefault: v.optional(v.boolean()),
+    isActive: v.boolean(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_company", ["companyId"]),
+
+  // Utilisateurs rattachés au client entreprise (§14) — même logique que
+  // companyMembers : invitation ACCEPTÉE par le compte visé, rôles métier
+  // (administrateur, responsable technique, maintenance, financier, demandeur).
+  clientTeamMembers: defineTable({
+    companyId: v.id("clientCompanies"),
+    userId: v.id("users"),
+    role: v.string(), // ADMIN | TECH | MAINT | FIN | REQUESTER
+    status: v.union(v.literal("INVITED"), v.literal("ACTIVE"), v.literal("DECLINED")),
+    invitedBy: v.id("users"),
+    invitedAt: v.number(),
+    respondedAt: v.optional(v.number()),
+    isActive: v.boolean(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_company", ["companyId"])
+    .index("by_user", ["userId"]),
 };

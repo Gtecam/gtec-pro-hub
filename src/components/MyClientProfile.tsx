@@ -17,6 +17,7 @@ import { api } from "@/convex/_generated/api";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { ClientCompanyCard } from "@/components/ClientCompanyCard";
 import {
   Dialog,
   DialogContent,
@@ -639,6 +640,9 @@ export function MyClientProfile() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Client entreprise (§14) : fiche vérifiable, sites/agences, équipe multi-rôles */}
+      <ClientCompanyCard />
     </div>
   );
 }

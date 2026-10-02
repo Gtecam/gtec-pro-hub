@@ -69,10 +69,13 @@ export function ProfileVerificationsAdmin() {
   const companies = useQuery(api.profile.adminListCompanies, {});
   const review = useMutation(api.profile.adminReviewProfileItem);
   const reviewCompany = useMutation(api.profile.adminReviewCompany);
+  const clientCompanies = useQuery(api.clientCompany.adminListClientCompanies, {});
+  const reviewClientCompany = useMutation(api.clientCompany.adminReviewClientCompany);
   const [busy, setBusy] = useState(false);
   const [rejecting, setRejecting] = useState<Row | null>(null);
   const [note, setNote] = useState("");
   const [rejectingCompany, setRejectingCompany] = useState<CompanyRow | null>(null);
+  const [rejectingClient, setRejectingClient] = useState<{ id: string } | null>(null);
 
   const run = async (fn: () => Promise<unknown>, ok: string) => {
     setBusy(true);
@@ -88,7 +91,7 @@ export function ProfileVerificationsAdmin() {
     }
   };
 
-  if (verifications === undefined || companies === undefined) {
+  if (verifications === undefined || companies === undefined || clientCompanies === undefined) {
     return <div className="h-32 animate-pulse rounded-xl bg-muted" />;
   }
 
@@ -96,6 +99,81 @@ export function ProfileVerificationsAdmin() {
     (c) => c.row.status === "SUBMITTED" || c.row.status === "UNDER_REVIEW",
   );
   const verifiedCompanies = companies.filter((c) => c.row.status === "VERIFIED").slice(0, 8);
+  const pendingClients = clientCompanies.filter(
+    (c) => c.row.status === "SUBMITTED" || c.row.status === "UNDER_REVIEW",
+  );
+
+  const renderClientCompany = (c: (typeof clientCompanies)[number]) => {
+    const meta = COMPANY_STATUS_META[c.row.status] ?? COMPANY_STATUS_META.DRAFT;
+    return (
+      <div key={c.id} className="flex flex-col gap-1.5 rounded-lg border px-3 py-2.5">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="min-w-0">
+            <p className="truncate text-sm font-medium">
+              <Badge variant="outline" className="mr-1.5 text-[10px] uppercase">
+                <Building2 className="mr-0.5 size-2.5" /> Client
+              </Badge>
+              {c.row.name}
+            </p>
+            <p className="text-[11px] text-muted-foreground">
+              {c.user?.name ?? "Utilisateur"}
+              {c.row.niu ? ` · NIU ${c.row.niu}` : ""}
+              {c.row.city ? ` · ${c.row.city}` : ""} · mis à jour le {formatDate(c.row.updatedAt)}
+            </p>
+          </div>
+          <span className={cn("shrink-0 text-xs font-medium", meta.cls)}>{meta.label}</span>
+        </div>
+        {(c.row.status === "SUBMITTED" || c.row.status === "UNDER_REVIEW") && (
+          <div className="flex flex-wrap gap-1.5">
+            <Button
+              size="sm"
+              className="h-7 text-xs"
+              disabled={busy}
+              onClick={() =>
+                run(
+                  () =>
+                    reviewClientCompany({
+                      id: c.id as never,
+                      decision: "VERIFIED",
+                    }),
+                  "Client entreprise vérifié — le propriétaire est notifié",
+                )
+              }
+            >
+              <BadgeCheck className="mr-1 size-3.5" /> Vérifier
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 text-xs"
+              disabled={busy}
+              onClick={() =>
+                run(
+                  () =>
+                    reviewClientCompany({
+                      id: c.id as never,
+                      decision: "UNDER_REVIEW",
+                    }),
+                  "Passé en cours d'examen",
+                )
+              }
+            >
+              <Clock className="mr-1 size-3.5" /> En examen
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 text-xs text-destructive"
+              disabled={busy}
+              onClick={() => setRejectingClient({ id: c.id })}
+            >
+              <XCircle className="mr-1 size-3.5" /> Refuser
+            </Button>
+          </div>
+        )}
+      </div>
+    );
+  };
 
   const renderCompany = (c: CompanyRow) => {
     const meta = COMPANY_STATUS_META[c.row.status] ?? COMPANY_STATUS_META.DRAFT;
@@ -292,6 +370,18 @@ export function ProfileVerificationsAdmin() {
           </p>
         )}
 
+        {/* Clients entreprises (§14) */}
+        <p className="mt-1 flex items-center gap-1.5 text-xs font-semibold text-muted-foreground">
+          <Building2 className="size-3.5" /> Clients entreprises
+        </p>
+        {pendingClients.length === 0 ? (
+          <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <CheckCircle2 className="size-3.5 text-emerald-500" /> Aucun client entreprise en attente.
+          </p>
+        ) : (
+          pendingClients.map(renderClientCompany)
+        )}
+
         {/* Informations professionnelles (§26) */}
         {pending.length === 0 ? (
           <p className="flex items-center gap-1.5 py-2 text-xs text-muted-foreground">
@@ -389,6 +479,51 @@ export function ProfileVerificationsAdmin() {
                       note: note.trim() || undefined,
                     }),
                   "Entreprise refusée — le dirigeant est notifié",
+                )
+              }
+            >
+              <Send className="mr-1.5 size-4" /> Confirmer le refus
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!rejectingClient} onOpenChange={(v) => !v && setRejectingClient(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Refuser ce client entreprise</DialogTitle>
+            <DialogDescription>
+              Le propriétaire sera notifié avec votre motif. La fiche reste dans
+              son espace avec le statut « Refusé » et peut être corrigée puis
+              soumise à nouveau.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-col gap-1.5">
+            <Label className="text-sm">Motif du refus</Label>
+            <Textarea
+              rows={3}
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              placeholder="Ex. : RCCM introuvable au registre — merci de vérifier le numéro."
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRejectingClient(null)}>
+              Annuler
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={busy || !rejectingClient}
+              onClick={() =>
+                rejectingClient &&
+                run(
+                  () =>
+                    reviewClientCompany({
+                      id: rejectingClient.id as never,
+                      decision: "REJECTED",
+                      note: note.trim() || undefined,
+                    }),
+                  "Client entreprise refusé — le propriétaire est notifié",
                 )
               }
             >
