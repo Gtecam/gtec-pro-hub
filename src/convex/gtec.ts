@@ -4796,9 +4796,11 @@ export const myProviderScore = query({
       await ctx.db.query("assignments").collect()
     ).filter((a) => a.members.some((m) => m.id === user._id));
     const requestIds = new Set(myAssignments.map((a) => a.requestId));
+    // Lecture ciblée des seules demandes du technicien (pas de scan complet
+    // de la table serviceRequests).
     const relatedRequests = (
-      await ctx.db.query("serviceRequests").collect()
-    ).filter((r) => requestIds.has(r._id));
+      await Promise.all([...requestIds].map((id) => ctx.db.get(id)))
+    ).filter((r) => r !== null);
     const completed = relatedRequests.filter((r) => r.status === "terminee").length;
     const cancelled = relatedRequests.filter((r) => r.status === "annulee").length;
     const judged = completed + cancelled;

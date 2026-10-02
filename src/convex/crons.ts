@@ -249,6 +249,19 @@ export const dailySweep = internalMutation({
     const YEAR = 365 * DAY;
     const allProfiles = await ctx.db.query("technicianProfiles").collect();
     for (const p of allProfiles) {
+      // Lecture la moins chère d'abord : si l'adhérent a déjà été sollicité
+      // récemment, on évite les deux lectures suivantes.
+      const recent = await ctx.db
+        .query("notifications")
+        .withIndex("by_user", (q) => q.eq("userId", p.userId))
+        .collect();
+      const hasRecent = recent.some(
+        (n) =>
+          n.kind === "profil" &&
+          n.title === "Votre profil mérite une mise à jour" &&
+          now - n.at < 180 * DAY,
+      );
+      if (hasRecent) continue;
       const confirms = await ctx.db
         .query("profileConfirmations")
         .withIndex("by_user", (q) => q.eq("userId", p.userId))
@@ -263,17 +276,6 @@ export const dailySweep = internalMutation({
       const since = lastActivity > 0 ? now - lastActivity : now - p._creationTime;
       if (since < YEAR) continue;
       const months = Math.floor(since / (30 * DAY));
-      const recent = await ctx.db
-        .query("notifications")
-        .withIndex("by_user", (q) => q.eq("userId", p.userId))
-        .collect();
-      const hasRecent = recent.some(
-        (n) =>
-          n.kind === "profil" &&
-          n.title === "Votre profil mérite une mise à jour" &&
-          now - n.at < 180 * DAY,
-      );
-      if (hasRecent) continue;
       await pushNotification(
         ctx.db,
         p.userId,

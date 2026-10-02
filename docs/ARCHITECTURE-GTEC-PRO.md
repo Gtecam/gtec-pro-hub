@@ -101,7 +101,15 @@ VerifyPage, PublicProfilePage, DiasporaPage, AdminConsole, AdminApp.
 - **Déclaration ≠ vérification** : le dépôt d'un justificatif n'accorde aucun badge ;
   seul l'administration écrit `VERIFIED`.
 - **Rendez-vous** : revérification serveur du créneau (aucun double booking),
-  délai minimum, capacité quotidienne, refus tracé.
+  délai minimum, capacité quotidienne, refus tracé. La réservation écrit sur la
+  règle de disponibilité qui a produit le créneau : en cas de réservations
+  simultanées, le contrôle de concurrence optimiste de Convex rejoue la seconde
+  transaction, qui relit les rendez-vous frais et rejette le créneau pris.
+- **Performance** : aucun scan complet de `serviceRequests` dans les queries
+  utilisateur (lecture ciblée par identifiant). Dette connue : `assignments`
+  n'a qu'un index `by_request` (les membres sont stockés en tableau), donc le
+  calcul du score prestataire et l'expérience GTEC PRO lisent la table — à
+  migrer vers une table de liaison si le volume de missions devient critique.
 - **Anti-contournement** : aucun contact direct exposé dans le flux rendez-vous ;
   la plateforme reste intermédiaire.
 - **Audit** : `auditLogs` (back-office), `profileChanges` (profil),

@@ -12,7 +12,13 @@ import type { Doc } from "./_generated/dataModel";
  * rattache alors automatiquement la session à CE compte admin.
  */
 
-export const ADMIN_EMAIL = "etsgreentech@yahoo.com";
+/**
+ * E-mail de la boîte d'administration GTEC PRO.
+ * Surchargeable par la variable d'environnement ADMIN_EMAIL (onglet
+ * Keys/API keys de la plateforme) : aucune adresse de service n'est
+ * codée en dur dans le dépôt.
+ */
+export const ADMIN_EMAIL = process.env.ADMIN_EMAIL || "etsgreentech@yahoo.com";
 
 /** Anciens emails admin de démonstration, rétrogradés automatiquement. */
 const LEGACY_ADMIN_EMAILS = ["admin@gtecpro.cm"];

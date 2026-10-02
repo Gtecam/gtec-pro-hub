@@ -121,11 +121,29 @@ export const removeAvailabilityRule = mutation({
 export const bookableTechnicians = query({
   args: { search: v.optional(v.string()), domainCode: v.optional(v.string()) },
   handler: async (ctx, args) => {
-    const profiles = (await ctx.db.query("technicianProfiles").collect()) as any[];
-    const now = Date.now();
-    const rules = (await ctx.db.query("availabilityRules").collect()) as any[];
+    // Index utilisé (by_status) : seuls les profils validés sont lus.
+    const profiles = (await ctx.db
+      .query("technicianProfiles")
+      .withIndex("by_status", (q: any) => q.eq("status", "verifie"))
+      .collect()) as any[];
+    // Une seule lecture des règles, puis regroupement par professionnel.
+    const rules = ((await ctx.db.query("availabilityRules").collect()) as any[]).filter(
+      (r) => r.isActive,
+    );
+    const window14: Array<{ iso: string; weekday: number }> = [];
+    for (let i = 0; i < 14; i++) {
+      const day = Date.now() + i * 86_400_000;
+      window14.push({ iso: isoDate(day), weekday: new Date(day).getDay() });
+    }
     const byUser = new Map<string, any[]>();
-    for (const r of rules.filter((x) => x.isActive)) {
+    for (const r of rules) {
+      const opened = window14.some(
+        (d) =>
+          d.weekday === r.weekday &&
+          (!r.effectiveFrom || d.iso >= r.effectiveFrom) &&
+          (!r.effectiveUntil || d.iso <= r.effectiveUntil),
+      );
+      if (!opened) continue;
       const list = byUser.get(r.userId) ?? [];
       list.push(r);
       byUser.set(r.userId, list);
@@ -133,33 +151,16 @@ export const bookableTechnicians = query({
     const needle = (args.search ?? "").trim().toLowerCase();
     const rows: any[] = [];
     for (const p of profiles) {
-      if (p.status !== "verifie") continue;
-      const userRules = byUser.get(p.userId) ?? [];
-      const today = isoDate(now);
-      const hasFuture = userRules.some((r) => {
-        if (r.effectiveUntil && r.effectiveUntil < today) return false;
-        for (let i = 0; i < 14; i++) {
-          const day = now + i * 86_400_000;
-          const iso = isoDate(day);
-          if (
-            new Date(day).getDay() === r.weekday &&
-            (!r.effectiveFrom || iso >= r.effectiveFrom) &&
-            (!r.effectiveUntil || iso <= r.effectiveUntil)
-          ) {
-            return true;
-          }
-        }
-        return false;
-      });
-      if (!hasFuture) continue;
-      const label = [p.jobTitle, p.profession, p.specialty, p.domainCode, p.city].filter(Boolean).join(" ");
+      // Pas de disponibilité future → le professionnel n'est pas réservable.
+      if (!byUser.has(p.userId)) continue;
+      const label = [p.jobTitle, p.profession, p.specialty, p.domainCode, p.city]
+        .filter(Boolean)
+        .join(" ");
       if (args.domainCode && p.domainCode !== args.domainCode) continue;
       if (needle && !label.toLowerCase().includes(needle)) continue;
-      const u = (await ctx.db.get(p.userId)) as { name?: string; image?: string } | null;
       rows.push({
         userId: p.userId as string,
-        name: [p.firstName, p.lastName].filter(Boolean).join(" ") || u?.name || "Professionnel GTEC PRO",
-        image: u?.image ?? null,
+        name: [p.firstName, p.lastName].filter(Boolean).join(" ") || "Professionnel GTEC PRO",
         jobTitle: p.jobTitle ?? p.profession ?? p.specialty ?? null,
         city: p.city ?? null,
         zones: p.zones ?? [],
@@ -266,6 +267,16 @@ export const bookAppointment = mutation({
     });
     const chosen = slots.find((s) => s.start === args.start);
     if (!chosen) throw new Error("Ce créneau n'est plus disponible — choisissez-en un autre.");
+
+    // Verrou optimiste (Convex OCC) : on écrit sur la règle de disponibilité
+    // qui a produit ce créneau. Deux réservations simultanées du même créneau
+    // entrent alors en conflit : la seconde transaction est rejouée, relit les
+    // rendez-vous récents et rejette le créneau devenu indisponible.
+    const slotWeekday = new Date(chosen.start).getDay();
+    const lockRule = rules.find((r) => r.weekday === slotWeekday);
+    if (lockRule) {
+      await ctx.db.patch(lockRule._id as Id<"availabilityRules">, { updatedAt: now });
+    }
 
     const appointmentId = await ctx.db.insert("appointments", {
       clientUserId: user._id,
@@ -393,15 +404,28 @@ export const myAppointments = query({
         .withIndex("by_pro", (q: any) => q.eq("proUserId", user._id))
         .collect(),
     ]);
+    // Cache par utilisateur : évite N+1 quand plusieurs rendez-vous
+    // concernent le même interlocuteur.
+    const userCache = new Map<string, { name?: string; image?: string } | null>();
+    const profileCache = new Map<string, any>();
     const decorate = async (rows: Doc<"appointments">[], side: "client" | "pro") => {
       const out: any[] = [];
       for (const a of rows) {
         const otherId = side === "client" ? a.proUserId : a.clientUserId;
-        const u = (await ctx.db.get(otherId)) as { name?: string; image?: string } | null;
-        const profile = ((await ctx.db
-          .query("technicianProfiles")
-          .withIndex("by_user", (q: any) => q.eq("userId", otherId))
-          .collect()) as any[])[0];
+        const key = otherId as string;
+        let u = userCache.get(key);
+        if (u === undefined) {
+          u = (await ctx.db.get(otherId)) as { name?: string; image?: string } | null;
+          userCache.set(key, u);
+        }
+        let profile = profileCache.get(key);
+        if (profile === undefined) {
+          profile = ((await ctx.db
+            .query("technicianProfiles")
+            .withIndex("by_user", (q: any) => q.eq("userId", otherId))
+            .collect()) as any[])[0];
+          profileCache.set(key, profile);
+        }
         out.push({
           ...a,
           otherName:
