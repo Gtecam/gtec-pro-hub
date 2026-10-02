@@ -24,7 +24,7 @@ import {
 import { useAuth } from "@/hooks/use-auth";
 import { cn } from "@/lib/utils";
 import { completedSteps, JOURNEY_STEPS, statusMeta } from "@/lib/gtec";
-import { useNavigate } from "react-router";
+import { Link, useNavigate } from "react-router";
 import { Input } from "@/components/ui/input";
 import logo from "@/assets/logo.svg";
 
@@ -599,6 +599,61 @@ export function AppShell({
       </header>
       <PhoneVerificationBanner />
       <main className="mx-auto max-w-6xl px-4 py-8 sm:px-6">{children}</main>
+    </div>
+  );
+}
+
+// ---------- shell public (pages accessibles sans connexion) ----------
+
+/**
+ * En-tête minimal pour les pages ouvertes à tous (vérification d'un
+ * certificat, scan d'un QR équipement). Contrairement à AppShell, aucun
+ * appel authentifié n'est déclenché (ni cloche, ni bannière OTP, ni vidage
+ * de la file d'e-mails) et aucun bouton de déconnexion n'est proposé : un
+ * visiteur non connecté voit le document, pas un espace de compte.
+ */
+export function PublicShell({
+  children,
+  title,
+  subtitle,
+  footer = "GTEC PRO — Green Tech Energy Cameroon · plateforme de gestion technique",
+}: {
+  children: React.ReactNode;
+  title?: string;
+  subtitle?: string;
+  footer?: string;
+}) {
+  return (
+    <div className="flex min-h-screen flex-col bg-background">
+      <header className="sticky top-0 z-40 border-b border-border/70 bg-background/80 backdrop-blur-md">
+        <div className="mx-auto flex h-16 max-w-3xl items-center justify-between gap-3 px-4">
+          <Link to="/" className="flex items-center gap-2.5">
+            <img src={logo} alt="GTEC PRO" className="size-8 rounded-lg" />
+            <span className="font-display text-base font-bold tracking-tight">
+              GTEC <span className="text-primary">PRO</span>
+            </span>
+          </Link>
+          <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+            Lien public
+          </span>
+        </div>
+      </header>
+      <main className="mx-auto w-full max-w-3xl flex-1 px-4 py-8">
+        {(title || subtitle) && (
+          <div className="mb-4">
+            {title && (
+              <h1 className="font-display text-xl font-bold tracking-tight">{title}</h1>
+            )}
+            {subtitle && (
+              <p className="text-xs text-muted-foreground">{subtitle}</p>
+            )}
+          </div>
+        )}
+        {children}
+      </main>
+      <footer className="border-t border-border/60 px-4 py-4 text-center text-[11px] text-muted-foreground">
+        {footer}
+      </footer>
     </div>
   );
 }

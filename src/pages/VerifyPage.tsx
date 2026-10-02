@@ -2,7 +2,7 @@ import { useQuery } from "convex/react";
 import { BadgeCheck, Building2, ShieldCheck } from "lucide-react";
 import { useParams } from "react-router";
 import { api } from "@/convex/_generated/api";
-import { AppShell } from "@/components/gtec";
+import { PublicShell } from "@/components/gtec";
 import { Card, CardContent } from "@/components/ui/card";
 import { formatDate } from "@/lib/gtec";
 
@@ -22,16 +22,24 @@ export default function VerifyPage() {
 
   if (cert === undefined || building === undefined) {
     return (
-      <AppShell>
-        <div className="mx-auto max-w-xl py-10">
+      <PublicShell
+        title="Vérification d'un document"
+        subtitle="Lien public — aucune donnée personnelle n'est exposée."
+        footer="GTEC PRO — Green Tech Energy Cameroon · lien de vérification officiel"
+      >
+        <div className="mx-auto max-w-xl py-2">
           <div className="h-40 animate-pulse rounded-xl bg-muted" />
         </div>
-      </AppShell>
+      </PublicShell>
     );
   }
 
   return (
-    <AppShell>
+    <PublicShell
+      title="Vérification d'un document"
+      subtitle="Certificat d'intervention ou vue publique d'un dossier technique."
+      footer="GTEC PRO — Green Tech Energy Cameroon · lien de vérification officiel"
+    >
       <div className="mx-auto flex max-w-xl flex-col gap-4 py-2">
         {cert ? (
           <Card className="card-layered border-emerald-500/40 bg-emerald-500/[0.04]">
@@ -116,6 +124,6 @@ export default function VerifyPage() {
           </Card>
         )}
       </div>
-    </AppShell>
+    </PublicShell>
   );
 }

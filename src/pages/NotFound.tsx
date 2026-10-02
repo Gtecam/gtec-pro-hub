@@ -1,26 +1,48 @@
 import { motion } from "framer-motion";
+import { Compass, Home, LogIn } from "lucide-react";
+import { Link } from "react-router";
+import { PublicShell } from "@/components/gtec";
+import { Button } from "@/components/ui/button";
 
+/**
+ * GTEC PRO — 404 (/route inconnue). Écran public autonome : thème vert
+ * GTEC, message en français et deux sorties (accueil / connexion) pour que
+ * le visiteur ne reste jamais bloqué sur une page vide.
+ */
 export default function NotFound() {
   return (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      transition={{ duration: 0.5 }}
-      className="min-h-screen flex flex-col"
-    >
-
-      
-      {/* Main Content */}
-      <div className="flex-1 flex flex-col items-center justify-center">
-        <div className="max-w-5xl mx-auto relative px-4">
-          <div className="flex items-center justify-center min-h-[200px]">
-            <div className="text-center">
-              <h1 className="text-4xl font-bold text-gray-900 mb-4">404</h1>
-              <p className="text-lg text-gray-600">Page Not Found</p>
-            </div>
-          </div>
+    <PublicShell>
+      <motion.div
+        initial={{ opacity: 0, y: 12 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.35 }}
+        className="mx-auto flex max-w-lg flex-col items-center gap-3 rounded-2xl border border-border/70 bg-card px-6 py-10 text-center shadow-sm"
+      >
+        <span className="flex size-14 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+          <Compass className="size-7" />
+        </span>
+        <p className="font-display text-4xl font-bold tracking-tight text-primary">404</p>
+        <h1 className="font-display text-xl font-semibold tracking-tight">
+          Cette page n'existe pas
+        </h1>
+        <p className="text-sm text-muted-foreground">
+          L'adresse demandée est introuvable ou a été déplacée. Les liens de
+          vérification de certificat et de scan d'équipement restent valides s'ils
+          sont ouverts directement depuis leur QR code.
+        </p>
+        <div className="mt-2 flex flex-wrap items-center justify-center gap-2">
+          <Button asChild>
+            <Link to="/">
+              <Home className="size-4" /> Retour à l'accueil
+            </Link>
+          </Button>
+          <Button asChild variant="outline">
+            <Link to="/auth">
+              <LogIn className="size-4" /> Se connecter
+            </Link>
+          </Button>
         </div>
-      </div>
-    </motion.div>
+      </motion.div>
+    </PublicShell>
   );
 }

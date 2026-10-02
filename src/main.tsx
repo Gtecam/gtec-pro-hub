@@ -28,8 +28,13 @@ const NotFound = lazy(() => import("./pages/NotFound.tsx"));
 // Simple loading fallback for route transitions
 function RouteLoading() {
   return (
-    <div className="min-h-screen flex items-center justify-center">
-      <div className="animate-pulse text-muted-foreground">Loading...</div>
+    <div className="flex min-h-screen items-center justify-center bg-background px-6">
+      <div className="flex flex-col items-center gap-3">
+        <span className="size-8 animate-spin rounded-full border-2 border-border border-t-primary" />
+        <p className="animate-pulse text-sm text-muted-foreground">
+          Chargement de votre espace…
+        </p>
+      </div>
     </div>
   );
 }
@@ -73,7 +78,7 @@ class RootErrorBoundary extends React.Component<
       return (
         <div className="min-h-screen flex items-center justify-center bg-background text-foreground p-6">
           <div className="max-w-lg text-center">
-            <p className="text-sm font-semibold">Preview runtime error</p>
+            <p className="text-sm font-semibold">Erreur d'affichage de la preview</p>
             <p className="mt-2 text-xs text-muted-foreground break-words">
               {this.state.message}
             </p>

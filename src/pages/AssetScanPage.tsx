@@ -2,7 +2,7 @@ import { useQuery } from "convex/react";
 import { QrCode, ShieldAlert } from "lucide-react";
 import { useParams } from "react-router";
 import { api } from "@/convex/_generated/api";
-import { AppShell } from "@/components/gtec";
+import { PublicShell } from "@/components/gtec";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { formatDate } from "@/lib/gtec";
@@ -18,16 +18,19 @@ export default function AssetScanPage() {
   const data = useQuery(api.buildings.getScannedAsset, token ? { token } : "skip");
 
   return (
-    <AppShell>
+    <PublicShell
+      title="Fiche équipement"
+      subtitle="Accès contrôlé — vos permissions déterminent la lecture."
+      footer="GTEC PRO — Green Tech Energy Cameroon · lien de vérification officiel"
+    >
       <div className="mx-auto flex max-w-2xl flex-col gap-4">
         <div className="flex items-center gap-2">
           <span className="flex size-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
             <QrCode className="size-5" />
           </span>
-          <div>
-            <h1 className="font-display text-xl font-bold tracking-tight">Fiche équipement</h1>
-            <p className="text-xs text-muted-foreground">Accès contrôlé — vos permissions déterminent la lecture.</p>
-          </div>
+          <p className="text-xs text-muted-foreground">
+            Dossier technique GTEC PRO — lecture sans donnée client.
+          </p>
         </div>
 
         {data === undefined ? (
@@ -99,6 +102,6 @@ export default function AssetScanPage() {
           </>
         )}
       </div>
-    </AppShell>
+    </PublicShell>
   );
 }
