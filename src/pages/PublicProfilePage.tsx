@@ -1,18 +1,21 @@
-import { useQuery } from "convex/react";
+import { useMutation, useQuery } from "convex/react";
 import {
   Award,
   BadgeCheck,
   Briefcase,
   Building2,
   CalendarDays,
+  Heart,
   ImageOff,
   MapPin,
   Star,
   Wrench,
 } from "lucide-react";
 import { useParams } from "react-router";
+import { toast } from "sonner";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
+import { useAuth } from "@/hooks/use-auth";
 import { formatDate } from "@/lib/gtec";
 import { cn } from "@/lib/utils";
 
@@ -56,6 +59,38 @@ export default function PublicProfilePage() {
     .join("")
     .toUpperCase();
   const avail = data?.availability ? AVAIL_META[data.availability] : null;
+
+  // Favoris (§35) — réservé aux comptes connectés ; la page reste consultable
+  // par tous, seule l'action exige une authentification.
+  const { isAuthenticated } = useAuth();
+  const favorites = useQuery(api.favorites.myFavorites, isAuthenticated ? {} : "skip");
+  const addFavorite = useMutation(api.favorites.addFavorite);
+  const removeFavorite = useMutation(api.favorites.removeFavorite);
+  const isFavorite =
+    !!favorites && !!userId && favorites.some((f) => f.targetType === "technician" && f.targetId === userId);
+
+  const toggleFavorite = async () => {
+    if (!userId || !data) return;
+    try {
+      if (isFavorite) {
+        const target = favorites?.find(
+          (f) => f.targetType === "technician" && f.targetId === userId,
+        );
+        if (target) await removeFavorite({ id: target._id as Id<"favorites"> });
+        toast.success("Retiré de vos favoris");
+      } else {
+        await addFavorite({
+          targetType: "technician",
+          targetId: userId,
+          label: data.name ?? "Professionnel GTEC PRO",
+          subtitle: data.jobTitle ?? undefined,
+        });
+        toast.success("Ajouté à vos favoris");
+      }
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Erreur");
+    }
+  };
 
   return (
     <main className="min-h-screen bg-gradient-to-b from-emerald-950 via-green-900 to-green-950 px-4 py-10">
@@ -101,6 +136,21 @@ export default function PublicProfilePage() {
                       <span className={cn("rounded-full px-2.5 py-1 text-[11px] font-medium ring-1 ring-inset", avail.cls)}>
                         {avail.label}
                       </span>
+                    )}
+                    {isAuthenticated && (
+                      <button
+                        type="button"
+                        onClick={toggleFavorite}
+                        className={cn(
+                          "flex items-center gap-1.5 rounded-full px-3 py-1 text-[11px] font-medium ring-1 ring-inset transition-colors",
+                          isFavorite
+                            ? "bg-rose-500/15 text-rose-300 ring-rose-500/30"
+                            : "bg-white/10 text-emerald-100 ring-white/20 hover:bg-white/15",
+                        )}
+                      >
+                        <Heart className={cn("size-3.5", isFavorite && "fill-rose-400")} />
+                        {isFavorite ? "Dans mes favoris" : "Ajouter aux favoris"}
+                      </button>
                     )}
                   </div>
                   {data.jobTitle && (

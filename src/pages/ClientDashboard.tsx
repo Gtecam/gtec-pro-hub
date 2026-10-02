@@ -24,6 +24,8 @@ import { AppShell, StatusBadge } from "@/components/gtec";
 import { Building2 } from "lucide-react";
 import { MyClientProfile } from "@/components/MyClientProfile";
 import { PhoneVerifiedBadge } from "@/components/PhoneVerifiedBadge";
+import { AppointmentsClientCard } from "@/components/AppointmentsClientCard";
+import { FavoritesCard } from "@/components/FavoritesCard";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -398,6 +400,12 @@ export default function ClientDashboard() {
             </Button>
           </CardContent>
         </Card>
+
+        {/* §8 : prise de rendez-vous chez un professionnel vérifié */}
+        <AppointmentsClientCard />
+
+        {/* §35 : favoris (techniciens, entreprises, services) */}
+        <FavoritesCard />
 
         {/* Identité client */}
         <Card

@@ -37,6 +37,7 @@ import { AppShell } from "@/components/gtec";
 import { PhoneVerifiedBadge } from "@/components/PhoneVerifiedBadge";
 import { ReportForm } from "@/components/ReportForm";
 import { MissionChecklist } from "@/components/MissionChecklist";
+import { AvailabilityManager } from "@/components/AvailabilityManager";
 import {
   CredentialForm,
   type InstitutionLite,
@@ -1657,6 +1658,10 @@ export default function TechnicianSpace() {
                 >
                   <UserRound className="mr-1.5 size-4" /> Enregistrer mon profil
 </Button>
+              </div>
+              {/* §8 : disponibilités + rendez-vous reçus */}
+              <div className="mt-4">
+                <AvailabilityManager />
               </div>
             </TabsContent>
             {/* Missions */}

@@ -278,4 +278,71 @@ export const extensionTables = {
   })
     .index("by_company", ["companyId"])
     .index("by_user", ["userId"]),
+
+  // Disponibilités du professionnel (§8 « PRENDRE RENDEZ-VOUS ») — une règle
+  // par jour de la semaine (horaires, durée de créneau, temps de déplacement,
+  // capacité quotidienne). Les créneaux réellement libres sont calculés à la
+  // volée à partir de ces règles et des rendez-vous existants.
+  availabilityRules: defineTable({
+    userId: v.id("users"),
+    weekday: v.number(), // 0 = dimanche … 6 = samedi
+    startMin: v.number(), // minutes depuis minuit
+    endMin: v.number(),
+    slotMinutes: v.optional(v.number()), // durée d'un créneau (défaut 60)
+    travelMinutes: v.optional(v.number()), // temps de déplacement entre deux RDV (défaut 30)
+    capacityPerDay: v.optional(v.number()), // nombre de rendez-vous/jour (défaut 1)
+    effectiveFrom: v.optional(v.string()), // YYYY-MM-DD
+    effectiveUntil: v.optional(v.string()),
+    isActive: v.boolean(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  }).index("by_user", ["userId"]),
+
+  // Rendez-vous (§8) — le client réserve un créneau réellement disponible.
+  appointments: defineTable({
+    clientUserId: v.id("users"),
+    proUserId: v.id("users"),
+    requestId: v.optional(v.id("serviceRequests")),
+    serviceKey: v.optional(v.string()),
+    domainCode: v.optional(v.string()),
+    mode: v.union(v.literal("SUR_SITE"), v.literal("A_DISTANCE")),
+    slotStart: v.number(), // timestamp de début du créneau
+    slotEnd: v.number(),
+    status: v.union(
+      v.literal("CONFIRME"),
+      v.literal("REFUSE"),
+      v.literal("ANNULE"),
+      v.literal("TERMINE"),
+    ),
+    city: v.optional(v.string()),
+    address: v.optional(v.string()),
+    note: v.optional(v.string()),
+    rejectReason: v.optional(v.string()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_client", ["clientUserId"])
+    .index("by_pro", ["proUserId"])
+    .index("by_pro_status", ["proUserId", "status"]),
+
+  // Journal des événements de rendez-vous (§38 journalisation / audit).
+  appointmentEvents: defineTable({
+    appointmentId: v.id("appointments"),
+    actorUserId: v.id("users"),
+    kind: v.string(), // réservé | confirmé | refusé | annulé | terminé
+    note: v.optional(v.string()),
+    at: v.number(),
+  }).index("by_appointment", ["appointmentId"]),
+
+  // Favoris client (§35 « MES FAVORIS ») — techniciens, entreprises, services.
+  favorites: defineTable({
+    userId: v.id("users"),
+    targetType: v.union(v.literal("technician"), v.literal("company"), v.literal("service")),
+    targetId: v.string(), // Id sérialisé ou code service
+    label: v.string(),
+    subtitle: v.optional(v.string()),
+    createdAt: v.number(),
+  })
+    .index("by_user", ["userId"])
+    .index("by_user_type", ["userId", "targetType"]),
 };
