@@ -180,4 +180,37 @@ export const extensionTables = {
     createdAt: v.number(),
     updatedAt: v.number(),
   }).index("by_user", ["userId"]),
+
+  // Équipements et matériels du technicien (§10 « MON MATÉRIEL ») : les
+  // déclarer rassure les clients et aide l'affectation. Déclaration ≠
+  // vérification : l'état et la photo sont déclaratifs, jamais auto-certifiés.
+  technicianEquipment: defineTable({
+    userId: v.id("users"),
+    label: v.string(), // Multimètre, Mégohmmètre, Pince ampèremétrique…
+    brand: v.optional(v.string()),
+    model: v.optional(v.string()),
+    quantity: v.number(),
+    condition: v.optional(
+      v.union(
+        v.literal("neuf"),
+        v.literal("bon_etat"),
+        v.literal("use"),
+        v.literal("a_reparer"),
+        v.literal("reforme"),
+      ),
+    ),
+    photoUrl: v.optional(v.string()),
+    acquiredAt: v.optional(v.number()),
+    isActive: v.boolean(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_user", ["userId"]),
+
+  // Confirmation annuelle du profil (§22 « MES INFORMATIONS SONT TOUJOURS
+  // EXACTES ») — une ligne par confirmation, journalisée, non supprimable.
+  profileConfirmations: defineTable({
+    userId: v.id("users"),
+    confirmedAt: v.number(),
+  }).index("by_user", ["userId"]),
 };

@@ -51,6 +51,8 @@ import { NOMENCLATURE } from "@/lib/nomenclature";
 import { credentialBadge } from "@/lib/institutions";
 import { formatDate } from "@/lib/gtec";
 import { openProfilePdf } from "@/lib/profilePdf";
+import { ProfileEquipmentCard } from "@/components/ProfileEquipmentCard";
+import { ProfileAnnualReviewCard } from "@/components/ProfileAnnualReviewCard";
 
 const STATUS_META: Record<string, { label: string; cls: string }> = {
   DRAFT: { label: "Brouillon", cls: "text-muted-foreground" },
@@ -1079,6 +1081,10 @@ export function MyProfile() {
 
       {/* Entreprise & équipe (§10-§11) */}
       <TeamCompanyCard />
+
+      {/* Mon matériel (§10) + rappel annuel et profil public (§19, §22) */}
+      <ProfileEquipmentCard />
+      <ProfileAnnualReviewCard />
 
       {/* Historique des modifications (§15) */}
       <Card className="card-layered">

@@ -64,7 +64,7 @@ export const dailySweep = internalMutation({
   handler: async (ctx) => {
     const now = Date.now();
     const DAY = 24 * 3600 * 1000;
-    const summary = { quotesExpired: 0, visitReminders: 0, subsExpiring: 0, debtReminders: 0 };
+    const summary = { quotesExpired: 0, visitReminders: 0, subsExpiring: 0, debtReminders: 0, profileReminders: 0 };
 
     // ---------- 1) Devis dont la validité est dépassée ----------
     const quotes = await ctx.db.query("quotes").collect();
@@ -217,17 +217,85 @@ export const dailySweep = internalMutation({
       }
     }
 
+    // ---------- 5) Profil & certifications (référentiel §21-§22) ----------
+    // 5a) Certifications vérifiées expirant sous 30 jours → notification.
+    const certs = await ctx.db.query("profileCertifications").collect();
+    for (const c of certs) {
+      if (c.status !== "VERIFIED" || !c.isActive || !c.expiresAt) continue;
+      const daysLeft = Math.ceil((c.expiresAt - now) / DAY);
+      if (daysLeft > 30) continue;
+      const recent = await ctx.db
+        .query("notifications")
+        .withIndex("by_user", (q) => q.eq("userId", c.userId))
+        .collect();
+      const hasRecent = recent.some(
+        (n) =>
+          n.kind === "profil" &&
+          n.title === "Certification bientôt expirée" &&
+          now - n.at < 7 * DAY,
+      );
+      if (hasRecent) continue;
+      await pushNotification(
+        ctx.db,
+        c.userId,
+        "profil",
+        "Certification bientôt expirée",
+        `« ${c.name} » expire dans ${daysLeft} jour(s). Renouvelez-la puis ajoutez le nouveau justificatif à votre profil.`,
+      );
+      summary.profileReminders++;
+    }
+    // 5b) Rappel annuel (§22) : profil sans confirmation ni modification
+    // depuis 12 mois. Un seul rappel par semestre pour éviter le spam.
+    const YEAR = 365 * DAY;
+    const allProfiles = await ctx.db.query("technicianProfiles").collect();
+    for (const p of allProfiles) {
+      const confirms = await ctx.db
+        .query("profileConfirmations")
+        .withIndex("by_user", (q) => q.eq("userId", p.userId))
+        .collect();
+      const lastConfirm = Math.max(0, ...confirms.map((c) => c.confirmedAt));
+      const changes = await ctx.db
+        .query("profileChanges")
+        .withIndex("by_user", (q) => q.eq("userId", p.userId))
+        .collect();
+      const lastChange = Math.max(0, ...changes.map((h) => h.at));
+      const lastActivity = Math.max(lastConfirm, lastChange);
+      const since = lastActivity > 0 ? now - lastActivity : now - p._creationTime;
+      if (since < YEAR) continue;
+      const months = Math.floor(since / (30 * DAY));
+      const recent = await ctx.db
+        .query("notifications")
+        .withIndex("by_user", (q) => q.eq("userId", p.userId))
+        .collect();
+      const hasRecent = recent.some(
+        (n) =>
+          n.kind === "profil" &&
+          n.title === "Votre profil mérite une mise à jour" &&
+          now - n.at < 180 * DAY,
+      );
+      if (hasRecent) continue;
+      await pushNotification(
+        ctx.db,
+        p.userId,
+        "profil",
+        "Votre profil mérite une mise à jour",
+        `Votre profil n'a pas été mis à jour depuis ${months} mois. Votre expérience professionnelle a-t-elle évolué ? Confirmez ou complétez votre dossier dans MON PROFIL.`,
+      );
+      summary.profileReminders++;
+    }
+
     // ---------- Bilan pour l'administration ----------
     if (
       summary.quotesExpired > 0 ||
       summary.visitReminders > 0 ||
-      summary.subsExpiring > 0
+      summary.subsExpiring > 0 ||
+      summary.profileReminders > 0
     ) {
       await pushAdmins(
         ctx.db,
         "general",
         "Sweep quotidien GTEC",
-        `${summary.quotesExpired} devis expiré(s), ${summary.visitReminders} rappel(s) de visite, ${summary.subsExpiring} abonnement(s) à renouveler.`,
+        `${summary.quotesExpired} devis expiré(s), ${summary.visitReminders} rappel(s) de visite, ${summary.subsExpiring} abonnement(s) à renouveler, ${summary.profileReminders} rappel(s) de profil.`,
       );
     }
 
