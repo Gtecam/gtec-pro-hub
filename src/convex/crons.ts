@@ -24,9 +24,14 @@ crons.daily(
 );
 
 crons.daily(
-  "gtec-daily-sweep",
+  "gtec-maintenance-sweep",
   { hourUTC: 6, minuteUTC: 0 },
-  internal.crons.dailySweep,
+  internal.crons.maintenanceSweep,
+);
+crons.daily(
+  "gtec-warranty-sweep",
+  { hourUTC: 6, minuteUTC: 0 },
+  internal.crons.warrantySweep,
 );
 
 /** Notification minimale (sans file e-mail) : crons silencieux si e-mail absent. */
@@ -362,6 +367,78 @@ export const commissionDebtSweep = internalMutation({
       }
     }
     return { reminded, overdue };
+  },
+});
+
+/* =================== EXTENSIONS PHASE 2 (maintenance + garanties) =================== */
+
+/**
+ * Sweep maintenance : rappelle aux techniciens et clients les visites
+ * planifiées sous 48 h (extension du sweep quotidien existant).
+ */
+export const maintenanceSweep = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    const now = Date.now();
+    const DAY = 24 * 3600 * 1000;
+    const visits = await ctx.db
+      .query("contractVisits")
+      .withIndex("by_contract")
+      .collect();
+    const soon = now + 2 * DAY;
+    for (const v of visits) {
+      if (v.status !== "planifiee" || v.scheduledAt < now || v.scheduledAt > soon) continue;
+      const contract = await ctx.db.get(v.contractId);
+      if (!contract) continue;
+      const when = new Date(v.scheduledAt).toLocaleDateString("fr-FR", { dateStyle: "long" });
+      await ctx.db.insert("notifications", {
+        userId: contract.clientId,
+        kind: "visite",
+        title: "Visite à venir",
+        body: `Visite de maintenance « ${contract.title} » prévue le ${when}.`,
+        at: now,
+      });
+      if (v.assignedTeamLeaderId) {
+        await ctx.db.insert("notifications", {
+          userId: v.assignedTeamLeaderId,
+          kind: "visite",
+          title: "Visite à venir",
+          body: `Vous êtes affecté à « ${contract.title} » le ${when}.`,
+          at: now,
+        });
+      }
+    }
+    return { visitReminders: visits.length };
+  },
+});
+
+/**
+ * Sweep garanties : notifie les clients dont les garanties de travaux
+ * expirent sous 15 jours.
+ */
+export const warrantySweep = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    const now = Date.now();
+    const DAY = 24 * 3600 * 1000;
+    const rows = await ctx.db
+      .query("workGuarantees")
+      .withIndex("by_request")
+      .collect();
+    for (const g of rows) {
+      if (g.status !== "ACTIVE") continue;
+      const daysLeft = Math.ceil((g.until - now) / DAY);
+      if (daysLeft > 15) continue;
+      const request = (await ctx.db.get(g.requestId as never)) as { reference?: string } | undefined;
+      await ctx.db.insert("notifications", {
+        userId: g.clientId,
+        kind: "garantie",
+        title: "Garantie bientôt expirée",
+        body: `Votre garantie de travaux « ${request?.reference ?? "mission"} » expire sous ${daysLeft} jour(s). N'hésitez pas à ouvrir un signalement.`,
+        at: now,
+      });
+    }
+    return { warrantyReminders: rows.length };
   },
 });
 
