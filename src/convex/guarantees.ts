@@ -1,44 +1,56 @@
-// GTEC PRO — GARANTIES DE TRAVAUX (F°13) + MISSIONS AVANCÉES (F°10, F°12).
-// Réutilise le module missions.ts existant et ajoute les garanties.
-
-import { v } from "convex/values";
+import { requireUser, notify } from "./gtec";
 import { mutation, query } from "./_generated/server";
-import type { Doc } from "./_generated/dataModel";
-import { requireUser, notify, notifyAdmins } from "./gtec";
+import type { Doc, Id } from "./_generated/dataModel";
+import type { GetRequestResult } from "./_generated/server";
 
-// ========================= GARANTIES DE TRAVAUX (F°13) =========================
+type WorkGuarantee = {
+  _id: Id<"workGuarantees">;
+  requestId: Id<"serviceRequests">;
+  clientId: Id<"users">;
+  startedAt: number;
+  days: number;
+  until: number;
+  status: "ACTIVE" | "EXPIRED";
+  isActive: boolean;
+  createdAt: number;
+  updatedAt: number;
+};
 
-/** Ouvre la garantie de travaux à la réception client (30 jours par défaut,
- * durée = garantie du rapport). Idempotent. Appelée après clientReception. */
+// ---------- assure une garantie de travaux avant intervention ----------
+
 export const ensureWorkGuarantee = mutation({
-  args: { requestId: v.id("serviceRequests"), days: v.optional(v.number()) },
+  args: {
+    requestId: "string",
+    clientId: "string",
+    days: "number",
+  },
   handler: async (ctx, args) => {
-    const user = await requireUser(ctx);
-    const request = await ctx.db.get(args.requestId);
-    if (!request) throw new Error("Mission introuvable.");
-    if (request.clientId !== user._id && user.role !== "admin") throw new Error("Action non autorisée.");
-    const existing = await ctx.db
+    const request = await ctx.db.get(args.requestId as Id<"serviceRequests">);
+    if (!request) throw new Error("Demande introuvable.");
+    if (request.type !== "intervention")
+      throw new Error("Seules les interventions peuvent recevoir une garantie.");
+
+    const existing = await ctx
+      .db()
       .query("workGuarantees")
       .withIndex("by_request", (q) => q.eq("requestId", args.requestId))
       .collect();
-    if (existing.length > 0) return;
-    const report = (await ctx.db
-      .query("interventionReports")
-      .withIndex("by_request", (q) => q.eq("requestId", args.requestId))
-      .collect()) as Doc<"interventionReports">[];
-    const days = Math.min(Math.max(args.days ?? Math.round((report[0]?.warrantyMonths ?? 1) * 30), 7), 365);
+    if (existing.length > 0) return existing[0]._id;
+
     const startedAt = Date.now();
-    await ctx.db.insert("workGuarantees", {
-      requestId: args.requestId,
-      clientId: request.clientId,
+    const until = startedAt + args.days * 24 * 60 * 60 * 1000;
+    const id = await ctx.db.insert("workGuarantees", {
+      requestId: args.requestId as Id<"serviceRequests">,
+      clientId: args.clientId as Id<"users">,
       startedAt,
-      days,
-      until: startedAt + days * 86400000,
+      days: args.days,
+      until,
       status: "ACTIVE",
       isActive: true,
       createdAt: startedAt,
       updatedAt: startedAt,
     });
+    return id;
   },
 });
 
@@ -47,15 +59,16 @@ export const myActiveGuarantees = query({
   args: {},
   handler: async (ctx) => {
     const user = await requireUser(ctx);
-    const rows = await ctx.db
-      .query("workGuarantees")
-      .withIndex("by_request", (q) => q.eq("clientId", user._id))
-      .collect();
+    const all = await ctx.db.query("workGuarantees").collect();
     const now = Date.now();
-    const active = rows.filter((g) => g.status === "ACTIVE" && g.until > now);
+    const active = all.filter(
+      (g) => g.status === "ACTIVE" && g.until > now && g.clientId === user._id,
+    );
     const out = await Promise.all(
       active.map(async (g) => {
-        const request = (await ctx.db.get(g.requestId as never)) as Doc<"serviceRequests"> | undefined;
+        const request = (await ctx.db.get(g.requestId)) as
+          | GetRequestResult
+          | undefined;
         return {
           _id: g._id,
           requestId: g.requestId,
@@ -75,108 +88,128 @@ export const listWarrantyClaims = query({
   args: {},
   handler: async (ctx) => {
     const user = await requireUser(ctx);
-    const claims = await ctx.db
+    const claims = await ctx
+      .db()
       .query("buildingEvents")
       .withIndex("by_building", (q) => q.eq("buildingId", user._id))
-      .collect()
-      .then((rows) => rows.filter((e) => e.kind === "garantie"));
-    return claims;
+      .collect();
+    return claims.filter((e) => e.kind === "garantie");
   },
 });
 
-/** Client : signale un défaut pendant une garantie. */
+/** Admin : liste les garanties de travaux. */
+export const adminListWarrantyClaims = query({
+  args: {},
+  handler: async (ctx) => {
+    await requireAdmin(ctx);
+    const rows = await ctx.db.query("workGuarantees").collect();
+    return rows.map((g) => ({
+      _id: g._id,
+      requestId: g.requestId,
+      clientId: g.clientId,
+      days: g.days,
+      until: g.until,
+      status: g.status,
+    })) as WorkGuarantee[];
+  },
+});
+
+/** Admin : crée une garantie de travaux. */
+export const adminCreateWarrantyClaim = mutation({
+  args: {
+    requestId: "string",
+    clientId: "string",
+    days: "number",
+    note: "string",
+  },
+  handler: async (ctx, args) => {
+    await requireAdmin(ctx);
+    const request = await ctx.db.get(args.requestId as Id<"serviceRequests">);
+    if (!request) throw new Error("Demande introuvable.");
+    if (request.type !== "intervention")
+      throw new Error("Seules les interventions peuvent recevoir une garantie.");
+
+    const startedAt = Date.now();
+    const until = startedAt + args.days * 24 * 60 * 60 * 1000;
+    const id = await ctx.db.insert("workGuarantees", {
+      requestId: args.requestId as Id<"serviceRequests">,
+      clientId: args.clientId as Id<"users">,
+      startedAt,
+      days: args.days,
+      until,
+      status: "ACTIVE",
+      isActive: true,
+      createdAt: startedAt,
+      updatedAt: startedAt,
+    });
+    await notify(ctx, args.clientId as Id<"users">, "garantie", "Garantie accordée", args.note);
+    return id;
+  },
+});
+
+/** Client : réclame une garantie. */
 export const createWarrantyClaim = mutation({
   args: {
-    requestId: v.id("serviceRequests"),
-    description: v.string(),
-    photos: v.optional(v.array(v.string())),
+    requestId: "string",
+    guaranteeDays: "number",
   },
   handler: async (ctx, args) => {
     const user = await requireUser(ctx);
-    const request = await ctx.db.get(args.requestId);
-    if (!request) throw new Error("Mission introuvable.");
-    if (request.clientId !== user._id) throw new Error("Accès interdit.");
-    if (request.status !== "terminee") throw new Error("Seules les missions terminées sont couvertes.");
-    const existing = await ctx.db
-      .query("workGuarantees")
-      .withIndex("by_request", (q) => q.eq("requestId", args.requestId))
-      .collect();
-    const guarantee = existing[0];
-    if (!guarantee) throw new Error("Aucune garantie de travaux pour cette mission.");
-    if (guarantee.status !== "ACTIVE") throw new Error("La garantie est expirée.");
-    if (guarantee.until < Date.now()) throw new Error("La garantie est expirée.");
-    await ctx.db.insert("buildingEvents", {
-      buildingId: guarantee.requestId,
-      kind: "garantie",
-      label: "Signalement garantie",
-      detail: args.description.slice(0, 280),
-      at: Date.now(),
+    const request = await ctx.db.get(args.requestId as Id<"serviceRequests">);
+    if (!request) throw new Error("Demande introuvable.");
+    if (request.type !== "intervention")
+      throw new Error("Seules les interventions peuvent recevoir une garantie.");
+    if (request.clientId !== user._id)
+      throw new Error("Vous n'êtes pas le client de cette demande.");
+
+    const id = await ctx.db.insert("workGuarantees", {
+      requestId: args.requestId as Id<"serviceRequests">,
+      clientId: user._id,
+      startedAt: Date.now(),
+      days: args.guaranteeDays,
+      until: Date.now() + args.guaranteeDays * 24 * 60 * 60 * 1000,
+      status: "ACTIVE",
+      isActive: true,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
     });
-    await notify(
-      ctx,
-      guarantee.clientId,
-      "garantie",
-      "Signalement ouvert",
-      `Votre signalement garantie pour « ${guarantee.reference} » est enregistré — l'équipe d'intervention le suit.`,
-    );
+    return id;
+  },
+});
+
+/** Admin : examine une réclamation de garantie. */
+export const adminReviewWarrantyClaim = mutation({
+  args: {
+    claimId: "string",
+    decision: "string",
+    note: "string",
+  },
+  handler: async (ctx, args) => {
+    await requireAdmin(ctx);
+    const claim = await ctx.db.get(args.claimId as Id<"workGuarantees">);
+    if (!claim) throw new Error("Réclamation introuvable.");
+    await ctx.db.patch(args.claimId as Id<"workGuarantees">, {
+      status: args.decision as "ACTIVE" | "EXPIRED",
+      note: args.note,
+    });
     return true;
   },
 });
 
-/** Admin : instruction d'un signalement de garantie. */
-export const adminReviewWarrantyClaim = mutation({
-  args: {
-    requestId: v.id("serviceRequests"),
-    decision: v.union(v.literal("accepte"), v.literal("refuse")),
-    note: v.optional(v.string()),
-  },
-  handler: async (ctx, args) => {
-    await requireUser(ctx);
-    const request = await ctx.db.get(args.requestId);
-    if (!request) throw new Error("Mission introuvable.");
-    const existing = await ctx.db
-      .query("workGuarantees")
-      .withIndex("by_request", (q) => q.eq("requestId", args.requestId))
-      .collect();
-    const guarantee = existing[0];
-    if (!guarantee) throw new Error("Aucune garantie pour cette mission.");
-    await ctx.db.patch(guarantee._id as never, {
-      status: args.decision === "accepte" ? "ACTIVE" : "EXPIRED",
-      updatedAt: Date.now(),
-    });
-    if (args.decision === "accepte") {
-      await notifyAdmins(
-        ctx,
-        "garantie",
-        "Signalement garantie accepté",
-        `La garantie « ${guarantee.reference} » est acceptée — l'équipe est notifiée pour un contrôle.`,
-      );
-    } else {
-      await notifyAdmins(
-        ctx,
-        "garantie",
-        "Signalement garantie refusé",
-        `La garantie « ${guarantee.reference} » est refusée — ${args.note ?? ""}`.slice(0, 280),
-      );
-    }
-  },
-});
-
-/** Admin : ferme une garantie (clôture d'une mission). */
+/** Client : résolution d'une garantie. */
 export const resolveWarrantyClaim = mutation({
-  args: { requestId: v.id("serviceRequests") },
+  args: {
+    claimId: "string",
+    decision: "string",
+  },
   handler: async (ctx, args) => {
-    await requireUser(ctx);
-    const request = await ctx.db.get(args.requestId);
-    if (!request) throw new Error("Mission introuvable.");
-    const existing = await ctx.db
-      .query("workGuarantees")
-      .withIndex("by_request", (q) => q.eq("requestId", args.requestId))
-      .collect();
-    const guarantee = existing[0];
-    if (!guarantee) return;
-    await ctx.db.patch(guarantee._id as never, { status: "EXPIRED", updatedAt: Date.now() });
+    const user = await requireUser(ctx);
+    const claim = await ctx.db.get(args.claimId as Id<"workGuarantees">);
+    if (!claim) throw new Error("Réclamation introuvable.");
+    if (claim.clientId !== user._id) throw new Error("Action non autorisée.");
+    await ctx.db.patch(args.claimId as Id<"workGuarantees">, {
+      status: args.decision as "ACTIVE" | "EXPIRED",
+    });
+    return true;
   },
 });
-
-export default { ensureWorkGuarantee, myActiveGuarantees, listWarrantyClaims, createWarrantyClaim, adminReviewWarrantyClaim, resolveWarrantyClaim };

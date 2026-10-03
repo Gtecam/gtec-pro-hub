@@ -148,7 +148,12 @@ export const extensionTables = {
     sessionKey: v.string(), // clé locale pour reprendre une session
     serviceKey: v.optional(v.string()),
     question: v.string(), // description libre du problème
-    answers: v.array(v.object({ question: v.string(), answer: v.string() })),
+    answers: v.array(
+      v.object({
+        question: v.string(),
+        answer: v.string(),
+      }),
+    ),
     resultJson: v.string(), // catégorie probable, urgence, compétences, matériel
     convertedRequestId: v.optional(v.id("serviceRequests")), // demande créée depuis ce diagnostic
     isActive: v.boolean(),
@@ -174,7 +179,12 @@ export const extensionTables = {
     userId: v.id("users"),
     sessionKey: v.string(),
     title: v.string(),
-    answers: v.array(v.object({ question: v.string(), answer: v.string() })),
+    answers: v.array(
+      v.object({
+        question: v.string(),
+        answer: v.string(),
+      }),
+    ),
     contentJson: v.string(), // description, périmètre, lots, délais, livrables…
     isActive: v.boolean(),
     createdAt: v.number(),
