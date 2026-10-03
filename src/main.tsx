@@ -22,6 +22,8 @@ const DiasporaPage = lazy(() => import("./pages/DiasporaPage.tsx"));
 const BuildingsPage = lazy(() => import("./pages/BuildingsPage.tsx"));
 const AssetScanPage = lazy(() => import("./pages/AssetScanPage.tsx"));
 const VerifyPage = lazy(() => import("./pages/VerifyPage.tsx"));
+const EquipmentScanPage = lazy(() => import("./pages/EquipmentScanPage.tsx"));
+const MyBuildingsPage = lazy(() => import("./pages/MyBuildingsPage.tsx"));
 const PublicProfilePage = lazy(() => import("./pages/PublicProfilePage.tsx"));
 const NotFound = lazy(() => import("./pages/NotFound.tsx"));
 
@@ -190,12 +192,13 @@ createRoot(document.getElementById("root")!).render(
                 path="/buildings"
                 element={
                   <RequireAuth>
-                    <BuildingsPage />
+                    <MyBuildingsPage />
                   </RequireAuth>
                 }
               />
               <Route path="/asset/:token" element={<AssetScanPage />} />
               <Route path="/verify/:token" element={<VerifyPage />} />
+              <Route path="/scan/:token" element={<EquipmentScanPage />} />
               <Route path="/t/:userId" element={<PublicProfilePage />} />
               <Route path="*" element={<NotFound />} />
             </Routes>
