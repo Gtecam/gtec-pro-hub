@@ -1,5 +1,6 @@
 import { requireUser, notify } from "./gtec";
 import { internalMutation, mutation, query } from "./_generated/server";
+import { v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { GetRequestResult } from "./_generated/server";
 
