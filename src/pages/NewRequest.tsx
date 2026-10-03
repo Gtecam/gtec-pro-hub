@@ -67,6 +67,11 @@ export default function NewRequest() {
   const navigate = useNavigate();
   const createRequest = useMutation(api.gtec.createRequest);
   const createDiasporaRequest = useMutation(api.diaspora.createDiasporaRequest);
+  const linkBrief = useMutation(api.advisor.linkBriefToRequest);
+  const linkAdvisor = useMutation(api.advisor.linkEstimateToRequest);
+  // Clé de session du cahier des charges (F°3) : créée une fois par ouverture
+  // du formulaire, elle rattache le document archivé à la demande créée.
+  const [briefSessionKey] = useState(() => `brief-${Date.now()}`);
   // MODE DIASPORA : commande pour un proche (?diaspora=1&beneficiary=…).
   const [searchParams] = useSearchParams();
   const diasporaMode = searchParams.get("diaspora") === "1";
@@ -310,6 +315,11 @@ export default function NewRequest() {
           : undefined,
       });
       toast.success("Demande envoyée à GTEC PRO");
+      // Traçabilité conseiller : on rattache brief/diagnostic/estimation à la
+      // demande réelle (best effort — ne bloque jamais l'envoi).
+      void linkBrief({ sessionKey: briefSessionKey, requestId: id }).catch(() => undefined);
+      void linkAdvisor({ kind: "diagnostic", sessionKey: `diag-${briefSessionKey}`, requestId: id }).catch(() => undefined);
+      void linkAdvisor({ kind: "estimate", sessionKey: `est-${briefSessionKey}`, requestId: id }).catch(() => undefined);
       navigate(`/dashboard/requests/${id}`);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Erreur");
@@ -606,6 +616,7 @@ export default function NewRequest() {
                 {/* EXTENSIONS GTEC PRO : conseiller (F°1 pré-diagnostic + F°2 estimation) */}
                 <AdvisorCard
                   serviceKey={serviceKey}
+                  sessionKey={briefSessionKey}
                   onApply={(p) => {
                     if (p.description) setDescription((d) => (d.trim().length > 0 ? d : p.description!));
                     if (p.urgency) setUrgency(p.urgency);
@@ -616,6 +627,7 @@ export default function NewRequest() {
                 {/* EXTENSION F°3 : cahier des charges guidé */}
                 <BriefCard
                   serviceKey={serviceKey}
+                  sessionKey={briefSessionKey}
                   interventionCode={interventionCode || undefined}
                   interventionLabel={
                     catalogue

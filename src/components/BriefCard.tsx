@@ -1,6 +1,6 @@
 import { useMutation } from "convex/react";
 import { FileText, RotateCcw, ScrollText } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { toast } from "sonner";
 import { api } from "@/convex/_generated/api";
 import { Button } from "@/components/ui/button";
@@ -40,11 +40,15 @@ const DEADLINES = ["Sous 48 heures", "Sous 1 semaine", "Sous 2 semaines", "Sous 
 
 export function BriefCard({
   serviceKey,
+  sessionKey,
   interventionCode,
   interventionLabel,
   onApply,
 }: {
   serviceKey: string | null;
+  /** Clé de session portée par le parent — permet de rattacher le document
+   *  à la demande réellement créée (advisor.linkBriefToRequest). */
+  sessionKey: string;
   interventionCode?: string;
   interventionLabel?: string;
   onApply?: (payload: { description?: string }) => void;
@@ -62,11 +66,6 @@ export function BriefCard({
   const [urgency, setUrgency] = useState("normale");
   const [deadline, setDeadline] = useState(DEADLINES[1]);
   const [constraints, setConstraints] = useState("");
-
-  const sessionKey = useMemo(
-    () => `brief-${serviceKey ?? "x"}-${Date.now()}`,
-    [serviceKey],
-  );
 
   const generate = async () => {
     if (city.trim().length < 2) {

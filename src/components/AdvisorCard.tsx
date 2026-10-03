@@ -39,9 +39,13 @@ const URGENCY_LABELS: Record<string, string> = {
 
 export function AdvisorCard({
   serviceKey,
+  sessionKey,
   onApply,
 }: {
   serviceKey: string | null;
+  /** Base commune des clés de session (diag-/est-) portée par le parent —
+   *  permet le rattachement à la demande réelle après création. */
+  sessionKey: string;
   onApply?: (payload: { description?: string; urgency?: string; budgetHint?: number }) => void;
 }) {
   const saveDiagnostic = useMutation(api.advisor.saveDiagnostic);
@@ -86,7 +90,7 @@ export function AdvisorCard({
       setResult(r);
       setBusy(true);
       void saveDiagnostic({
-        sessionKey: `diag-${Date.now()}`,
+        sessionKey: `diag-${sessionKey}`,
         serviceKey: serviceKey ?? undefined,
         question: question.trim(),
         answers: next,
@@ -121,7 +125,7 @@ export function AdvisorCard({
     setEstimate(r);
     try {
       await saveEstimate({
-        sessionKey: `est-${Date.now()}`,
+        sessionKey: `est-${sessionKey}`,
         inputsJson: JSON.stringify({ interventionCode, qty, difficulty, urgency, techs, materials, serviceKey }),
         resultJson: JSON.stringify(r),
       });

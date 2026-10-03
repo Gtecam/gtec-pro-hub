@@ -70,17 +70,27 @@ le cycle `DRAFT → SUBMITTED → UNDER_REVIEW → VERIFIED / REJECTED`.
 | Profil — matériel, rappel annuel, vitrine | `profileExtras.ts` | `myEquipment`, `confirmProfileUpToDate`, `publicTechnicianProfile` |
 | Bâtiments & équipements | `buildings.ts` | `myBuildings`, `getBuilding`, `upsertAsset`, `myWarrantyAlerts`, `getPublicBuilding` |
 | Check-lists, certificats, garanties | `missions.ts` | `ensureMissionChecklist`, `toggleChecklistItem`, `issueDigitalCertificate`, `verifyCertificate`, `ensureWorkGuarantee` |
-| Diagnostic & estimation | `advisor.ts` + `lib/` | `saveDiagnostic`, `saveEstimate`, `linkEstimateToRequest` |
+| Diagnostic & estimation | `advisor.ts` + `lib/` | `saveDiagnostic`, `saveEstimate`, `saveBrief`, `linkEstimateToRequest`, `linkBriefToRequest` |
 | Client entreprise (§14) | `clientCompany.ts` | `myClientCompany`, `inviteClientTeamMember`, `upsertClientSite`, `adminReviewClientCompany` |
 | Rendez-vous (§8) | `appointments.ts` | `myAvailabilityRules`, `bookableTechnicians`, `availableSlots`, `bookAppointment`, `updateAppointment`, `myAppointments` |
 | Favoris (§35) | `favorites.ts` | `myFavorites`, `addFavorite`, `removeFavorite` |
 | Back-office & planifiés | `crons.ts`, `adminApp.ts`, `institutions.ts` | `dailySweep`, statistiques, référentiel MINESUP |
+| Garanties de travaux (F°13) | `guarantees.ts` | `ensureWorkGuarantee`, `myActiveGuarantees`, `listWarrantyClaims`, `adminListWarrantyClaims` |
+| Contrats de maintenance | `maintenance.ts` | `listMyMaintenance`, `createMaintenanceContract`, `scheduleVisit`, `completeVisit`, `payMaintenance`, `adminValidateMaintenancePayment` |
+| Relevés & capteurs (IoT, phase 7) | `iot.ts` | `addReading`, `assetReadings`, `buildingIotOverview` |
+| Cahier des charges (F°3, phase 3) | `advisor.ts` + `lib/brief.ts` | `saveBrief`, `linkBriefToRequest` + moteur local `buildBrief` |
 
 ## 5. Écrans livrés (non exhaustif)
 
 Landing, Auth, Dashboard, ClientDashboard, NewRequest, RequestDetail,
 TechnicianSpace, MyProfile, MyClientProfile, BuildingsPage, AssetScanPage,
 VerifyPage, PublicProfilePage, DiasporaPage, AdminConsole, AdminApp.
+
+Extensions phases 2-7 : `BriefCard` + `AdvisorHistoryCard` (conseiller F°1-F°3
+et historique des sessions GTEC AI), `AssetIotCard` (relevés IoT par
+équipement), section B2B & Académie sur la landing (marketplace vérifiée +
+référentiel MINESUP), écrans garanties/maintenance (`guarantees.ts`,
+`maintenance.ts`).
 
 ## 6. Rôles et permissions
 
@@ -134,9 +144,13 @@ expirant sous 30 j**, **rappel annuel de mise à jour du profil** (§22).
 
 - Ce fichier + les en-têtes de chaque module Convex (règles métier commentées).
 - **Non couvert à ce jour** : messagerie (§25), carte géographique (§11),
-  Store/Stock (§15, §22), véhicules (§21), Academy/formations en ligne (§16),
-  badges factuels calculés (§17), moteur de recherche visuel multi-critères (§6),
-  IA photo/vidéo (§10), recommandations explicables (§36).
+  Store/Stock (§15, §22), véhicules (§21), badges factuels calculés (§17),
+  moteur de recherche visuel multi-critères (§6), IA photo/vidéo (§10),
+  recommandations explicables (§36). L'Academy « formations en ligne » (§16)
+  est couverte par le volet diplômes/référentiel MINESUP (dossier professionnel
+  vérifiable) ; les modules e-learning interactifs restent hors périmètre.
+  Les phases 3-7 (briefs, marketplace B2B, GTEC AI, IoT) sont livrées —
+  voir sections 4 et 5.
 
 ## 11. Plan de déploiement
 
