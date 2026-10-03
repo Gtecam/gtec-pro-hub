@@ -394,8 +394,26 @@ export default function ClientDashboard() {
                 Équipements, QR codes, garanties, documents et historique — un
                 dossier permanent par site, avec accès temporaires pour vos techniciens.
               </p>
+            </div>              <Button variant="outline" size="sm" onClick={() => navigate("/buildings")}>
+              Ouvrir <ArrowRight className="ml-1.5 size-4" />
+            </Button>
+          </CardContent>
+        </Card>
+
+        {/* Dossier technique du bâtiment */}
+        <Card className="card-layered border-primary/15 bg-gradient-to-br from-primary/[0.04] to-transparent">
+          <CardContent className="flex flex-wrap items-center gap-3 py-4">
+            <span className="flex size-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
+              <Building2 className="size-5" />
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-semibold">Dossier technique</p>
+              <p className="text-xs text-muted-foreground">
+                Équipements, QR codes, garanties, documents et historique d'un
+                bâtiment de votre fiche.
+              </p>
             </div>
-            <Button variant="outline" size="sm" onClick={() => navigate("/buildings")}>
+            <Button variant="outline" size="sm" onClick={() => navigate("/b/")}>
               Ouvrir <ArrowRight className="ml-1.5 size-4" />
             </Button>
           </CardContent>
