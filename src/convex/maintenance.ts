@@ -98,15 +98,15 @@ export const listMaintenancePayments = query({
 
 export const createMaintenanceContract = mutation({
   args: {
-    reference: "string",
-    serviceKey: "string",
-    title: "string",
-    description: "string",
-    frequency: "string",
-    monthlyAmount: "number",
-    city: "string",
-    address: "string",
-    clientId: "string",
+    reference: v.string(),
+    serviceKey: v.string(),
+    title: v.string(),
+    description: v.string(),
+    frequency: v.string(),
+    monthlyAmount: v.number(),
+    city: v.string(),
+    address: v.string(),
+    clientId: v.string(),
   },
   handler: async (ctx, args) => {
     const user = await requireUser(ctx);
@@ -144,9 +144,9 @@ export const createMaintenanceContract = mutation({
 
 export const scheduleVisit = mutation({
   args: {
-    contractId: "string",
-    scheduledAt: "number",
-    note: "string",
+    contractId: v.string(),
+    scheduledAt: v.number(),
+    note: v.string(),
   },
   handler: async (ctx, args) => {
     const user = await requireUser(ctx);
@@ -175,9 +175,9 @@ export const scheduleVisit = mutation({
 
 export const completeVisit = mutation({
   args: {
-    visitId: "string",
-    report: "string",
-    doneAt: "number",
+    visitId: v.string(),
+    report: v.string(),
+    doneAt: v.number(),
   },
   handler: async (ctx, args) => {
     const user = await requireUser(ctx);
@@ -207,12 +207,12 @@ export const completeVisit = mutation({
 
 export const payMaintenance = mutation({
   args: {
-    contractId: "string",
-    periodIndex: "number",
-    amount: "number",
-    method: "string",
-    payerPhone: "string",
-    proofPhotoUrl: "string",
+    contractId: v.string(),
+    periodIndex: v.number(),
+    amount: v.number(),
+    method: v.string(),
+    payerPhone: v.string(),
+    proofPhotoUrl: v.string(),
   },
   handler: async (ctx, args) => {
     const user = await requireUser(ctx);
@@ -248,7 +248,7 @@ export const payMaintenance = mutation({
 
 export const adminValidateMaintenancePayment = mutation({
   args: {
-    paymentId: "string",
+    paymentId: v.string(),
   },
   handler: async (ctx, args) => {
     const admin = await requireAdmin(ctx);

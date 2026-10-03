@@ -20,9 +20,9 @@ type WorkGuarantee = {
 
 export const ensureWorkGuarantee = mutation({
   args: {
-    requestId: "string",
-    clientId: "string",
-    days: "number",
+    requestId: v.string(),
+    clientId: v.string(),
+    days: v.number(),
   },
   handler: async (ctx, args) => {
     const request = await ctx.db.get(args.requestId as Id<"serviceRequests">);
@@ -117,10 +117,10 @@ export const adminListWarrantyClaims = query({
 /** Admin : crée une garantie de travaux. */
 export const adminCreateWarrantyClaim = mutation({
   args: {
-    requestId: "string",
-    clientId: "string",
-    days: "number",
-    note: "string",
+    requestId: v.string(),
+    clientId: v.string(),
+    days: v.number(),
+    note: v.string(),
   },
   handler: async (ctx, args) => {
     await requireAdmin(ctx);
@@ -150,8 +150,8 @@ export const adminCreateWarrantyClaim = mutation({
 /** Client : réclame une garantie. */
 export const createWarrantyClaim = mutation({
   args: {
-    requestId: "string",
-    guaranteeDays: "number",
+    requestId: v.string(),
+    guaranteeDays: v.number(),
   },
   handler: async (ctx, args) => {
     const user = await requireUser(ctx);
@@ -180,9 +180,9 @@ export const createWarrantyClaim = mutation({
 /** Admin : examine une réclamation de garantie. */
 export const adminReviewWarrantyClaim = mutation({
   args: {
-    claimId: "string",
-    decision: "string",
-    note: "string",
+    claimId: v.string(),
+    decision: v.string(),
+    note: v.string(),
   },
   handler: async (ctx, args) => {
     await requireAdmin(ctx);
@@ -199,8 +199,8 @@ export const adminReviewWarrantyClaim = mutation({
 /** Client : résolution d'une garantie. */
 export const resolveWarrantyClaim = mutation({
   args: {
-    claimId: "string",
-    decision: "string",
+    claimId: v.string(),
+    decision: v.string(),
   },
   handler: async (ctx, args) => {
     const user = await requireUser(ctx);
