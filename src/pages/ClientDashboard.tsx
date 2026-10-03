@@ -26,6 +26,7 @@ import { MyClientProfile } from "@/components/MyClientProfile";
 import { PhoneVerifiedBadge } from "@/components/PhoneVerifiedBadge";
 import { AppointmentsClientCard } from "@/components/AppointmentsClientCard";
 import { FavoritesCard } from "@/components/FavoritesCard";
+import { AdvisorHistoryCard } from "@/components/AdvisorHistoryCard";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -421,6 +422,9 @@ export default function ClientDashboard() {
 
         {/* §8 : prise de rendez-vous chez un professionnel vérifié */}
         <AppointmentsClientCard />
+
+        {/* Phase 5 GTEC AI : historique des sessions du conseiller (F°1-F°3) */}
+        <AdvisorHistoryCard />
 
         {/* §35 : favoris (techniciens, entreprises, services) */}
         <FavoritesCard />

@@ -41,6 +41,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { formatDate } from "@/lib/gtec";
 import { NOMENCLATURE } from "@/lib/nomenclature";
+import { AssetIotCard } from "@/components/AssetIotCard";
 
 /**
  * GTEC PRO — DOSSIER TECHNIQUE NUMÉRIQUE DU BÂTIMENT (F°5, F°6, F°7, F°33).
@@ -419,6 +420,9 @@ export default function BuildingsPage() {
                   ))
                 )}
               </div>
+
+              {/* Phase 7 IoT : relevés de compteurs et capteurs par équipement */}
+              <AssetIotCard buildingId={detail.building._id} />
 
               {/* Accès temporaires */}
               {detail.grants.length > 0 && (

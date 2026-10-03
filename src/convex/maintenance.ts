@@ -1,47 +1,47 @@
+import { getAuthUserId } from "@convex-dev/auth/server";
 import { requireUser, notify } from "./gtec";
-import { internalMutation, mutation, query } from "./_generated/server";
+import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
-import type { Doc, Id } from "./_generated/dataModel";
-import type { GetRequestResult } from "./_generated/server";
+import type { Id } from "./_generated/dataModel";
 
-type IdList = readonly { id: string }[];
+/**
+ * GTEC PRO — Contrats de maintenance (§13-§14) : contrats récurrents
+ * (mensuel/trimestriel/semestriel/annuel), visites planifiées, paiements
+ * par échéance. Le client crée son contrat, GTEC planifie les visites et
+ * valide les paiements ; tout est journalisé.
+ */
 
-/** Compte le nombre de visites faites (status « faite »). */
-function countDone(visits: readonly (Doc<"contractVisits"> | null)[]): number {
-  let n = 0;
-  for (const v of visits) if (v && v.status === "faite") n++;
-  return n;
-}
-
-/** Évalue le status du contrat suivant le cycle de vie de sa garantie. */
-function computeStatus(c: { status: string; nextVisitAt: number | null }): "actif" | "suspendu" | "expire" | "resilie" {
-  if (c.status === "suspendu" || c.status === "resilie") return c.status;
-  if (c.status === "expire") return "expire";
-  if (c.nextVisitAt !== null && c.nextVisitAt < Date.now()) return "expire";
-  return "actif";
-}
-
-/** Administration interne : vérifie le rôle de l'admin (impossible de retrouver
- *  `requireAdmin` parce que `gtec.ts` ne l'exporte pas — il est privé). */
-async function requireAdmin(ctx: { auth: { userId: string | null } }): Promise<Id<"users">> {
-  if (!ctx.auth.userId) throw new Error("Non connecté.");
-  const user = await ctx.db.get(ctx.auth.userId);
-  if (!user || user.role !== "admin") throw new Error("Accès réservé à l'administration GTEC.");
+async function requireAdmin(ctx: any): Promise<Id<"users">> {
+  const userId = await getAuthUserId(ctx);
+  if (userId === null) throw new Error("Non connecté.");
+  const user = await ctx.db.get(userId);
+  if (!user || user.role !== "admin") {
+    throw new Error("Accès réservé à l'administration GTEC.");
+  }
   return user._id;
 }
 
-// === listes publiques ===
+// === listes client ===
 
 export const listMyMaintenance = query({
   args: {},
   handler: async (ctx) => {
     const user = await requireUser(ctx);
-    const contracts = await ctx.db.query("maintenanceContracts").withIndex("by_client", (q) => q.eq("clientId", user._id)).collect();
+    const contracts = await ctx.db
+      .query("maintenanceContracts")
+      .withIndex("by_client", (q) => q.eq("clientId", user._id))
+      .collect();
     const out = await Promise.all(
       contracts.map(async (c) => {
-        const visits = await ctx.db.query("contractVisits").withIndex("by_contract", (q) => q.eq("contractId", c._id)).collect();
-        const payments = await ctx.db.query("contractPayments").withIndex("by_contract", (q) => q.eq("contractId", c._id)).collect();
-        const doneCount = countDone(visits);
+        const visits = await ctx.db
+          .query("contractVisits")
+          .withIndex("by_contract", (q) => q.eq("contractId", c._id))
+          .collect();
+        const payments = await ctx.db
+          .query("contractPayments")
+          .withIndex("by_contract", (q) => q.eq("contractId", c._id))
+          .collect();
+        const doneCount = visits.filter((v) => v.status === "faite").length;
         return {
           _id: c._id,
           reference: c.reference,
@@ -52,10 +52,12 @@ export const listMyMaintenance = query({
           monthlyAmount: c.monthlyAmount,
           city: c.city,
           address: c.address,
-          status: computeStatus(c),
+          status: c.status,
+          startDate: c.startDate,
+          endDate: c.endDate,
           nextVisitAt: c.nextVisitAt,
-          visits,
-          payments,
+          visits: visits.sort((a, b) => a.scheduledAt - b.scheduledAt),
+          payments: payments.sort((a, b) => a.periodIndex - b.periodIndex),
           doneCount,
           nextPaymentAt: c.nextVisitAt,
         };
@@ -69,10 +71,16 @@ export const listMaintenanceVisits = query({
   args: {},
   handler: async (ctx) => {
     const user = await requireUser(ctx);
-    const contracts = await ctx.db.query("maintenanceContracts").withIndex("by_client", (q) => q.eq("clientId", user._id)).collect();
+    const contracts = await ctx.db
+      .query("maintenanceContracts")
+      .withIndex("by_client", (q) => q.eq("clientId", user._id))
+      .collect();
     const out = await Promise.all(
       contracts.map(async (c) => {
-        const visits = await ctx.db.query("contractVisits").withIndex("by_contract", (q) => q.eq("contractId", c._id)).collect();
+        const visits = await ctx.db
+          .query("contractVisits")
+          .withIndex("by_contract", (q) => q.eq("contractId", c._id))
+          .collect();
         return { contractId: c._id, visits };
       }),
     );
@@ -84,10 +92,16 @@ export const listMaintenancePayments = query({
   args: {},
   handler: async (ctx) => {
     const user = await requireUser(ctx);
-    const contracts = await ctx.db.query("maintenanceContracts").withIndex("by_client", (q) => q.eq("clientId", user._id)).collect();
+    const contracts = await ctx.db
+      .query("maintenanceContracts")
+      .withIndex("by_client", (q) => q.eq("clientId", user._id))
+      .collect();
     const out = await Promise.all(
       contracts.map(async (c) => {
-        const payments = await ctx.db.query("contractPayments").withIndex("by_contract", (q) => q.eq("contractId", c._id)).collect();
+        const payments = await ctx.db
+          .query("contractPayments")
+          .withIndex("by_contract", (q) => q.eq("contractId", c._id))
+          .collect();
         return { contractId: c._id, payments };
       }),
     );
@@ -95,27 +109,47 @@ export const listMaintenancePayments = query({
   },
 });
 
-// === provenance / création ===
+// === création ===
+
+const FREQUENCIES = ["mensuel", "trimestriel", "semestriel", "annuel"] as const;
+type Frequency = (typeof FREQUENCIES)[number];
 
 export const createMaintenanceContract = mutation({
   args: {
     reference: v.string(),
     serviceKey: v.string(),
     title: v.string(),
-    description: v.string(),
-    frequency: v.string(),
+    description: v.optional(v.string()),
+    frequency: v.union(
+      v.literal("mensuel"),
+      v.literal("trimestriel"),
+      v.literal("semestriel"),
+      v.literal("annuel"),
+    ),
     monthlyAmount: v.number(),
     city: v.string(),
     address: v.string(),
-    clientId: v.string(),
   },
   handler: async (ctx, args) => {
     const user = await requireUser(ctx);
-    if (args.clientId !== user._id) throw new Error("Action non autorisée.");
+    if (args.monthlyAmount < 0) throw new Error("Montant invalide.");
+    if (!FREQUENCIES.includes(args.frequency as Frequency)) {
+      throw new Error("Fréquence invalide.");
+    }
     const now = Date.now();
+    // Durée du contrat : 12 mois, échéances selon la fréquence.
+    const endDate = now + 365 * 24 * 3600 * 1000;
+    const nextVisitAt =
+      args.frequency === "mensuel"
+        ? now + 30 * 24 * 3600 * 1000
+        : args.frequency === "trimestriel"
+          ? now + 91 * 24 * 3600 * 1000
+          : args.frequency === "semestriel"
+            ? now + 182 * 24 * 3600 * 1000
+            : now + 365 * 24 * 3600 * 1000;
     const id = await ctx.db.insert("maintenanceContracts", {
       reference: args.reference,
-      clientId: args.clientId,
+      clientId: user._id,
       serviceKey: args.serviceKey,
       title: args.title,
       description: args.description,
@@ -125,17 +159,8 @@ export const createMaintenanceContract = mutation({
       address: args.address,
       status: "actif",
       startDate: now,
-      endDate: null,
-      nextVisitAt: null,
-      createdAt: now,
-      updatedAt: now,
-    });
-    // journalisation du cycle de vie du client
-    await ctx.db.insert("requestEvents", {
-      requestId: id,
-      kind: "maintenance",
-      label: "Contrat de maintenance créé",
-      at: now,
+      endDate,
+      nextVisitAt,
     });
     return id;
   },
@@ -147,29 +172,25 @@ export const scheduleVisit = mutation({
   args: {
     contractId: v.string(),
     scheduledAt: v.number(),
-    note: v.string(),
+    note: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const user = await requireUser(ctx);
     const contract = await ctx.db.get(args.contractId as Id<"maintenanceContracts">);
     if (!contract) throw new Error("Contrat introuvable.");
-    if (contract.clientId !== user._id) throw new Error("Action non autorisée.");
+    if (contract.clientId !== user._id && user.role !== "admin") {
+      throw new Error("Action non autorisée.");
+    }
     const id = await ctx.db.insert("contractVisits", {
-      contractId: args.contractId as Id<"maintenanceContracts">,
+      contractId: contract._id,
       scheduledAt: args.scheduledAt,
-      doneAt: null,
-      assignedTeamLeaderId: null,
-      report: null,
       status: "planifiee",
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
+      report: args.note,
     });
-    await ctx.db.insert("requestEvents", {
-      requestId: args.contractId as Id<"maintenanceContracts">,
-      kind: "maintenance",
-      label: "Visite planifiée",
-      at: Date.now(),
-    });
+    // Le contrat avance sa prochaine visite si la nouvelle est plus tôt.
+    if (contract.nextVisitAt === undefined || args.scheduledAt < contract.nextVisitAt) {
+      await ctx.db.patch(contract._id, { nextVisitAt: args.scheduledAt });
+    }
     return id;
   },
 });
@@ -184,22 +205,36 @@ export const completeVisit = mutation({
     const user = await requireUser(ctx);
     const visit = await ctx.db.get(args.visitId as Id<"contractVisits">);
     if (!visit) throw new Error("Visite introuvable.");
-    const contract = await ctx.db.get(visit.contractId as Id<"maintenanceContracts">);
+    const contract = await ctx.db.get(visit.contractId);
     if (!contract) throw new Error("Contrat introuvable.");
-    if (contract.clientId !== user._id) throw new Error("Action non autorisée.");
-    if (visit.status !== "planifiee") throw new Error("Seules les visites planifiées sont terminables.");
-    await ctx.db.patch(args.visitId as Id<"contractVisits">, {
+    if (contract.clientId !== user._id && user.role !== "admin") {
+      throw new Error("Action non autorisée.");
+    }
+    if (visit.status !== "planifiee") {
+      throw new Error("Seules les visites planifiées sont terminables.");
+    }
+    await ctx.db.patch(visit._id, {
       status: "faite",
       doneAt: args.doneAt,
       report: args.report,
-      updatedAt: Date.now(),
     });
-    await ctx.db.insert("requestEvents", {
-      requestId: visit.contractId as Id<"maintenanceContracts">,
-      kind: "maintenance",
-      label: "Visite réalisée",
-      at: Date.now(),
-    });
+    // Événement technique sur le bâtiment si un dossier existe pour ce client.
+    const building = (
+      await ctx.db
+        .query("buildings")
+        .withIndex("by_owner", (q) => q.eq("ownerUserId", contract.clientId))
+        .filter((q) => q.eq(q.field("address"), contract.address))
+        .collect()
+    )[0];
+    if (building) {
+      await ctx.db.insert("buildingEvents", {
+        buildingId: building._id,
+        kind: "maintenance",
+        label: `Visite de maintenance — ${contract.title}`,
+        detail: args.report,
+        at: args.doneAt,
+      });
+    }
     return true;
   },
 });
@@ -211,38 +246,42 @@ export const payMaintenance = mutation({
     contractId: v.string(),
     periodIndex: v.number(),
     amount: v.number(),
-    method: v.string(),
+    method: v.union(
+      v.literal("mtn_momo"),
+      v.literal("orange_money"),
+      v.literal("especes"),
+      v.literal("virement"),
+    ),
     payerPhone: v.string(),
-    proofPhotoUrl: v.string(),
+    proofPhotoUrl: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const user = await requireUser(ctx);
     const contract = await ctx.db.get(args.contractId as Id<"maintenanceContracts">);
     if (!contract) throw new Error("Contrat introuvable.");
     if (contract.clientId !== user._id) throw new Error("Action non autorisée.");
+    if (args.amount <= 0) throw new Error("Montant invalide.");
     const now = Date.now();
     const id = await ctx.db.insert("contractPayments", {
-      contractId: args.contractId as Id<"maintenanceContracts">,
+      contractId: contract._id,
       clientId: user._id,
       periodIndex: args.periodIndex,
       periodStart: now,
       periodEnd: now,
       amount: args.amount,
-      currency: "XAF",
+      currency: "FCFA",
       method: args.method,
       payerPhone: args.payerPhone,
       proofPhotoUrl: args.proofPhotoUrl,
       status: "en_attente",
-      validatedAt: null,
-      createdAt: now,
-      updatedAt: now,
     });
-    await ctx.db.insert("requestEvents", {
-      requestId: args.contractId as Id<"maintenanceContracts">,
-      kind: "maintenance",
-      label: "Paiement enregistré",
-      at: now,
-    });
+    await notify(
+      ctx,
+      contract.clientId,
+      "paiement",
+      "Paiement de maintenance enregistré",
+      `Votre paiement pour « ${contract.title} » est en attente de validation GTEC.`,
+    );
     return id;
   },
 });
@@ -252,14 +291,23 @@ export const adminValidateMaintenancePayment = mutation({
     paymentId: v.string(),
   },
   handler: async (ctx, args) => {
-    const admin = await requireAdmin(ctx);
+    await requireAdmin(ctx);
     const payment = await ctx.db.get(args.paymentId as Id<"contractPayments">);
     if (!payment) throw new Error("Paiement introuvable.");
-    await ctx.db.patch(args.paymentId as Id<"contractPayments">, {
+    if (payment.status !== "en_attente") {
+      throw new Error("Ce paiement est déjà traité.");
+    }
+    await ctx.db.patch(payment._id, {
       status: "valide",
       validatedAt: Date.now(),
-      updatedAt: Date.now(),
     });
+    await notify(
+      ctx,
+      payment.clientId,
+      "paiement",
+      "Paiement de maintenance validé",
+      "Votre paiement de maintenance a été validé par GTEC PRO.",
+    );
     return true;
   },
 });
@@ -275,7 +323,7 @@ export const myActiveGuarantees = query({
     const active = all.filter((g) => g.status === "ACTIVE" && g.until > now && g.clientId === user._id);
     const out = await Promise.all(
       active.map(async (g) => {
-        const request = (await ctx.db.get(g.requestId as never)) as GetRequestResult | undefined;
+        const request = await ctx.db.get(g.requestId);
         return {
           _id: g._id,
           requestId: g.requestId,
@@ -300,7 +348,7 @@ export const adminListActiveGuarantees = query({
       rows
         .filter((g) => g.status === "ACTIVE" && g.until > now)
         .map(async (g) => {
-          const request = (await ctx.db.get(g.requestId as never)) as GetRequestResult | undefined;
+          const request = await ctx.db.get(g.requestId);
           return {
             _id: g._id,
             requestId: g.requestId,

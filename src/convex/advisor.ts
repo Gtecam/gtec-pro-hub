@@ -79,6 +79,56 @@ export const saveEstimate = mutation({
   },
 });
 
+/** Archive un cahier des charges généré (F°3) — modifiable avant publication. */
+export const saveBrief = mutation({
+  args: {
+    sessionKey: v.string(),
+    title: v.string(),
+    answers: v.array(v.object({ question: v.string(), answer: v.string() })),
+    contentJson: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const user = await requireUser(ctx);
+    if (args.title.trim().length < 5) throw new Error("Titre du cahier des charges trop court.");
+    const existing = (await ctx.db
+      .query("projectBriefs")
+      .withIndex("by_user", (q: any) => q.eq("userId", user._id))
+      .collect()) as any[];
+    const dup = existing.find((b) => b.sessionKey === args.sessionKey);
+    if (dup) {
+      await ctx.db.patch(dup._id, {
+        title: args.title.trim(),
+        answers: args.answers,
+        contentJson: args.contentJson,
+        updatedAt: Date.now(),
+      });
+      return dup._id;
+    }
+    return await ctx.db.insert("projectBriefs", {
+      userId: user._id,
+      sessionKey: args.sessionKey,
+      title: args.title.trim(),
+      answers: args.answers,
+      contentJson: args.contentJson,
+      ...stamp(),
+    });
+  },
+});
+
+/** Cahier des charges rattache a une demande créée (traçabilité). */
+export const linkBriefToRequest = mutation({
+  args: { sessionKey: v.string(), requestId: v.id("serviceRequests") },
+  handler: async (ctx, args) => {
+    const user = await requireUser(ctx);
+    const rows = (await ctx.db
+      .query("projectBriefs")
+      .withIndex("by_user", (q: any) => q.eq("userId", user._id))
+      .collect()) as any[];
+    const row = rows.find((b) => b.sessionKey === args.sessionKey);
+    if (row) await ctx.db.patch(row._id, { convertedRequestId: args.requestId, updatedAt: Date.now() });
+  },
+});
+
 /** Rattache un diagnostic/estimation à la demande réellement créée (traçabilité). */
 export const linkEstimateToRequest = mutation({
   args: { kind: v.union(v.literal("diagnostic"), v.literal("estimate")), sessionKey: v.string(), requestId: v.id("serviceRequests") },

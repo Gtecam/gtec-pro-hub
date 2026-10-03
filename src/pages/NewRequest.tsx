@@ -50,6 +50,7 @@ import {
 } from "@/lib/interventions";
 import { compressImageIfNeeded, dataUrlBytes, humanSize } from "@/lib/imageCompress";
 import { AdvisorCard } from "@/components/AdvisorCard";
+import { BriefCard } from "@/components/BriefCard";
 import { relationIcon } from "@/lib/diaspora";
 import { useSearchParams } from "react-router";
 
@@ -609,6 +610,22 @@ export default function NewRequest() {
                     if (p.description) setDescription((d) => (d.trim().length > 0 ? d : p.description!));
                     if (p.urgency) setUrgency(p.urgency);
                     if (p.budgetHint != null) setBudgetHint(String(p.budgetHint));
+                  }}
+                />
+
+                {/* EXTENSION F°3 : cahier des charges guidé */}
+                <BriefCard
+                  serviceKey={serviceKey}
+                  interventionCode={interventionCode || undefined}
+                  interventionLabel={
+                    catalogue
+                      ? catalogue.families
+                          .flatMap((f) => f.items)
+                          .find((it) => it.code === interventionCode)?.label
+                      : undefined
+                  }
+                  onApply={(p) => {
+                    if (p.description) setDescription((d) => (d.trim().length > 0 ? d : p.description!));
                   }}
                 />
 
