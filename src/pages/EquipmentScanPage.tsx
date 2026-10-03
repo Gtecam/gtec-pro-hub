@@ -18,6 +18,10 @@ export default function EquipmentScanPage() {
   const building = data?.building;
   const events = data?.events ?? [];
 
+  const item = data?.asset;
+  const building = data?.building;
+  const events = data?.events ?? [];
+
   if (data === undefined) {
     return (
       <PublicShell
