@@ -1,19 +1,9 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
-import { requireUser, notify } from "./gtec";
-
-/**
- * GTEC PRO — CONSEILLER INTELLIGENT (F°1 + F°2) : couche de persistance et de
- * traçabilité. Le moteur de diagnostic (lib/diagnostic.ts) et le moteur
- * d'estimation (lib/estimate.ts) tournent côté client — aucune donnée ne
- * quitte l'application (§37 IA). Seuls le problème, les réponses et le
- * résultat sont archivés côté serveur pour suivi et amélioration du service.
- * Le résultat est toujours présenté comme une aide, jamais une certification.
- */
+import { requireUser } from "./gtec";
 
 const stamp = () => ({ isActive: true, createdAt: Date.now(), updatedAt: Date.now() });
 
-/** Archive un pré-diagnostic terminé (F°1). */
 export const saveDiagnostic = mutation({
   args: {
     sessionKey: v.string(),
@@ -27,7 +17,7 @@ export const saveDiagnostic = mutation({
     if (args.question.trim().length < 5) throw new Error("Décrivez d'abord votre problème.");
     const existing = (await ctx.db
       .query("aiDiagnostics")
-      .withIndex("by_user", (q: any) => q.eq("userId", user._id))
+      .withIndex("by_user", (q) => q.eq("userId", user._id))
       .collect()) as any[];
     const dup = existing.find((d) => d.sessionKey === args.sessionKey);
     const payload = {
@@ -47,7 +37,6 @@ export const saveDiagnostic = mutation({
   },
 });
 
-/** Archive une estimation budgétaire (F°2). */
 export const saveEstimate = mutation({
   args: {
     sessionKey: v.string(),
@@ -58,7 +47,7 @@ export const saveEstimate = mutation({
     const user = await requireUser(ctx);
     const existing = (await ctx.db
       .query("budgetEstimates")
-      .withIndex("by_user", (q: any) => q.eq("userId", user._id))
+      .withIndex("by_user", (q) => q.eq("userId", user._id))
       .collect()) as any[];
     const dup = existing.find((d) => d.sessionKey === args.sessionKey);
     if (dup) {
@@ -79,7 +68,6 @@ export const saveEstimate = mutation({
   },
 });
 
-/** Archive un cahier des charges généré (F°3) — modifiable avant publication. */
 export const saveBrief = mutation({
   args: {
     sessionKey: v.string(),
@@ -92,7 +80,7 @@ export const saveBrief = mutation({
     if (args.title.trim().length < 5) throw new Error("Titre du cahier des charges trop court.");
     const existing = (await ctx.db
       .query("projectBriefs")
-      .withIndex("by_user", (q: any) => q.eq("userId", user._id))
+      .withIndex("by_user", (q) => q.eq("userId", user._id))
       .collect()) as any[];
     const dup = existing.find((b) => b.sessionKey === args.sessionKey);
     if (dup) {
@@ -115,21 +103,19 @@ export const saveBrief = mutation({
   },
 });
 
-/** Cahier des charges rattache a une demande créée (traçabilité). */
 export const linkBriefToRequest = mutation({
   args: { sessionKey: v.string(), requestId: v.id("serviceRequests") },
   handler: async (ctx, args) => {
     const user = await requireUser(ctx);
     const rows = (await ctx.db
       .query("projectBriefs")
-      .withIndex("by_user", (q: any) => q.eq("userId", user._id))
+      .withIndex("by_user", (q) => q.eq("userId", user._id))
       .collect()) as any[];
     const row = rows.find((b) => b.sessionKey === args.sessionKey);
     if (row) await ctx.db.patch(row._id, { convertedRequestId: args.requestId, updatedAt: Date.now() });
   },
 });
 
-/** Rattache un diagnostic/estimation à la demande réellement créée (traçabilité). */
 export const linkEstimateToRequest = mutation({
   args: { kind: v.union(v.literal("diagnostic"), v.literal("estimate")), sessionKey: v.string(), requestId: v.id("serviceRequests") },
   handler: async (ctx, args) => {
@@ -137,14 +123,14 @@ export const linkEstimateToRequest = mutation({
     if (args.kind === "diagnostic") {
       const rows = (await ctx.db
         .query("aiDiagnostics")
-        .withIndex("by_user", (q: any) => q.eq("userId", user._id))
+        .withIndex("by_user", (q) => q.eq("userId", user._id))
         .collect()) as any[];
       const row = rows.find((d) => d.sessionKey === args.sessionKey);
       if (row) await ctx.db.patch(row._id, { convertedRequestId: args.requestId, updatedAt: Date.now() });
     } else {
       const rows = (await ctx.db
         .query("budgetEstimates")
-        .withIndex("by_user", (q: any) => q.eq("userId", user._id))
+        .withIndex("by_user", (q) => q.eq("userId", user._id))
         .collect()) as any[];
       const row = rows.find((d) => d.sessionKey === args.sessionKey);
       if (row) await ctx.db.patch(row._id, { convertedRequestId: args.requestId, updatedAt: Date.now() });
@@ -152,18 +138,17 @@ export const linkEstimateToRequest = mutation({
   },
 });
 
-/** Mes sessions de diagnostic / estimation (historique client). */
 export const myAdvisorSessions = query({
   args: {},
   handler: async (ctx) => {
     const user = await requireUser(ctx);
     const diags = (await ctx.db
       .query("aiDiagnostics")
-      .withIndex("by_user", (q: any) => q.eq("userId", user._id))
+      .withIndex("by_user", (q) => q.eq("userId", user._id))
       .collect()) as any[];
     const estimates = (await ctx.db
       .query("budgetEstimates")
-      .withIndex("by_user", (q: any) => q.eq("userId", user._id))
+      .withIndex("by_user", (q) => q.eq("userId", user._id))
       .collect()) as any[];
     const map = new Map<string, { sessionKey: string; question?: string; estimate?: { min: number; max: number }; convertedRequestId?: string; at: number }>();
     for (const d of diags) {

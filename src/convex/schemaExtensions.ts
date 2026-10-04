@@ -11,8 +11,7 @@ export const commissionRules = defineTable({
   oldRatePercent: v.optional(v.number()),
   newRatePercent: v.number(),
   updatedAt: v.number(),
-})
-  .index("by_admin", ["adminId"])
+}).index("by_admin", ["adminId"])
   .index("by_updatedAt", ["updatedAt"]);
 
 /**Contrats contractuels (§14). */
@@ -70,8 +69,7 @@ export const contracts = defineTable({
   updatedAt: v.number(),
   version: v.number(),
   archived: v.optional(v.boolean()),
-})
-  .index("by_client", ["clientId"])
+}).index("by_client", ["clientId"])
   .index("by_professional", ["professionalId"])
   .index("by_status", ["status"])
   .index("by_reference", ["reference"]);
@@ -90,8 +88,7 @@ export const contractTemplates = defineTable({
   active: v.boolean(),
   createdAt: v.number(),
   updatedAt: v.number(),
-})
-  .index("by_kind", ["kind"])
+}).index("by_kind", ["kind"])
   .index("by_active", ["active"]);
 
 /** Factures / avoirs (§16..§18). */
@@ -131,8 +128,7 @@ export const invoices = defineTable({
   issuedAt: v.optional(v.number()),
   validatedById: v.optional(v.id("users")),
   validatedAt: v.optional(v.number()),
-})
-  .index("by_client", ["clientId"])
+}).index("by_client", ["clientId"])
   .index("by_professional", ["professionalId"])
   .index("by_status", ["status"])
   .index("by_reference", ["reference"]);
@@ -146,8 +142,7 @@ export const invoiceItems = defineTable({
   lineTotal: v.number(),
   taxRate: v.number(),
   igrs: v.optional(v.number()),
-})
-  .index("by_invoice", ["invoiceId"]);
+}).index("by_invoice", ["invoiceId"]);
 
 export const invoicePayments = defineTable({
   invoiceId: v.id("invoices"),
@@ -168,16 +163,14 @@ export const invoicePayments = defineTable({
   collectedBy: v.optional(v.id("users")),
   collectedAt: v.optional(v.number()),
   at: v.number(),
-})
-  .index("by_invoice", ["invoiceId"])
+}).index("by_invoice", ["invoiceId"])
   .index("by_external_ref", ["externalRef"]);
 
 export const invoiceSequences = defineTable({
   sequence: v.number(),
   lastRefNumber: v.optional(v.number()),
   createdAt: v.number(),
-})
-  .index("by_sequence", ["sequence"]);
+}).index("by_sequence", ["sequence"]);
 
 /** Commissions GTEC PRO (§1, §19). */
 export const commissionRecords = defineTable({
@@ -201,8 +194,7 @@ export const commissionRecords = defineTable({
   approvedById: v.optional(v.id("users")),
   approvedAt: v.optional(v.number()),
   version: v.number(),
-})
-  .index("by_request", ["requestId"])
+}).index("by_request", ["requestId"])
   .index("by_contract", ["contractId"])
   .index("by_invoice", ["invoiceId"])
   .index("by_professional", ["professionalId"])
@@ -224,8 +216,7 @@ export const contractSignatures = defineTable({
   clientAccepted: v.boolean(),
   professionalAccepted: v.boolean(),
   active: v.boolean(),
-})
-  .index("by_contract", ["contractId"])
+}).index("by_contract", ["contractId"])
   .index("by_client", ["clientId"])
   .index("by_professional", ["professionalId"]);
 
@@ -246,8 +237,7 @@ export const contractAmendments = defineTable({
   status: v.union(v.literal("propose"), v.literal("approved"), v.literal("rejected")),
   createdAt: v.number(),
   updatedAt: v.number(),
-})
-  .index("by_contract", ["contractId"])
+}).index("by_contract", ["contractId"])
   .index("by_version", ["version"]);
 
 /** Documents archives (§23). */
@@ -271,8 +261,7 @@ export const documents = defineTable({
   createdAt: v.number(),
   updatedAt: v.number(),
   versionNumber: v.number(),
-})
-  .index("by_client", ["clientId"])
+}).index("by_client", ["clientId"])
   .index("by_professional", ["professionalId"])
   .index("by_contract", ["contractId"])
   .index("by_invoice", ["invoiceId"])
@@ -288,8 +277,7 @@ export const documentVersions = defineTable({
   hash: v.string(),
   createdAt: v.number(),
   updatedAt: v.number(),
-})
-  .index("by_document", ["documentId"]);
+}).index("by_document", ["documentId"]);
 
 export const documentAccessLogs = defineTable({
   documentId: v.id("documents"),
@@ -299,8 +287,7 @@ export const documentAccessLogs = defineTable({
   accessedAt: v.number(),
   ip: v.optional(v.string()),
   userAgent: v.optional(v.string()),
-})
-  .index("by_document", ["documentId"])
+}).index("by_document", ["documentId"])
   .index("by_accessedAt", ["accessedAt"]);
 
 // =====================================================================

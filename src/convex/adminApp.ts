@@ -3,25 +3,9 @@ import { getAuthUserId } from "@convex-dev/auth/server";
 import { mutation, query } from "./_generated/server";
 import type { Doc } from "./_generated/dataModel";
 
-/**
- * Application admin séparée — backend.
- *
- * Le compte administrateur de démonstration à email fixe est pré-créé en base
- * (ensureDemoAdmin) avec email vérifié : la connexion par code envoyé à cet
- * email (provider "email-otp", même pipeline que l'app client/technicien)
- * rattache alors automatiquement la session à CE compte admin.
- */
-
-/**
- * E-mail de la boîte d'administration GTEC PRO.
- * Surchargeable par la variable d'environnement ADMIN_EMAIL (onglet
- * Keys/API keys de la plateforme) : aucune adresse de service n'est
- * codée en dur dans le dépôt.
- */
-export const ADMIN_EMAIL = process.env.ADMIN_EMAIL || "etsgreentech@yahoo.com";
-
-/** Anciens emails admin de démonstration, rétrogradés automatiquement. */
-const LEGACY_ADMIN_EMAILS = ["admin@gtecpro.cm"];
+/** GTEC PRO admin application (backend console). */
+export const ADMIN_EMAIL =
+  process.env.ADMIN_EMAIL || "etsgreentech@yahoo.com";
 
 const ADMIN_NAME = "Administration GTEC PRO";
 
@@ -36,15 +20,10 @@ async function requireAdmin(ctx: any): Promise<Doc<"users">> {
   return user;
 }
 
-/**
- * Crée (une seule fois) le compte admin à email fixe.
- * Appelée au chargement de l'écran de connexion admin — sans effet s'il
- * existe déjà. L'OTP se rattache ensuite à ce compte (email vérifié).
- */
 export const ensureDemoAdmin = mutation({
   args: {},
   handler: async (ctx) => {
-    // Rétrograde les anciens comptes admin de démonstration.
+    const LEGACY_ADMIN_EMAILS = ["admin@gtecpro.cm"];
     for (const legacy of LEGACY_ADMIN_EMAILS) {
       const old = await ctx.db
         .query("users")
@@ -75,13 +54,11 @@ export const ensureDemoAdmin = mutation({
   },
 });
 
-/** L'email fixe de l'admin (affiché pré-rempli sur l'écran de connexion admin). */
 export const getAdminEmail = query({
   args: {},
   handler: async () => ({ email: ADMIN_EMAIL }),
 });
 
-/** L'utilisateur connecté est-il admin ? (garde côté client de l'app admin) */
 export const adminIsAdmin = query({
   args: {},
   handler: async (ctx) => {
@@ -92,9 +69,6 @@ export const adminIsAdmin = query({
   },
 });
 
-// ---------- Données de la console (même modèle que gtec.ts) ----------
-
-/** Utilisateurs récents (clients et techniciens). */
 export const adminUsers = query({
   args: {},
   handler: async (ctx) => {
@@ -115,7 +89,6 @@ export const adminUsers = query({
   },
 });
 
-/** Statistiques globales de la console séparée. */
 export const adminStatsLite = query({
   args: {},
   handler: async (ctx) => {
@@ -144,7 +117,6 @@ export const adminStatsLite = query({
   },
 });
 
-/** Contrats avec client et progression des visites. */
 export const adminListContractsLite = query({
   args: {},
   handler: async (ctx) => {
@@ -175,7 +147,6 @@ export const adminListContractsLite = query({
   },
 });
 
-/** Demandes récentes avec client. */
 export const adminListRequestsLite = query({
   args: {},
   handler: async (ctx) => {
