@@ -11,6 +11,7 @@ import {
   Download,
   FileText,
   FolderDown,
+  Hourglass,
   ImagePlus,
   Loader2,
   MapPin,
@@ -18,6 +19,7 @@ import {
   PenLine,
   Phone,
   Receipt,
+  Scale,
   ShieldAlert,
   ShieldCheck,
   Truck,
@@ -100,6 +102,18 @@ export default function RequestDetail() {
 
   const acceptQuote = useMutation(api.gtec.acceptQuote);
   const refuseQuote = useMutation(api.gtec.refuseQuote);
+  // MARCHÉ DE SERVICES (§9/§11) : propositions des professionnels + actions client.
+  const quoteRequestsData = useQuery(api.matching.quoteRequestsForRequest, {
+    requestId: requestId as never,
+  });
+  const acceptQuoteRequest = useMutation(api.matching.acceptQuoteRequest);
+  const declineQuoteRequest = useMutation(api.matching.declineQuote);
+  const requestQuoteModification = useMutation(api.matching.requestQuoteModification);
+  const expandSearchMutation = useMutation(api.matching.expandSearch);
+  const chooseForMeMutation = useMutation(api.matching.chooseForMe);
+  const [modifTarget, setModifTarget] = useState<string | null>(null);
+  const [modifNote, setModifNote] = useState("");
+  const [marketBusy, setMarketBusy] = useState(false);
   const initiatePayment = useMutation(api.gtec.initiatePayment);
   const clientReception = useMutation(api.gtec.clientReception);
   // EXTENSIONS GTEC PRO : garantie de travaux (F°13) + certificat numérique (F°12).
@@ -291,6 +305,28 @@ export default function RequestDetail() {
 
   const [cancelOpen, setCancelOpen] = useState(false);
   const [cancelReason, setCancelReason] = useState("");
+
+  // MARCHÉ (§9) : dialog « demander une modification » sur une proposition.
+  const [modifOpen, setModifOpen] = useState(false);
+  const openModif = (id: string) => {
+    setModifTarget(id);
+    setModifNote("");
+    setModifOpen(true);
+  };
+  const submitModif = async () => {
+    if (!modifTarget) return;
+    setMarketBusy(true);
+    try {
+      await requestQuoteModification({ quoteRequestId: modifTarget as never, note: modifNote.trim() });
+      toast.success("Modification demandée — le professionnel peut ajuster son offre.");
+      setModifOpen(false);
+      setModifTarget(null);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Erreur");
+    } finally {
+      setMarketBusy(false);
+    }
+  };
 
   // MODE DIASPORA (§11) : validation à distance par le client à l'étranger.
   const validateDiaspora = useMutation(api.diaspora.validateByDiaspora);
@@ -1022,6 +1058,198 @@ export default function RequestDetail() {
                         <XCircle className="mr-2 size-4" />
                         Refuser
                       </Button>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            )}
+
+            {/* MARCHÉ DE SERVICES (§9) : propositions des professionnels + comparaison */}
+            {quoteRequestsData && quoteRequestsData.items.length > 0 && !assignment && (
+              <Card className="card-layered">
+                <CardHeader>
+                  <div className="flex items-center gap-2.5">
+                    <span className="flex size-9 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                      <Scale className="size-5" />
+                    </span>
+                    <div>
+                      <CardTitle className="text-base">Propositions de devis</CardTitle>
+                      <CardDescription>
+                        Réponses des professionnels sollicités — comparez puis
+                        choisissez votre prestataire.
+                      </CardDescription>
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent className="flex flex-col gap-3">
+                  {/* Délai de réponse (§11) */}
+                  {(() => {
+                    const pending = quoteRequestsData.items.filter(
+                      (q) => q.status === "envoyee",
+                    );
+                    if (pending.length === 0) return null;
+                    const nextDeadline = Math.min(
+                      ...pending.map((q) => q.responseDeadline),
+                    );
+                    const remaining = nextDeadline - quoteRequestsData.now;
+                    if (remaining > 0) {
+                      const min = Math.max(1, Math.round(remaining / 60000));
+                      return (
+                        <p className="flex items-center gap-2 rounded-lg bg-primary/[0.06] px-3 py-2 text-xs font-medium text-primary ring-1 ring-primary/20">
+                          <Hourglass className="size-3.5" />
+                          Réponse attendue {min >= 60 ? `dans les ${Math.round(min / 60)} h` : `dans les ${min} minutes`} —
+                          {pending.length} professionnel(s) sollicité(s).
+                        </p>
+                      );
+                    }
+                    return (
+                      <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-amber-500/10 px-3 py-2 text-xs font-medium text-amber-700 ring-1 ring-amber-500/20 dark:text-amber-400">
+                        <span className="flex items-center gap-2">
+                          <Hourglass className="size-3.5" /> Délai de réponse dépassé sans
+                          proposition.
+                        </span>
+                        <div className="flex gap-2">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={marketBusy}
+                            onClick={async () => {
+                              setMarketBusy(true);
+                              try {
+                                await expandSearchMutation({ requestId: request._id as never });
+                                toast.info("Recherche élargie — nouveaux professionnels inclus.");
+                              } catch (e) {
+                                toast.error(e instanceof Error ? e.message : "Erreur");
+                              } finally {
+                                setMarketBusy(false);
+                              }
+                            }}
+                          >
+                            Élargir la recherche
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={marketBusy}
+                            onClick={async () => {
+                              setMarketBusy(true);
+                              try {
+                                await chooseForMeMutation({ requestId: request._id as never });
+                                toast.success("GTEC PRO a affecté le meilleur professionnel disponible.");
+                              } catch (e) {
+                                toast.error(e instanceof Error ? e.message : "Erreur");
+                              } finally {
+                                setMarketBusy(false);
+                              }
+                            }}
+                          >
+                            Choisir pour moi
+                          </Button>
+                        </div>
+                      </div>
+                    );
+                  })()}
+
+                  {/* Propositions reçues (§9) */}
+                  {quoteRequestsData.items
+                    .filter((q) => q.status === "proposee")
+                    .map((q) => (
+                      <div
+                        key={q._id}
+                        className="flex flex-col gap-2 rounded-xl border border-primary/25 bg-primary/[0.03] p-3"
+                      >
+                        <div className="flex flex-wrap items-center gap-2">
+                          {q.proposal ? (
+                            <span className="text-lg font-bold text-primary">
+                              {Math.round(q.proposal.amount).toLocaleString("fr-FR")} FCFA
+                            </span>
+                          ) : null}
+                          <span className="text-sm font-medium">{q.proName}</span>
+                          <span className="flex items-center gap-0.5 rounded-full bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-600 ring-1 ring-emerald-500/20 dark:text-emerald-400">
+                            <BadgeCheck className="size-3" /> Vérifié
+                          </span>
+                        </div>
+                        <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                          {q.proposal?.arrivalDelayMin != null && (
+                            <span>🚗 Arrivée : ~{q.proposal.arrivalDelayMin} min</span>
+                          )}
+                          {q.proposal?.plannedAt && (
+                            <span>📅 {formatDateTime(q.proposal.plannedAt)}</span>
+                          )}
+                          {q.proposal?.warrantyDays != null && (
+                            <span>🛡️ Garantie : {q.proposal.warrantyDays} jours</span>
+                          )}
+                        </div>
+                        {q.proposal?.message && (
+                          <p className="rounded-lg bg-muted/60 px-3 py-2 text-xs">{q.proposal.message}</p>
+                        )}
+                        <div className="flex flex-wrap gap-2">
+                          <Button
+                            size="sm"
+                            className="halo-amber"
+                            disabled={marketBusy}
+                            onClick={async () => {
+                              setMarketBusy(true);
+                              try {
+                                await acceptQuoteRequest({ quoteRequestId: q._id as never });
+                                toast.success("Professionnel choisi — affectation créée et contrat lancé.");
+                              } catch (e) {
+                                toast.error(e instanceof Error ? e.message : "Erreur");
+                              } finally {
+                                setMarketBusy(false);
+                              }
+                            }}
+                          >
+                            <CheckCircle2 className="mr-1.5 size-4" /> Accepter cette offre
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={marketBusy}
+                            onClick={() => openModif(q._id)}
+                          >
+                            <PenLine className="mr-1.5 size-4" /> Demander une modification
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="text-destructive"
+                            disabled={marketBusy}
+                            onClick={async () => {
+                              try {
+                                await declineQuoteRequest({ quoteRequestId: q._id as never });
+                                toast.info("Proposition refusée.");
+                              } catch (e) {
+                                toast.error(e instanceof Error ? e.message : "Erreur");
+                              }
+                            }}
+                          >
+                            <XCircle className="mr-1.5 size-4" /> Refuser
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+
+                  {/* Autres pros sollicités (statuts) */}
+                  {quoteRequestsData.items.some((q) => q.status !== "proposee") && (
+                    <div className="flex flex-wrap gap-2 text-[11px] text-muted-foreground">
+                      {quoteRequestsData.items
+                        .filter((q) => q.status !== "proposee")
+                        .map((q) => (
+                          <span
+                            key={q._id}
+                            className="rounded-full bg-muted px-2 py-0.5"
+                          >
+                            {q.proName} —{" "}
+                            {q.status === "envoyee"
+                              ? "réponse attendue"
+                              : q.status === "acceptee"
+                                ? "sélectionné ✓"
+                                : q.status === "refusee"
+                                  ? "offre refusée"
+                                  : "clôturé"}
+                          </span>
+                        ))}
                     </div>
                   )}
                 </CardContent>
@@ -2265,6 +2493,36 @@ export default function RequestDetail() {
             </Button>
             <Button variant="destructive" onClick={handleCancel} disabled={busy}>
               <XCircle className="mr-2 size-4" /> Annuler la demande
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* MARCHÉ (§9) : demander une modification d'une proposition de devis */}
+      <Dialog open={modifOpen} onOpenChange={setModifOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Demander une modification</DialogTitle>
+            <DialogDescription>
+              Précisez ce que vous souhaitez ajuster — le professionnel pourra
+              soumettre une nouvelle proposition.
+            </DialogDescription>
+          </DialogHeader>
+          <Textarea
+            value={modifNote}
+            onChange={(e) => setModifNote(e.target.value)}
+            placeholder="Ex. : pouvez-vous inclure le remplacement du disjoncteur ?"
+          />
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setModifOpen(false)}>
+              Retour
+            </Button>
+            <Button
+              className="halo-amber"
+              disabled={marketBusy || modifNote.trim().length < 5}
+              onClick={submitModif}
+            >
+              Envoyer la demande
             </Button>
           </DialogFooter>
         </DialogContent>

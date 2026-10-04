@@ -134,6 +134,45 @@ bunx convex dev --once             # push + typecheck serveur
 bun run build                      # bundle de production
 ```
 
+## 9bis. Marché de services — choix du technicien par le client (nouveau)
+
+GTEC PRO fonctionne comme un **marché de services** (§21) : après création d'une
+demande, le client découvre les professionnels éligibles, les compare, demande
+des devis, puis choisit. Deux modes : **MODE 1 « Je choisis »** (sélection
+1-5 pros → devis → acceptation) et **MODE 2 « GTEC choisit pour moi »**
+(affectation algorithmique par `chooseForMe`).
+
+**Moteur (`src/convex/matching.ts`)**
+- `findProfessionals` : filtrage d'éligibilité (§3 — vérifié, sans sanction
+  niveau ≥ 3, abonnement actif, disponible, compétences nomenclature, zone
+  ≤ 25 km ou 60 km si recherche élargie) puis score pondéré 0-100 (§4) :
+  compétences 30 % / proximité 20 % / disponibilité 15 % / qualité 10 % /
+  expérience 10 % / certifications 5 % / charge 5 % / historique 5 %.
+- `requestQuotes` : envoi simultané à 1-5 pros + délai de réponse (§11 :
+  critique 10 min, urgente 60 min, normale 12 h).
+- `respondToQuoteRequest` : proposition pro (montant, arrivée, garantie,
+  message) — le devis signé (table `quotes`) reste la référence financière.
+- `acceptQuoteRequest` : le client choisit → création de l'affectation
+  officielle, notification au pro retenu, « demande pourvue » aux autres (§19).
+- `expandSearch`, `declineQuote`, `requestQuoteModification`, `logComparison`,
+  `toggleShortlist`, `recordMatchRun` (traçabilité).
+- Espace pro : `upsertPresence` (🟢🟠🔵⚫ + tarif « à partir de »),
+  `upsertServiceZone`, `publishAvailabilitySlot`, `myQuoteRequests` (inbox,
+  adresse approximative §16 avant acceptation).
+
+**Tables (§20, dans `schemaExtensions.ts`)** : `professionalPresence`,
+`professionalServiceZones`, `professionalMatches`, `clientShortlists`,
+`quoteRequests`, `professionalComparisons`, `selectionEvents`,
+`availabilitySlots`, `matchingScores` (+ champ `searchExpanded` sur
+`serviceRequests`).
+
+**UI** : `ProfessionalMatches.tsx` (étape « Professionnels » de
+NewRequest + cartes §5 avec recommandations 🏆⚡💰⭐🛠️ §10, comparateur §7),
+carte « Propositions de devis » dans RequestDetail (comparer, accepter,
+refuser, demander modification, élargir la recherche), onglet « Marché » dans
+TechnicianSpace (`ProMarketplace.tsx`). Confidentialité : score interne jamais
+affiché (§6), distance en « ~km » (§16), coordonnées privées masquées (§14).
+
 ## 9. Notifications & sweep quotidien
 
 `crons.daily` (`gtec-daily-sweep`) traite : devis expirés, rappels de visite
@@ -145,8 +184,10 @@ expirant sous 30 j**, **rappel annuel de mise à jour du profil** (§22).
 - Ce fichier + les en-têtes de chaque module Convex (règles métier commentées).
 - **Non couvert à ce jour** : messagerie (§25), carte géographique (§11),
   Store/Stock (§15, §22), véhicules (§21), badges factuels calculés (§17),
-  moteur de recherche visuel multi-critères (§6), IA photo/vidéo (§10),
-  recommandations explicables (§36). L'Academy « formations en ligne » (§16)
+  moteur de recherche visuel multi-critères (§6), IA photo/vidéo (§10).
+  Les recommandations explicables sont couvertes côté marché de services
+  (badges 🏆⚡💰⭐🛠️ du moteur de matching) ; le reste (§36) reste à venir.
+  L'Academy « formations en ligne » (§16)
   est couverte par le volet diplômes/référentiel MINESUP (dossier professionnel
   vérifiable) ; les modules e-learning interactifs restent hors périmètre.
   Les phases 3-7 (briefs, marketplace B2B, GTEC AI, IoT) sont livrées —

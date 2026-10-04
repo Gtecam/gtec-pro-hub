@@ -127,6 +127,7 @@ export const schema = defineSchema(
       desiredDate: v.optional(v.number()), // date souhaitée d'intervention
       budgetHint: v.optional(v.number()), // budget indicatif client (FCFA)
       voiceNoteUrl: v.optional(v.string()), // message vocal (data URL)
+      searchExpanded: v.optional(v.boolean()), // §11 : zone élargie (urgence sans réponse)
     })
       .index("by_client", ["clientId"])
       .index("by_status", ["status"])

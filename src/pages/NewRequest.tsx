@@ -51,6 +51,8 @@ import {
 import { compressImageIfNeeded, dataUrlBytes, humanSize } from "@/lib/imageCompress";
 import { AdvisorCard } from "@/components/AdvisorCard";
 import { BriefCard } from "@/components/BriefCard";
+import { ProfessionalMatches } from "@/components/ProfessionalMatches";
+import { Users } from "lucide-react";
 import { relationIcon } from "@/lib/diaspora";
 import { useSearchParams } from "react-router";
 
@@ -61,6 +63,7 @@ const STEPS = [
   { key: "photos", label: "Photos" },
   { key: "adresse", label: "Adresse" },
   { key: "recap", label: "Récapitulatif" },
+  { key: "pros", label: "Professionnels" },
 ] as const;
 
 export default function NewRequest() {
@@ -85,6 +88,10 @@ export default function NewRequest() {
   const categories = useQuery(api.catalog.listServiceCategories, {});
   const [step, setStep] = useState(0);
   const [submitting, setSubmitting] = useState(false);
+  // MARCHÉ DE SERVICES (§21) : la demande est créée à l'étape 6 pour ouvrir
+  // l'étape « Professionnels » (statut « nouvelle » = devis/matching possibles).
+  const [createdRequestId, setCreatedRequestId] = useState<string | null>(null);
+  const [proSent, setProSent] = useState(false);
   const [beneficiaryId, setBeneficiaryId] = useState<string>(presetBeneficiary);
 
   const [serviceKey, setServiceKey] = useState<ServiceKey | null>(null);
@@ -314,13 +321,15 @@ export default function NewRequest() {
             }
           : undefined,
       });
-      toast.success("Demande envoyée à GTEC PRO");
+      toast.success("Demande envoyée — voici les professionnels disponibles");
       // Traçabilité conseiller : on rattache brief/diagnostic/estimation à la
       // demande réelle (best effort — ne bloque jamais l'envoi).
       void linkBrief({ sessionKey: briefSessionKey, requestId: id }).catch(() => undefined);
       void linkAdvisor({ kind: "diagnostic", sessionKey: `diag-${briefSessionKey}`, requestId: id }).catch(() => undefined);
       void linkAdvisor({ kind: "estimate", sessionKey: `est-${briefSessionKey}`, requestId: id }).catch(() => undefined);
-      navigate(`/dashboard/requests/${id}`);
+      setCreatedRequestId(id);
+      setSubmitting(false);
+      setStep(6);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Erreur");
       setSubmitting(false);
@@ -371,6 +380,7 @@ export default function NewRequest() {
               {step === 3 && "Photos du problème"}
               {step === 4 && "Adresse d'intervention"}
               {step === 5 && "Vérifiez et envoyez"}
+              {step === 6 && "Professionnels disponibles"}
             </CardTitle>
             <CardDescription>
               {step === 0 && "Les 12 domaines GTEC PRO — l'ordre définitif de l'offre."}
@@ -381,6 +391,8 @@ export default function NewRequest() {
               {step === 3 && `Ajoutez jusqu'à 4 images (max ${MAX_FILE_SIZE_LABEL} chacune) — optionnel mais recommandé.`}
               {step === 4 && "Où l'équipe doit-elle intervenir ?"}
               {step === 5 && "Un technicien GTEC prendra le relais et préparera votre devis."}
+              {step === 6 &&
+                "GTEC PRO a filtré les professionnels éligibles : comparez-les, sélectionnez 1 à 5 pros pour recevoir des devis, ou laissez GTEC choisir pour vous."}
             </CardDescription>
           </CardHeader>
           <CardContent className="min-h-[280px]">
@@ -872,6 +884,14 @@ export default function NewRequest() {
               </div>
             )}
 
+            {/* MARCHÉ DE SERVICES (§5/§12) : choix du professionnel */}
+            {step === 6 && createdRequestId && (
+              <ProfessionalMatches
+                requestId={createdRequestId}
+                onDone={() => setProSent(true)}
+              />
+            )}
+
             {step === 5 && service && (
               <div className="flex flex-col gap-4">
                 <motion.div
@@ -977,10 +997,19 @@ export default function NewRequest() {
             <Button disabled={!canNext()} onClick={() => setStep((s) => s + 1)}>
               Continuer <ArrowRight className="ml-2 size-4" />
             </Button>
-          ) : (
+          ) : step === 5 ? (
             <Button className="halo-amber" disabled={submitting} onClick={submit}>
               <Send className="mr-2 size-4" />
-              {submitting ? "Envoi…" : "Envoyer la demande"}
+              {submitting ? "Recherche des professionnels…" : "Envoyer la demande"}
+            </Button>
+          ) : (
+            <Button
+              variant="outline"
+              disabled={!proSent}
+              onClick={() => navigate(`/dashboard/requests/${createdRequestId}`)}
+            >
+              <Users className="mr-2 size-4" />
+              {proSent ? "Voir ma demande" : "Sélectionnez un ou plusieurs pros ci-dessus"}
             </Button>
           )}
         </div>

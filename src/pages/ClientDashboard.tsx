@@ -21,7 +21,7 @@ import { toast } from "sonner";
 import { useNavigate } from "react-router";
 import { api } from "@/convex/_generated/api";
 import { AppShell, StatusBadge } from "@/components/gtec";
-import { Building2 } from "lucide-react";
+import { Building2, UserSearch } from "lucide-react";
 import { MyClientProfile } from "@/components/MyClientProfile";
 import { PhoneVerifiedBadge } from "@/components/PhoneVerifiedBadge";
 import { AppointmentsClientCard } from "@/components/AppointmentsClientCard";
@@ -563,10 +563,16 @@ export default function ClientDashboard() {
                               ? `Devis : ${fcfa(quote.total)}`
                               : meta.hint}
                           </span>
-                          <span className="flex items-center gap-1 text-sm font-medium text-primary">
-                            Ouvrir
-                            <ArrowRight className="size-4 transition-transform group-hover:translate-x-0.5" />
-                          </span>
+                          {request.status === "nouvelle" ? (
+                            <span className="flex items-center gap-1 rounded-full bg-primary/10 px-2.5 py-1 text-xs font-semibold text-primary">
+                              <UserSearch className="size-3.5" /> Choisir un pro
+                            </span>
+                          ) : (
+                            <span className="flex items-center gap-1 text-sm font-medium text-primary">
+                              Ouvrir
+                              <ArrowRight className="size-4 transition-transform group-hover:translate-x-0.5" />
+                            </span>
+                          )}
                         </div>
                       </CardContent>
                     </Card>

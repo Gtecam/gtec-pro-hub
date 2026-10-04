@@ -38,6 +38,7 @@ import { PhoneVerifiedBadge } from "@/components/PhoneVerifiedBadge";
 import { ReportForm } from "@/components/ReportForm";
 import { MissionChecklist } from "@/components/MissionChecklist";
 import { AvailabilityManager } from "@/components/AvailabilityManager";
+import { ProMarketplace } from "@/components/ProMarketplace";
 import {
   CredentialForm,
   type InstitutionLite,
@@ -73,7 +74,7 @@ import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { useAuth } from "@/hooks/use-auth";
-import { NavigationOff } from "lucide-react";
+import { NavigationOff, Store } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { CITIES, fcfa, formatDate, formatDateTime, MAX_FILE_SIZE, MAX_FILE_SIZE_LABEL, PAYMENT_METHODS } from "@/lib/gtec";
 import {
@@ -1614,6 +1615,9 @@ export default function TechnicianSpace() {
               <TabsTrigger value="devis">
                 <FileText className="mr-1.5 size-4" /> Devis
               </TabsTrigger>
+              <TabsTrigger value="marche">
+                <Store className="mr-1.5 size-4" /> Marché
+              </TabsTrigger>
               <TabsTrigger value="abonnement">
                 <Crown className="mr-1.5 size-4" /> Abonnement
               </TabsTrigger>
@@ -1663,6 +1667,10 @@ export default function TechnicianSpace() {
               <div className="mt-4">
                 <AvailabilityManager />
               </div>
+            </TabsContent>
+            {/* MARCHÉ (§5/§8/§9/§15/§16/§20) : demandes de devis + présence */}
+            <TabsContent value="marche" className="mt-4">
+              <ProMarketplace />
             </TabsContent>
             {/* Missions */}
             <TabsContent value="missions" className="mt-4">

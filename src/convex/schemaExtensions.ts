@@ -344,6 +344,149 @@ export const extensionTables = {
     at: v.number(),
   }).index("by_appointment", ["appointmentId"]),
 
+  // ============ MARCHÉ DE SERVICES (§20 « choix du technicien ») ============
+
+  /** Précalcul des scores de matching (§4) — traçabilité « score explicable ». */
+  matchingScores: defineTable({
+    requestId: v.id("serviceRequests"),
+    proUserId: v.id("users"),
+    total: v.number(), // 0-100
+    detail: v.object({
+      skills: v.number(), // 30 %
+      proximity: v.number(), // 20 %
+      availability: v.number(), // 15 %
+      quality: v.number(), // 10 %
+      experience: v.number(), // 10 %
+      certifications: v.number(), // 5 %
+      load: v.number(), // 5 %
+      history: v.number(), // 5 %
+    }),
+    at: v.number(),
+  })
+    .index("by_request", ["requestId"])
+    .index("by_request_pro", ["requestId", "proUserId"]),
+
+  /** Liste présentée au client pour une demande (capturée pour l'historique). */
+  professionalMatches: defineTable({
+    requestId: v.id("serviceRequests"),
+    clientId: v.id("users"),
+    proUserIds: v.array(v.id("users")),
+    expanded: v.optional(v.boolean()), // recherche élargie (urgence §11)
+    at: v.number(),
+  })
+    .index("by_request", ["requestId"])
+    .index("by_client", ["clientId"]),
+
+  /** Sélection du client (§8) : 1 à 5 professionnels pour demande de devis. */
+  clientShortlists: defineTable({
+    requestId: v.id("serviceRequests"),
+    clientId: v.id("users"),
+    proUserIds: v.array(v.id("users")),
+    updatedAt: v.number(),
+    isActive: v.boolean(),
+  })
+    .index("by_request", ["requestId"])
+    .index("by_client", ["clientId"]),
+
+  /** Demandes de devis envoyées simultanément aux pros sélectionnés (§8/§9). */
+  quoteRequests: defineTable({
+    requestId: v.id("serviceRequests"),
+    clientId: v.id("users"),
+    proUserId: v.id("users"),
+    status: v.union(
+      v.literal("envoyee"),
+      v.literal("proposee"),
+      v.literal("acceptee"),
+      v.literal("refusee"),
+      v.literal("expiree"),
+      v.literal("modification_demandee"),
+    ),
+    responseDeadline: v.number(), // délai de réponse (urgence §11)
+    respondedAt: v.optional(v.number()),
+    // Proposition du professionnel (ébauche de devis) : montant, délai,
+    // garantie, message — le devis signé reste la référence financière.
+    proposal: v.optional(
+      v.object({
+        amount: v.number(),
+        arrivalDelayMin: v.optional(v.number()),
+        plannedAt: v.optional(v.number()),
+        warrantyDays: v.optional(v.number()),
+        message: v.optional(v.string()),
+      }),
+    ),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_request", ["requestId"])
+    .index("by_pro", ["proUserId"])
+    .index("by_pro_status", ["proUserId", "status"])
+    .index("by_request_pro", ["requestId", "proUserId"]),
+
+  /** Historique des comparaisons client (§7) — lisible pour l'explicabilité. */
+  professionalComparisons: defineTable({
+    requestId: v.id("serviceRequests"),
+    clientId: v.id("users"),
+    proUserIds: v.array(v.id("users")),
+    at: v.number(),
+  }).index("by_request", ["requestId"]),
+
+  /** Journal du choix du client (§13) : mode 1/2, chaque sélection, refus. */
+  selectionEvents: defineTable({
+    requestId: v.id("serviceRequests"),
+    clientId: v.id("users"),
+    kind: v.string(), // mode_choisi | pro_ajoute | pro_retire | devis_demande | mode_auto
+    proUserId: v.optional(v.id("users")),
+    detail: v.optional(v.string()),
+    at: v.number(),
+  })
+    .index("by_request", ["requestId"])
+    .index("by_pro", ["proUserId"]),
+
+  /** Présence temps réel du professionnel (§16/§20). */
+  professionalPresence: defineTable({
+    userId: v.id("users"),
+    status: v.union(
+      v.literal("disponible"),
+      v.literal("occupe"),
+      v.literal("en_intervention"),
+      v.literal("indisponible"),
+      v.literal("hors_ligne"),
+    ),
+    availableFrom: v.optional(v.number()), // dispo à une heure donnée (§5)
+    note: v.optional(v.string()),
+    updatedAt: v.number(),
+  })
+    .index("by_user", ["userId"])
+    .index("by_status", ["status"]),
+
+  /** Zones couvertes déclarées par le professionnel (§20). */
+  professionalServiceZones: defineTable({
+    userId: v.id("users"),
+    city: v.string(),
+    district: v.optional(v.string()), // quartier / commune
+    radiusKm: v.number(),
+    center: v.optional(v.object({ lat: v.number(), lon: v.number() })),
+    isActive: v.boolean(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  }).index("by_user", ["userId"]),
+
+  /** Créneaux publiés par le professionnel (§20) — complément des règles §8. */
+  availabilitySlots: defineTable({
+    userId: v.id("users"),
+    start: v.number(),
+    end: v.number(),
+    status: v.union(
+      v.literal("libre"),
+      v.literal("reserve"),
+      v.literal("bloque"),
+    ),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_user", ["userId"])
+    .index("by_user_start", ["userId", "start"]),
+
   // Favoris client (§35 « MES FAVORIS ») — techniciens, entreprises, services.
   favorites: defineTable({
     userId: v.id("users"),
