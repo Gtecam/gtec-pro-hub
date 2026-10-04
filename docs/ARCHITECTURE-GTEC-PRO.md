@@ -79,6 +79,260 @@ le cycle `DRAFT → SUBMITTED → UNDER_REVIEW → VERIFIED / REJECTED`.
 Landing, Auth, Dashboard, ClientDashboard, NewRequest, RequestDetail,
 TechnicianSpace, DiasporaPage, PublicProfilePage, AdminConsole, AdminApp.
 
+## 5.1 Écrans publics
+
+| Écran | URL | Rôle | Contenu | Sortie vers |
+|---|---|---|---|---|
+| **Landing** | `/` | Présentation du service, parcours client et technicien, b2b / académie MINESUP, témoignages, couverture 5 villes | Hero, services, parcours (8 JOURNEY_STEPS), sections b2b + académie, techniciens, témoignages, CTA | `/auth?returnTo=/dashboard` ou `/auth?returnTo=/technician` |
+| **Auth** | `/auth` | Connexion / inscription (OTP e-mail, OTP SMS), retour sur la destination demandée | Espaces identiques, case « Rester connecté », liens vers les espaces client / technicien | `/dashboard` ou `/technician` selon le rôle |
+| **VerifyPage** | `/verify/:token` | Vérification de signature d'intervention, preuve de paiement ou réception | Formulaire de vérification, confirmation métier, log `auditLog` | La page d'origine (enlevant `returnTo`) |
+
+## 5.2 Écran client
+
+| Écran | URL | Rôle | Contenu | Sortie vers |
+|---|---|---|---|---|
+| **Dashboard** | `/dashboard` | Espace client récapitulatif | Accueil avec statistiques, bouton « Nouvelle demande », accès à l'espace complet, numéro de support GTEC, `MyClientProfile`, `AppointmentsClientCard`, `FavoritesCard`, `AdvisorHistoryCard` | `/dashboard/new` |
+| **NewRequest** | `/dashboard/new` | Formulaire de demande (7 étapes) | Domaine → Intervention → Besoin → Photos (max 4, compression), Adresse (+ GPS), Récapitulatif, Professionnels (marché serveur) | `/dashboard/requests/:requestId` |
+| **RequestDetail** | `/dashboard/requests/:requestId` | Détail du parcours d'une demande | Panneau gauche (statut, quilts, devis, marché, paiement, équipe, rapport, facture, certificat, avis, litige, photos, journal), panneau droit (actions selon le statut), stepper JOURNEY_STEPS, `SignaturePad`, paiement MoMo/CinetPay/espèces/virement, reçu, PDF facture + PV + dossier | Actions métier : accepter/refuser devis, choisir pour moi, modifier offre, payer tranche, signer, évaluer, signaler |
+| **PublicProfilePage** | `/pro/:userId` | Fiche publique d'un professionnel | Nom, spécialité, badge `verifie`, avis (moyenne/count), délais, galerie, contact masqué jusqu'à acceptation du devis | `/dashboard/requests/:requestId` ou `/technician` |
+| **DiasporaPage** | `/diaspora` | Espace diaspora (client à l'étranger) | Liste des bénéficiaires (`diasporaBeneficiaries`), choix du bénéficiaire, code de validation, suivi de la demande, libération des fonds | `/dashboard/requests/:requestId` |
+| **MyClientProfile** | `/profile` | Contacts et adresses | Adresses enregistrées, préférences, photo de profil, `PhoneVerifiedBadge` | `/dashboard` |
+
+## 5.3 Écran technicien
+
+| Écran | URL | Rôle | Contenu | Sortie vers |
+|---|---|---|---|---|
+| **TechnicianSpace** | `/technician` | Espace technicien complet | `AppShell` `cloisonnement` (panneau admin/technicien/client), `PhoneVerifiedBadge`, `SignaturePad`, `JourneyStepper`, `StatusBadge` | Tabs : missions / devis / marché / abonnement / profil / retraits / gains / avis / visites |
+| **Candidature** | `/technician` (statut `en_attente`/`rejete`) | Candidature au rôle de technicien | CNI + diplôme obligatoires, `CredentialForm` branchement MINESUP, `NOMENCLATURE` (domaine → spécialité → métier → compétences → diplôme → certifications), zones avec `Switch`, `DocumentsUploader` | `/technician` |
+| **Missions** | `/technician/missions` | Recevoir et exécuter les missions | `MissionChecklist` (sécurité), `ReportForm`, encaissement espèces (`cashProof`), demande de matériel, déplacement GPS vers chantier, `markArrival` | `/technician` |
+| **Devis terrain** | `/technician/devis` | Chiffrage visuel sur le terrain (V6) | `FieldQuoteForm` (TVA 19,25 % / 50 % avant/solde), sélecteur de demande, validation automatique GTEC | `/technician` |
+| **Marché** | `/technician/marche` | Proposer et suivre les offres | `ProMarketplace` (demandes de devis, présence, zones) | `/technician` |
+| **Abonnement** | `/technician/abonnement` | Dossier d'abonnement mensuel/trimestriel/annuel | `PLANS` (6000 / 20000 / 55000 FCFA), moyens de paiement (`PAYMENT_METHODS`), `requestSubscriptionPayment` | `/technician` |
+| **Profil / Retraits / Gains / Avis / Visites** | `/technician/profile` | Dossier professionnel | `MyProfile`, `AvailabilityManager`, retraits (min 1000 FCFA, `requestWithdrawal`), commissions 10 % (`payCommission`), avis clients (`StarRating`), visites de maintenance (`VisitReportForm`) | `/technician` |
+| **Sanctions / Score** | `/technician` | Gestion des sanctions et du score | `mySanctions` (niveaux 1–5), `contestSanction`, `myProviderScore` (§38), bandeau sanctions actives | `/technician` |
+
+## 5.4 Écran admin
+
+| Écran | URL | Rôle | Contenu | Sortie vers |
+|---|---|---|---|---|
+| **AdminConsole** | `/admin` | Back-office de supervision | Statistiques V1 (clients, pros, demandes, prestations, PA, commissions, abonnements, réclamations, notes, délais), `requireAdminScope` | `/admin/console` |
+| **AdminApp** | `/admin/console` | Modules d'arbitrage et de vérification | Chaîne d'OBS, validation des profils técniciens, citations, paiements et commissions, `auditLogs`, contenu des tableaux (map/reduce) pour les contrôles manuels | `/admin` |
+| **Diaspora validation** | `/admin/console` | Validation à distance des commandes diaspora | `validateByDiaspora`, libération des fonds, rapport du bénéficiaire, `auditLog` des actions sensibles | `/admin` |
+| **Stats & reporting** | `/admin/console` | Indicateurs et tableaux de bord | Comptes, demandes en cours/terminées, PA, commissions, abonnements, réclamations, notes, délais, `crons.daily` sweep | `/admin` |
+
+## 5.5 Spécifications écran par écran (GTEC PRO V1)
+
+### 5.5.1 Espace client ( CLIENT )
+
+#### 5.5.1.1 Landing — `/`
+- **Objectif** : convaincre et orienter vers l'espace authentifié.
+- **Champs/boutons** :
+  - Hero : slogan, CTA « Créer ma demande » (vers `/auth?returnTo=/dashboard`), visiontte ultime TECHNICIEN (vers `/auth?returnTo=/technician`).
+  - Services GTEC PRO (catalogue `SERVICES` + icônes `categoryIcon`).
+  - Parcours client (8 `JOURNEY_STEPS`).
+  - Sections b2b marketplace et académie MINESUP.
+  - Section techniciens (badge `verifie`, notes, specialite).
+  - Témoignages (avis clients).
+  - Couverture 5 villes (`CITIES`).
+  - CTA final vers l'authentification.
+- **Sortie** : `/auth?returnTo=/dashboard` (client) ou `/auth?returnTo=/technician` (technicien).
+
+#### 5.5.1.2 Auth — `/auth`
+- **Objectif** : connexion / inscription, conservation du chemin de retour.
+- **Champs** : e-mail OTP, SMS OTP, mot de passe (si activé), lien retour `returnTo`.
+- **Sortie** : `/dashboard` ou `/technician` selon `accountType`.
+
+#### 5.5.1.3 Dashboard — `/dashboard`
+- **Objectif** : recapitulatif client.
+- **Champs/boutons** :
+  - `MyClientProfile` : adresses, préférences, photo de profil.
+  - `AppointmentsClientCard` : RDV avec professionnels vérifiés.
+  - `FavoritesCard` : favoris techniciens/entreprises/services.
+  - `AdvisorHistoryCard` : historique des sessions conseiller (F°1-F°3).
+  - `PhoneVerifiedBadge` : identité vérifiée + numéro vérifié.
+  - Liste des demandes : filtres en cours & fermés, bouton `Nouvelle demande` → `/dashboard/new`.
+  - Bouton support : `655 09 42 28`.
+
+#### 5.5.1.4 NewRequest — `/dashboard/new`
+- **Objectif** : saisie complète de la demande client en 7 étapes.
+- **Etapes (STEPS)** :
+  1. **Domaine** – sélecteur catalogue `SERVICES` / dynamique `catalog.listServiceCategories` (12 domaines officiels).
+  2. **Intervention** – code d'intervention (NOMENCLATURE), intitulé, description, urgence (`URGENCY_LEVELS`), date souhaitée, hint budgétaire.
+  3. **Besoin** – titre (min 4 caractères), description (min 10 caractères), message vocal (`MediaRecorder`, ~1 min, webm/opus compressé), photos 0–4 (compression automatique `compressImageIfNeeded`).
+  4. **Adresse** – adresse, ville (geo-détection auto via `nearestCity` ≤ 40 km si GPS), `address` obligatoire ≥ 5 caractères.
+  5. **Récapitulatif** – synthèse du formulaire (domaine, intervention, urgence, date, budget, photos, adresse, GPS, note vocale).
+  6. **Professionnels** – marché serveur : `quoteRequestsForRequest`, propositions, filtres, accepter/refuser/modifier, `chooseForMe`.
+- **Mode diaspora** : `?diaspora=1&beneficiary=...` → champ `beneficiaryId` obligatoire, `createDiasporaRequest`.
+- **Sortie** : `/dashboard/requests/:requestId` (status `nouvelle`).
+
+#### 5.5.1.5 RequestDetail — `/dashboard/requests/:requestId`
+- **Objectif** : suivi et actionnel complet de la demande.
+- **Panneau gauche** :
+  - **Parcours** : `JourneyStepper` + hint statut.
+  - **Géo-terrain** : suivi GPS équipe (visible client + diaspora accompagnant un proche), `teamArrivalAt`, coordonnées chantier.
+  - **Devis** : `quote.number`, `quote.status` (emis/accepte/refuse/expire), `quote.pdf` (TTC, TVA 19,25 %), `quote.validUntil`.
+  - **Marché** : propositions `quoteRequestsData.items`, délai réponse, `expandSearch`, `chooseForMe`, accepter/refuser/modifier.
+  - **Paiement** : tranches 50/50 (`advance` / `solde`), `payment`, `PAYMENT_METHODS` (MoMo, orange_money, espèces, virement), preuve photo pour espèces, `initiatePayment`.
+  - **Équipe** : chef d'équipe + membres, `assignment.notes`, statut `en_intervention`.
+  - **Rapport** : `report.workDone`, `partsUsed`, photos avant/après, `recommendations`, `report.clientSignature`.
+  - **Facture** : `invoice.number`, `invoice.status`, `invoice.pdf`, `dossier.complet.pdf` (facture + PV).
+  - **Certificat** : `certificate` (SHA-256, `verifyToken`, QR), `guarantees` (garantie de travaux, période).
+  - **Avis** : étoiles 1–5, commentaire, `submitReview`.
+  - **Litige** : catégories (non conforme, retard, paiement, comportement, matériel, devis, contrat, autre), `createDispute`, suivi `ouvert/en_cours/resolue/rejetee`.
+  - **Photos** : photos de la demande.
+  - **Journal** : `requestEvents`.
+- **Panneau droit** : actions selon statut :
+  - `nouvelle` : choisir un pro → marché.
+  - `devis_emis` : accepter/refuser devis (`acceptQuote`/`refuseQuote`).
+  - `devis_accepte` : payer `avance` 50 % (PayPal / MoMo / espèces / virement).
+  - `en_intervention` : suivi GPS, paiement espèces, `markArrival`.
+  - `rapport_emis` : payer `solde` 50 % → signature PV (`SignaturePad`, `clientReception`) → facture.
+  - `terminee` : évaluation, certificate, guarantee.
+  - `annulee` : courte notice d'annulation.
+
+#### 5.5.1.6 PublicProfilePage — `/pro/:userId`
+- **Objectif** : fiche publique (peut être consultée par un visiteur).
+- **Champs exposés** : nom, spécialité, icône `verifie`, avis moyens/count, note, délais de réponse, galerie.
+- **Masqués** : coordonnées exactes, CNI, contact jusqu'à acceptation du devis (acceptation → `assignment` + `teamLeader` + `members`).
+
+#### 5.5.1.7 DiasporaPage — `/diaspora`
+- **Objectif** : commander pour un proche.
+- **Champs/boutons** :
+  - `listBeneficiaries` : bénéficiaires enregistrés, code de validation, statut de la demande.
+  - Formulaireographie : `createDiasporaRequest` (copie adresse du proche, `isDiaspora=true`, `beneficiaryValidationCode`).
+  - Validation à distance : `validateByDiaspora` (conforme / correction demandée / problème signalé).
+  - Suivi de la demande client incluant la validation du bénéficiaire.
+
+#### 5.5.1.8 MyClientProfile — `/profile`
+- **Objectif** : identité et contacts.
+- **Champs** : `firstName`, `lastName`, `nationalId`, `gender`, `birthDate`, `phone`, `altPhone`, `city`, `address`, `quarter`, `customerType`, `companyName`, `taxId`, `idDocumentUrl` (DM photographies, compression automatique).
+- **Actions** : `updateClientIdentity`, sauvegarde permanente, `identityComplete` (verdict du front).
+
+### 5.5.2 Espace technicien ( TECHNICIEN )
+
+#### 5.5.2.1 TechnicianSpace — `/technician`
+- **Objectif** : toute l'activité du technicien dans un espace cloisonné.
+- **Structure** : `AppShell` (admin/technicien/client links, pas de lien transversal), `PhoneVerifiedBadge` (numéro vérifié), `JourneyStepper`, `SignaturePad`, `StatusBadge`.
+- **GPS** : partage optionnel (`updateTechnicianLocation`, `stopTechnicianLocationSharing`), `geo.position` + `lastGps`, throttle 20 s, déplacement > 30 m.
+
+#### 5.5.2.2 Candidature — `/technician` (statut `en_attente` / `rejete`)
+- **Objectif** : dossier complet pour obtention du statut `verifie`.
+- **Obligatoires** : `nationalId`, `phone`, `domainCode`, `specialtyCode`, `jobTitle`, `skills.length > 0`, `degreeGroup`, `degreeKey`, `experienceBand`, `zones.length > 0` + `documents` (CNI obligatoire, diplôme/certificat/attestation obligatoire).
+- **Champs** :
+  - **Identité** : prénom, nom, CNI, téléphone, secondaire, naissance, sexe, ville de résidence, quartier/address.
+  - **Profession** : nom libellé + `NOMENCLATURE` (domaine → spécialité → métier), compétences (`SKILLS_BY_DOMAIN`), palette de spécialité libre, métier exact libre, palier d'expérience, années précises, employeur actuel, références.
+  - **Zones** : `CITIES` avec `Switch`, `district`, `radiusKm` (≤ 300 km).
+  - **Parcours académique** : niveau → diplôme → spécialité du diplôme, `highestDegree`, établissement, année d'obtention.
+  - **Certifications** : `CERTIFICATION_SUGGESTIONS`.
+  - **Déclaration MINESUP** : `CredentialForm` (institution, diplôme, année, fréquence : `myCredentials` + `institutions.myCredentials`).
+  - **Documents** : `DocumentsUploader` (CNI + diplôme, jpg/png/pdf, max 5 Mo/champ, compression vers JPEG, ~350 Ko/pièce).
+  - **Validation** : `submitTechnicianApplication` (status `en_attente` → vérification admin).
+
+#### 5.5.2.3 Missions — `/technician/missions`
+- **Objectif** : exécution des interventions assignées.
+- **Contenu** : liste `listMyMissions`, filtres actives/historique, `request.title`, `request.reference`, adresse, `assignment.scheduledAt`, `request.coords`, `request.teamArrivalAt`.
+- **Actions** :
+  - **Déplacement** : `markArrival` (GPS), ETA estimé (~30 km/h).
+  - **Géo-terrain** : positions GPS partagées, `teamLocations` + `request.coords`.
+  - **Encaissement espèces** : `cashFor`, `cashProof` (photo du reçu obligatoire), `cashPhone` client.
+  - **Déroulé de la mission** : `MissionChecklist` (sécurité, ledeur seulement), `ReportForm` (compte rendu), demande matériel (`requestMaterial`).
+  - **Clôture** : `completeVisit` (report) → `assignment.status = terminee`, `request.status = terminee`.
+
+#### 5.5.2.4 Devis terrain — `/technician/devis`
+- **Objectif** : chiffrage V6 sur le terrain.
+- **Champs** : `FieldQuoteRequestPicker` (demandes `nouvelle`/`devis_emis`), lignes (`label`, `qty`, `unitPrice`), `FieldQuoteForm` (subtotal, TVA 19,25 %, total TTC, avance 50 %, solde 50 %), validation automatique GTEC.
+- **Devis reçu** : envoi du `submitFieldQuote` → notification client, paiement 50/50.
+
+#### 5.5.2.5 Marché — `/technician/marche`
+- **Objectif** : offres et présence client.
+- **Contenu** : `ProMarketplace` : demandes de devis, propositions (`quoteRequestsForRequest`), presence, zones, `upsertPresence`, `upsertServiceZone`, `removeServiceZone`, réponse aux offres client (`respondToQuoteRequest`, `declineQuote`).
+
+#### 5.5.2.6 Abonnement — `/technician/abonnement`
+- **Objectif** : droits d'accès aux missions.
+- **Plans** : `PLANS` = mensuel 6000 / trimestriel 20000 (90 j, 2 mois offerts) / annuel 55000 (365 j). `requestSubscriptionPayment` → `myPendingSubscriptionPayment` → statut actif.
+- **Validation** : téléphone payeur, moyens `PAYMENT_METHODS`, `requestSubPayment`.
+
+#### 5.5.2.7 Mon profil — `/technician/profile`
+- **Objectif** : dossier professionnel vivant.
+- **Contenu** : `MyProfile` (photo, bio, specialite, métier, zones), `AvailabilityManager` (disponibilité + rendez-vous reçus), statut du compte (`verifie`, specialite, abonnement, date de péremption), badge `BadgeCheck` numéro vérifié.
+
+#### 5.5.2.8 Retraits — `/technician/retraits`
+- **Objectif** : régularisation des gains.
+- **Champs** : montant ≥ 1000 FCFA, `wdMethod` (MTN MoMo, Orange Money, virement, espèces), `wdDestination` (numéro ou IBAN), `requestWithdrawal` → `myWallet` (payé/approuve/refuse/attente), historique des retraits.
+- **Sans protection** : si commission due au delà de l'échéance → blocage retraits et nouvelles missions.
+
+#### 5.5.2.9 Gains — `/technician/gains`
+- **Objectif** : suivie des commissions et des paiements.
+- **Citations** : `myCommissions` (90 % équipe / 10 % GTEC, `payCommission` avec numéro payeur, `commissionFor`, `splitFiftyFifty`), détail de base, `dueTotal`/`paidTotal`, `myPayouts` (statut `dû`/`payé`).
+
+#### 5.5.2.10 Avis — `/technician/avis`
+- **Objectif** : recueillir et lire les notes clients.
+- **Contenu** : `myRating` (moyenne + count), `myReviews` (note, commentaire, `review.at`), `StarRating`.
+
+#### 5.5.2.11 Visites — `/technician/visites`
+- **Objectif** : maintenance assignée.
+- **Contenu** : `myVisits` (contrat, `visit.status` fait/à faire, `visit.scheduledAt`, `visit.report`), `VisitReportForm` (compte rendu ≥ 10 caractères, `handleCompleteVisit`).
+
+#### 5.5.2.12 Sanctions et score — `/technician`
+- **Objectif** : contrôle legal et professionnel.
+- **Champs** : `mySanctions` (niveaux 1–5, `contestSanction`), `myProviderScore` (complétion, taux, satisfaction, `score`).
+- **Bandeau** : sanctions actives (`mySanctions.activeCount > 0`, niveau max, accès limités), message de contestation.
+
+### 5.5.3 Espace admin ( ADMINISTRATION )
+
+#### 5.5.3.1 AdminConsole — `/admin`
+- **Objectif** : supervision et statistiques V1.
+- **Tableaux** : clients, professionnels, demandes (statut), prestations, PA, commissions, abonnements, réclamations, notes, délais.
+- **Contrôles** : `requireAdminScope` sur tout accès sensible, `auditLog` des actions critiques.
+
+#### 5.5.3.2 AdminApp — `/admin/console`
+- **Objectif** : arbitrage et vérifications.
+- **Modules** :
+  - Validation de profils techniciens : `adminReviewProfileItem`, statut `verifie`/`rejete`.
+  - Citations de devis : `adminListCommissions`, validation, notation.
+  - Paiements, commissions, abonnements, réclamations, notes, délais.
+  - Chaîne d'OBS, `auditLogs` pour tous les arbitrages.
+  - Contenu des tableaux (map/reduce) pour les contrôles manuels.
+
+#### 5.5.3.3 Diaspora — `/admin/console` (validation à distance)
+- **Objectif** : valider la commande du bénéficiaire.
+- **Actions** : `validateByDiaspora` (conforme / correction demandée / problème signalé), `diasporaBeneficiaries`, `beneficiaryValidationCode`, libération des fonds.
+
+#### 5.5.3.4 Stats & reporting — `/admin/console`
+- **Objectif** : indicateurs quotidiens par `crons.daily`.
+- **Traitements** : abonnements expirants, rappels de paiement, sweep de validation des commandes diaspora.
+
+### 5.5.4 Rôles et permissions (V1)
+
+| Rôle | Peut |
+|---|---|
+| Visiteur | Consulter pages publiques (landing, fiche publique) |
+| Client | Demandes, suivi, réception, paiement, évaluation, profil |
+| Client diaspora | Commander pour un proche, paiement, validation à distance du bénéficiaire |
+| Technicien | Candidature, profil, spécialités, disponibilité, devis terrain, missions, remboursements, revenus, abonnement |
+| Entreprise prestataire | Fiche, profil, devis, missions (gestion avancée des équipes en V2) |
+| Admin | Vérifier, arbitrer, voir paiements/commissions/abonnements/réclamations/avis, confirmer les statuts, audits |
+
+### 5.5.5 Pipelines et statuts clés
+
+| Pipeline | Statuts |
+|---|---|
+| Demande client | `nouvelle` → `devis_emis` → `devis_accepte` → `affectee` → `en_intervention` → `rapport_emis` → `terminee` / `annulee` |
+| Devis | `emis` → `accepte` / `refuse` / `expire` |
+| Marché | `envoyee` → `proposee` → `acceptee` / `refusee` / `clore` |
+| Profil technicien | `en_attente` → `verifie` / `rejete`, sanctions niveaux 1–5 |
+| Abonnement | `en_attente` → actif, péremption, `crons.daily` sweep |
+| Diaspora | `createDiasporaRequest` → validation bénéficiaire → `validateByDiaspora` (conforme / correction / problème) → libération des fonds |
+| Contrat | signature client (PV), `guarantee` (garantie de travaux), `certificate` (QR, SHA-256), `dispute` (litige) |
+
+### 5.5.6 Notes d'intégration
+
+- **Composants réutilisés uniquement** : `AppShell`, `NotificationBell`, `PhoneVerificationBanner`, `StatusBadge`, `JourneyStepper`, `SignaturePad`, `PublicShell`, `AdvisorCard`, `BriefCard`, `ProfessionalMatches`, `AdvisorHistoryCard`, `FavoritesCard`, `AccountCard` (absent du repo, non inventé), `MyClientProfile`, `MyProfile`, `CredentialForm`, `DocumentsUploader`, `FieldQuoteForm`, `ProMarketplace`, `MissionChecklist`, `AvailabilityManager`, `ReportForm`, `VisitReportForm`, `StarRating`, `PhoneVerifiedBadge`, `FavoritesCard`, `AppointmentsClientCard`, `ClientCompanyCard`, `ClientSiteCard`, `ClientTeamMemberCard`, `ClientSiteDocumentCard`.
+- **API de référence** : `gtec.ts` (demandes, paiements, commissions, revenus, profil, contacts), `matching.ts` (marché, devis, présence, zones, disponibilités), `diaspora.ts` (bénéficiaires, validation à distance), `profile.ts`/`profileExtras.ts` (dossier professionnel), `guarantees.ts`/`missions.ts`/`catalog.ts`/`clientCompany.ts`/`favorites.ts`/`appointments.ts` (extensions V1).
+- **Journalisation** : `requestEvents` pour le pipeline de demande, `auditLogs` pour les actions sensibles (sanction, commission, annulation, diaspora, administration).
+- **Paiements** : MoMo (MTN/Orange), CinetPay (escrow), espèces (preuve photo), virement, minimum de retrait 1000 FCFA, commission GTEC 10 %.
+- **Sécurité** : données sensibles (CNI, coordonnées exactes, documents bancaires) uniquement pour le propriétaire de la demande + l'admin, `RequireAuth` avec `returnTo`, `users.phoneVerified` pour la vérification du numéro.
+
 ---
 
 ## 6. Rôles et permissions
