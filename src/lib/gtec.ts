@@ -735,18 +735,18 @@ export type SubscriptionPlanKey = (typeof SUBSCRIPTION_PLANS)[number]["key"];
 // ---------- rémunération techniciens (règles GTEC V1) ----------
 
 /**
- * Commission GTEC : 10 % de chaque mission obtenue via GTEC PRO (cahier des
+ * Commission GTEC : 15 % de chaque mission obtenue via GTEC PRO (cahier des
  * charges 2.0 §22). Base = montant total de l'intervention (TTC du devis).
- * Le reste (90 %) revient à l'équipe selon la répartition ci-dessous.
+ * Le reste (85 %) revient à l'équipe selon la répartition ci-dessous.
  */
-export const GTEC_COMMISSION_PERCENT = 10;
-export const TEAM_SHARE_PERCENT = 100 - GTEC_COMMISSION_PERCENT;
+export const GTEC_COMMISSION_PERCENT = 15;
+export const TEAM_SHARE_PERCENT = 100 - GTEC_COMMISSION_PERCENT; // 85 pour 15 commission
 /** Délai de régularisation d'une dette de commission (§24) : 7 jours. */
 export const COMMISSION_DEBT_DAYS = 7;
 export const LEADER_WEIGHT = 1.5;
 export const MEMBER_WEIGHT = 1;
 
-/** Commission GTEC due sur une intervention (10 % du montant TTC, §22). */
+/** Commission GTEC due sur une intervention (15 % du montant TTC, §22). */
 export function commissionFor(quoteTotal: number): number {
   return Math.round((quoteTotal * GTEC_COMMISSION_PERCENT) / 100);
 }

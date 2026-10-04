@@ -1269,7 +1269,7 @@ export async function settleMilestone(
         ? "Mission affectée — travaux autorisés"
         : "L'équipe va être affectée — travaux autorisés",
     );
-    // ---- Répartition détaillée 90/10 (commission 2.0 §22 : 10 %)
+    // ---- Répartition détaillée 85/15 (commission GTEC 2.0 §22 : 15 %)
     // §24 : pour un paiement EN ESPÈCES, le client a remis la totalité au
     // prestataire — GTEC ne peut pas prélever sur un wallet vide. La commission
     // devient une DETTE DE COMMISSION à régulariser sous un délai de 7 jours.
@@ -1305,7 +1305,7 @@ export async function settleMilestone(
         ctx,
         payment.requestId,
         "paiement",
-        `Répartition 90/10 : équipe ${teamAmount.toLocaleString("fr-FR")} FCFA · GTEC ${commissionAmount.toLocaleString("fr-FR")} FCFA (10 %)${isCash ? " · paiement en espèces = dette de commission à régulariser" : ""}`,
+        `Répartition 85/15 : équipe ${teamAmount.toLocaleString("fr-FR")} FCFA · GTEC ${commissionAmount.toLocaleString("fr-FR")} FCFA (15 %)${isCash ? " · paiement en espèces = dette de commission à régulariser" : ""}`,
       );
       if (isCash) {
         await notifyAdmins(
