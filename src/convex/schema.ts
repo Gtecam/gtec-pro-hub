@@ -9,11 +9,13 @@ export const ROLES = {
   USER: "user",
   MEMBER: "member",
 } as const;
+
 export const roleValidator = v.union(
   v.literal(ROLES.ADMIN),
   v.literal(ROLES.USER),
   v.literal(ROLES.MEMBER),
 );
+
 export type Role = Infer<typeof roleValidator>;
 
 /** GTEC PRO 2.0 : spécialisation des comptes administrateurs. */
@@ -27,11 +29,16 @@ export const ADMIN_ROLES = [
   "moderation",
   "technique",
 ] as const;
+
 export const adminRoleValidator = v.union(
   ...ADMIN_ROLES.map((r) => v.literal(r)),
 );
 
-export const schema = defineSchema(
+// The schema definition object. The Convex CLI resolves the schema from
+// `extensionTables` (spread into `schema.ts`) and validates it inside the
+// `defineSchema` call below, so this module must only build and export that
+// definition — never default-export the `SchemaDefinition` wrapper.
+const schemaDefinition = defineSchema(
   {
     // default auth tables using convex auth. do not remove or modify
     ...authTables,
@@ -46,7 +53,9 @@ export const schema = defineSchema(
 
       role: v.optional(roleValidator), // role of the user. do not remove
       adminRole: v.optional(adminRoleValidator), // GTEC admin role (super_admin = all rights)
-      accountType: v.optional(v.union(v.literal("client"), v.literal("technicien"))), // Espace choisi à l'inscription : client ou technicien
+      accountType: v.optional(
+        v.union(v.literal("client"), v.literal("technicien")),
+      ), // Espace choisi à l'inscription : client ou technicien
       phone: v.optional(v.string()),
       city: v.optional(v.string()),
 
@@ -64,7 +73,9 @@ export const schema = defineSchema(
       companyName: v.optional(v.string()),
       taxId: v.optional(v.string()), // NUI / contribuable
       idDocumentUrl: v.optional(v.string()), // photo CNI (data URL)
-      emergencyContact: v.optional(v.object({ name: v.string(), phone: v.string() })), // contact d'urgence (§2)
+      emergencyContact: v.optional(
+        v.object({ name: v.string(), phone: v.string() }),
+      ), // contact d'urgence (§2)
       prefLangue: v.optional(v.string()), // fr | en (préférences)
       prefNotifEmail: v.optional(v.boolean()),
       prefNotifSms: v.optional(v.boolean()),
@@ -105,7 +116,9 @@ export const schema = defineSchema(
       interventionCode: v.optional(v.string()), // CATALOGUE : intervention choisie (code unique)
       beneficiaryId: v.optional(v.id("diasporaBeneficiaries")),
       isDiaspora: v.optional(v.boolean()), // mode diaspora : le demandeur est à l'étranger
-      onSiteContact: v.optional(v.object({ name: v.string(), phone: v.string() })), // bénéficiaire à contacter sur place
+      onSiteContact: v.optional(
+        v.object({ name: v.string(), phone: v.string() }),
+      ), // bénéficiaire à contacter sur place
       accessInstructions: v.optional(v.string()), // instructions d'accès au chantier
       beneficiaryValidation: v.optional(
         v.union(
@@ -123,7 +136,9 @@ export const schema = defineSchema(
         v.object({ lat: v.number(), lon: v.number(), accuracy: v.optional(v.number()) }),
       ), // GÉO TERRAIN : coordonnées d'arrivée
       interventionLabel: v.optional(v.string()), // libellé figé de l'intervention
-      urgency: v.optional(v.union(v.literal("normale"), v.literal("urgente"), v.literal("critique"))), // niveau d'urgence
+      urgency: v.optional(
+        v.union(v.literal("normale"), v.literal("urgente"), v.literal("critique")),
+      ), // niveau d'urgence
       desiredDate: v.optional(v.number()), // date souhaitée d'intervention
       budgetHint: v.optional(v.number()), // budget indicatif client (FCFA)
       voiceNoteUrl: v.optional(v.string()), // message vocal (data URL)
@@ -137,14 +152,23 @@ export const schema = defineSchema(
       requestId: v.id("serviceRequests"),
       clientId: v.id("users"),
       authorId: v.optional(v.id("users")),
-      authorRole: v.optional(v.union(v.literal("technicien"), v.literal("admin"))), // auteur du devis
+      authorRole: v.optional(
+        v.union(v.literal("technicien"), v.literal("admin")),
+      ), // auteur du devis
       number: v.string(), // DEV-0001
-      items: v.array(v.object({ label: v.string(), qty: v.number(), unitPrice: v.number() })),
+      items: v.array(
+        v.object({ label: v.string(), qty: v.number(), unitPrice: v.number() }),
+      ),
       subtotal: v.number(),
       vatRate: v.number(), // TVA Cameroun
       total: v.number(),
       currency: v.string(), // FCFA
-      status: v.union(v.literal("emis"), v.literal("accepte"), v.literal("refuse"), v.literal("expire")),
+      status: v.union(
+        v.literal("emis"),
+        v.literal("accepte"),
+        v.literal("refuse"),
+        v.literal("expire"),
+      ),
       validUntil: v.number(),
       autoValidatedAt: v.optional(v.number()), // validation automatique GTEC
       version: v.optional(v.number()), // version du devis
@@ -186,7 +210,11 @@ export const schema = defineSchema(
         v.literal("carte_visa"),
       ),
       payerPhone: v.string(),
-      status: v.union(v.literal("en_attente"), v.literal("valide"), v.literal("echoue")),
+      status: v.union(
+        v.literal("en_attente"),
+        v.literal("valide"),
+        v.literal("echoue"),
+      ),
       externalRef: v.optional(v.string()),
       proofPhotoUrl: v.optional(v.string()),
       bankName: v.optional(v.string()),
@@ -206,7 +234,9 @@ export const schema = defineSchema(
       collectedBy: v.optional(v.id("users")),
       collectedAt: v.optional(v.number()),
       paidAt: v.optional(v.number()),
-      milestone: v.optional(v.union(v.literal("avance"), v.literal("solde"))),
+      milestone: v.optional(
+        v.union(v.literal("avance"), v.literal("solde")),
+      ),
       percent: v.optional(v.number()),
     })
       .index("by_request", ["requestId"])
@@ -219,7 +249,11 @@ export const schema = defineSchema(
       members: v.array(v.object({ id: v.id("users"), role: v.string() })),
       scheduledAt: v.number(),
       notes: v.optional(v.string()),
-      status: v.union(v.literal("planifiee"), v.literal("en_cours"), v.literal("terminee")),
+      status: v.union(
+        v.literal("planifiee"),
+        v.literal("en_cours"),
+        v.literal("terminee"),
+      ),
     }).index("by_request", ["requestId"]),
 
     interventionReports: defineTable({
@@ -302,7 +336,11 @@ export const schema = defineSchema(
       doneAt: v.optional(v.number()),
       assignedTeamLeaderId: v.optional(v.id("users")),
       report: v.optional(v.string()),
-      status: v.union(v.literal("planifiee"), v.literal("faite"), v.literal("annulee")),
+      status: v.union(
+        v.literal("planifiee"),
+        v.literal("faite"),
+        v.literal("annulee"),
+      ),
     })
       .index("by_contract", ["contractId"])
       .index("by_leader", ["assignedTeamLeaderId"]),
@@ -325,7 +363,11 @@ export const schema = defineSchema(
       proofPhotoUrl: v.optional(v.string()),
       bankName: v.optional(v.string()),
       bankRef: v.optional(v.string()),
-      status: v.union(v.literal("en_attente"), v.literal("valide"), v.literal("echoue")),
+      status: v.union(
+        v.literal("en_attente"),
+        v.literal("valide"),
+        v.literal("echoue"),
+      ),
       externalRef: v.optional(v.string()),
       validatedAt: v.optional(v.number()),
     })
@@ -368,7 +410,11 @@ export const schema = defineSchema(
           v.literal("rejete"),
         ),
       ),
-      status: v.union(v.literal("en_attente"), v.literal("verifie"), v.literal("rejete")),
+      status: v.union(
+        v.literal("en_attente"),
+        v.literal("verifie"),
+        v.literal("rejete"),
+      ),
       reviewNote: v.optional(v.string()),
       kycFlag: v.optional(v.string()),
       kycDocHashes: v.optional(v.array(v.string())),
@@ -429,7 +475,11 @@ export const schema = defineSchema(
     subscriptionPayments: defineTable({
       profileId: v.id("technicianProfiles"),
       techUserId: v.id("users"),
-      plan: v.union(v.literal("mensuel"), v.literal("trimestriel"), v.literal("annuel")),
+      plan: v.union(
+        v.literal("mensuel"),
+        v.literal("trimestriel"),
+        v.literal("annuel"),
+      ),
       amount: v.number(),
       currency: v.string(),
       method: v.union(
@@ -439,7 +489,11 @@ export const schema = defineSchema(
         v.literal("virement"),
       ),
       payerPhone: v.string(),
-      status: v.union(v.literal("en_attente"), v.literal("valide"), v.literal("echoue")),
+      status: v.union(
+        v.literal("en_attente"),
+        v.literal("valide"),
+        v.literal("echoue"),
+      ),
       externalRef: v.optional(v.string()),
     })
       .index("by_profile", ["profileId"])
@@ -461,7 +515,9 @@ export const schema = defineSchema(
     gtecCommissions: defineTable({
       requestId: v.id("serviceRequests"),
       quoteId: v.id("quotes"),
-      breakdown: v.optional(v.object({ teamAmount: v.number(), gtecAmount: v.number() })),
+      breakdown: v.optional(
+        v.object({ teamAmount: v.number(), gtecAmount: v.number() }),
+      ),
       techUserId: v.id("users"),
       baseAmount: v.number(),
       ratePercent: v.number(),
@@ -469,7 +525,12 @@ export const schema = defineSchema(
       currency: v.string(),
       status: v.union(v.literal("due"), v.literal("payee"), v.literal("exoneree")),
       method: v.optional(
-        v.union(v.literal("mtn_momo"), v.literal("orange_money"), v.literal("virement"), v.literal("especes")),
+        v.union(
+          v.literal("mtn_momo"),
+          v.literal("orange_money"),
+          v.literal("virement"),
+          v.literal("especes"),
+        ),
       ),
       payerPhone: v.optional(v.string()),
       externalRef: v.optional(v.string()),
@@ -496,7 +557,12 @@ export const schema = defineSchema(
       ),
       destination: v.string(),
       destinationLabel: v.optional(v.string()),
-      status: v.union(v.literal("demande"), v.literal("approuve"), v.literal("payee"), v.literal("refuse")),
+      status: v.union(
+        v.literal("demande"),
+        v.literal("approuve"),
+        v.literal("payee"),
+        v.literal("refuse"),
+      ),
       requestedAt: v.number(),
       processedAt: v.optional(v.number()),
       processedBy: v.optional(v.id("users")),
@@ -558,7 +624,12 @@ export const schema = defineSchema(
       ),
       description: v.string(),
       attachments: v.optional(v.array(v.string())),
-      status: v.union(v.literal("ouverte"), v.literal("en_cours"), v.literal("resolue"), v.literal("rejetee")),
+      status: v.union(
+        v.literal("ouverte"),
+        v.literal("en_cours"),
+        v.literal("resolue"),
+        v.literal("rejetee"),
+      ),
       decision: v.optional(v.string()),
       resolvedById: v.optional(v.id("users")),
       resolvedAt: v.optional(v.number()),
@@ -571,7 +642,11 @@ export const schema = defineSchema(
       level: v.number(), // 1..5
       reason: v.string(),
       requestId: v.optional(v.id("serviceRequests")),
-      status: v.union(v.literal("active"), v.literal("levee"), v.literal("contested")),
+      status: v.union(
+        v.literal("active"),
+        v.literal("levee"),
+        v.literal("contested"),
+      ),
       until: v.optional(v.number()), // niveau 3 : suspension temporaire
       issuedById: v.id("users"),
       issuedAt: v.number(),
@@ -622,7 +697,12 @@ export const schema = defineSchema(
       paymentId: v.id("payments"),
       provider: v.union(v.literal("mtn"), v.literal("orange")),
       providerRef: v.string(),
-      status: v.union(v.literal("en_attente"), v.literal("reussie"), v.literal("echouee"), v.literal("expiree")),
+      status: v.union(
+        v.literal("en_attente"),
+        v.literal("reussie"),
+        v.literal("echouee"),
+        v.literal("expiree"),
+      ),
       amount: v.number(),
       currency: v.string(),
       payerPhone: v.string(),
@@ -648,7 +728,12 @@ export const schema = defineSchema(
         v.literal("INTERSTATE_INSTITUTION"),
         v.literal("FOREIGN_RECOGNIZED_INSTITUTION"),
       ),
-      ownership: v.union(v.literal("PUBLIC"), v.literal("PRIVATE"), v.literal("INTERNATIONAL"), v.literal("INTERSTATE")),
+      ownership: v.union(
+        v.literal("PUBLIC"),
+        v.literal("PRIVATE"),
+        v.literal("INTERNATIONAL"),
+        v.literal("INTERSTATE"),
+      ),
       region: v.union(
         v.literal("ADAMOUA"),
         v.literal("CENTRE"),
@@ -726,7 +811,12 @@ export const schema = defineSchema(
       diplomaTitle: v.optional(v.string()),
       specialty: v.optional(v.string()),
       note: v.optional(v.string()),
-      status: v.union(v.literal("PENDING"), v.literal("UNDER_REVIEW"), v.literal("APPROVED"), v.literal("REJECTED")),
+      status: v.union(
+        v.literal("PENDING"),
+        v.literal("UNDER_REVIEW"),
+        v.literal("APPROVED"),
+        v.literal("REJECTED"),
+      ),
       adminNote: v.optional(v.string()),
       reviewedById: v.optional(v.id("users")),
       reviewedAt: v.optional(v.number()),
@@ -1013,7 +1103,11 @@ export const schema = defineSchema(
       companyId: v.id("companies"),
       userId: v.id("users"),
       role: v.string(), // fonction dans l'entreprise
-      status: v.union(v.literal("INVITED"), v.literal("ACTIVE"), v.literal("DECLINED")),
+      status: v.union(
+        v.literal("INVITED"),
+        v.literal("ACTIVE"),
+        v.literal("DECLINED"),
+      ),
       invitedAt: v.number(),
       respondedAt: v.optional(v.number()),
       isActive: v.boolean(),
@@ -1023,10 +1117,11 @@ export const schema = defineSchema(
       .index("by_company", ["companyId"])
       .index("by_user", ["userId"]),
 
-    // ============ EXTENSIONS GTEC PRO — DOSSIER TECHNIQUE (PHASES 2-4) ============
+    // ============ EXTENSIONS GTEC PRO — DOSSIER TECHNIQUE (PHASES 2-4) ===========
     ...extensionTables,
   },
   { schemaValidation: false },
 );
 
-export default schema;
+// Export the resolved schema definition so the Convex CLI can push it.
+export default schemaDefinition;
