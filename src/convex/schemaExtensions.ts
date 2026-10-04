@@ -12,7 +12,7 @@ export const commissionRules = defineTable({
   newRatePercent: v.number(),
   updatedAt: v.number(),
 }).index("by_admin", ["adminId"])
-  .index("by_updatedAt", ["updatedAt"]);
+.index("by_updatedAt", ["updatedAt"]);
 
 /**Contrats contractuels (§14). */
 export const contracts = defineTable({
@@ -70,9 +70,9 @@ export const contracts = defineTable({
   version: v.number(),
   archived: v.optional(v.boolean()),
 }).index("by_client", ["clientId"])
-  .index("by_professional", ["professionalId"])
-  .index("by_status", ["status"])
-  .index("by_reference", ["reference"]);
+.index("by_professional", ["professionalId"])
+.index("by_status", ["status"])
+.index("by_reference", ["reference"]);
 
 /** Gabarits de contrats (§5..§10). */
 export const contractTemplates = defineTable({
@@ -89,7 +89,7 @@ export const contractTemplates = defineTable({
   createdAt: v.number(),
   updatedAt: v.number(),
 }).index("by_kind", ["kind"])
-  .index("by_active", ["active"]);
+.index("by_active", ["active"]);
 
 /** Factures / avoirs (§16..§18). */
 export const invoices = defineTable({
@@ -129,9 +129,9 @@ export const invoices = defineTable({
   validatedById: v.optional(v.id("users")),
   validatedAt: v.optional(v.number()),
 }).index("by_client", ["clientId"])
-  .index("by_professional", ["professionalId"])
-  .index("by_status", ["status"])
-  .index("by_reference", ["reference"]);
+.index("by_professional", ["professionalId"])
+.index("by_status", ["status"])
+.index("by_reference", ["reference"]);
 
 export const invoiceItems = defineTable({
   invoiceId: v.id("invoices"),
@@ -164,7 +164,7 @@ export const invoicePayments = defineTable({
   collectedAt: v.optional(v.number()),
   at: v.number(),
 }).index("by_invoice", ["invoiceId"])
-  .index("by_external_ref", ["externalRef"]);
+.index("by_external_ref", ["externalRef"]);
 
 export const invoiceSequences = defineTable({
   sequence: v.number(),
@@ -195,10 +195,10 @@ export const commissionRecords = defineTable({
   approvedAt: v.optional(v.number()),
   version: v.number(),
 }).index("by_request", ["requestId"])
-  .index("by_contract", ["contractId"])
-  .index("by_invoice", ["invoiceId"])
-  .index("by_professional", ["professionalId"])
-  .index("by_status", ["paymentStatus"]);
+.index("by_contract", ["contractId"])
+.index("by_invoice", ["invoiceId"])
+.index("by_professional", ["professionalId"])
+.index("by_status", ["paymentStatus"]);
 
 /** Signatures électroniques (§15). */
 export const contractSignatures = defineTable({
@@ -217,8 +217,8 @@ export const contractSignatures = defineTable({
   professionalAccepted: v.boolean(),
   active: v.boolean(),
 }).index("by_contract", ["contractId"])
-  .index("by_client", ["clientId"])
-  .index("by_professional", ["professionalId"]);
+.index("by_client", ["clientId"])
+.index("by_professional", ["professionalId"]);
 
 /** Avenants (§15). */
 export const contractAmendments = defineTable({
@@ -238,7 +238,7 @@ export const contractAmendments = defineTable({
   createdAt: v.number(),
   updatedAt: v.number(),
 }).index("by_contract", ["contractId"])
-  .index("by_version", ["version"]);
+.index("by_version", ["version"]);
 
 /** Documents archives (§23). */
 export const documents = defineTable({
@@ -262,11 +262,11 @@ export const documents = defineTable({
   updatedAt: v.number(),
   versionNumber: v.number(),
 }).index("by_client", ["clientId"])
-  .index("by_professional", ["professionalId"])
-  .index("by_contract", ["contractId"])
-  .index("by_invoice", ["invoiceId"])
-  .index("by_number", ["number"])
-  .index("by_status", ["status"]);
+.index("by_professional", ["professionalId"])
+.index("by_contract", ["contractId"])
+.index("by_invoice", ["invoiceId"])
+.index("by_number", ["number"])
+.index("by_status", ["status"]);
 
 export const documentVersions = defineTable({
   documentId: v.id("documents"),
@@ -288,7 +288,7 @@ export const documentAccessLogs = defineTable({
   ip: v.optional(v.string()),
   userAgent: v.optional(v.string()),
 }).index("by_document", ["documentId"])
-  .index("by_accessedAt", ["accessedAt"]);
+.index("by_accessedAt", ["accessedAt"]);
 
 // =====================================================================
 // FUSION AVEC LE SCHÉMA PRINCIPAL

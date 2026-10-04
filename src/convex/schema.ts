@@ -84,15 +84,15 @@ export const schema = defineSchema(
       city: v.string(),
       photos: v.array(v.string()), // data URLs (V1, small)
       status: v.union(
-        v.literal("nouvelle"), // demande créée, en attente de devis
-        v.literal("devis_emis"), // devis envoyé, en attente d'acceptation
-        v.literal("devis_accepte"), // client a accepté, en attente de paiement
-        v.literal("paye"), // paiement validé, en attente d'affectation
-        v.literal("affectee"), // équipe affectée, intervention planifiée
-        v.literal("en_intervention"), // travaux en cours
-        v.literal("rapport_emis"), // rapport transmis, attente réception client
-        v.literal("terminee"), // PV signé, facture émise
-        v.literal("annulee"), // client ou GTEC a annulé
+        v.literal("nouvelle"),
+        v.literal("devis_emis"),
+        v.literal("devis_accepte"),
+        v.literal("paye"),
+        v.literal("affectee"),
+        v.literal("en_intervention"),
+        v.literal("rapport_emis"),
+        v.literal("terminee"),
+        v.literal("annulee"),
       ),
       scheduledAt: v.optional(v.number()),
       cancellationReason: v.optional(v.string()),
@@ -566,7 +566,6 @@ export const schema = defineSchema(
       .index("by_request", ["requestId"])
       .index("by_status", ["status"]),
 
-    // Sanctions graduées (§37) — avertissement … bannissement.
     sanctions: defineTable({
       userId: v.id("users"),
       level: v.number(), // 1..5
@@ -580,7 +579,6 @@ export const schema = defineSchema(
       contestAt: v.optional(v.number()),
     }).index("by_user", ["userId"]),
 
-    // Journal d'audit (§44) — traçabilité des actions sensibles.
     auditLogs: defineTable({
       actorId: v.optional(v.id("users")),
       actorRole: v.optional(v.string()),
@@ -593,7 +591,6 @@ export const schema = defineSchema(
       at: v.number(),
     }).index("by_at", ["at"]),
 
-    // OTP de vérification du numéro de téléphone (hashé, 10 min).
     phoneVerifications: defineTable({
       userId: v.id("users"),
       phone: v.string(),
@@ -603,7 +600,6 @@ export const schema = defineSchema(
       consumedAt: v.optional(v.number()),
     }).index("by_user", ["userId"]),
 
-    // Écho des codes de connexion SMS en mode démo (sans Twilio).
     authSmsEcho: defineTable({
       phone: v.string(),
       code: v.string(),
@@ -611,7 +607,6 @@ export const schema = defineSchema(
       expiresAt: v.number(),
     }).index("by_phone", ["phone"]),
 
-    // File d'envoi e-mail (Resend) alimentée par les notifications.
     emails: defineTable({
       userId: v.id("users"),
       to: v.string(),
@@ -623,7 +618,6 @@ export const schema = defineSchema(
       error: v.optional(v.string()),
     }).index("by_user", ["userId"]),
 
-    // Transactions Mobile Money (MTN Collections / Orange Web Payment).
     momoTransactions: defineTable({
       paymentId: v.id("payments"),
       provider: v.union(v.literal("mtn"), v.literal("orange")),
@@ -978,7 +972,6 @@ export const schema = defineSchema(
       updatedAt: v.number(),
     }).index("by_user", ["userId"]),
 
-    // Entreprise / société prestataire (§10) — profil vérifiable.
     companies: defineTable({
       ownerUserId: v.id("users"),
       name: v.string(), // nom commercial
@@ -1016,8 +1009,6 @@ export const schema = defineSchema(
       .index("by_owner", ["ownerUserId"])
       .index("by_status", ["status"]),
 
-    // Équipe de l'entreprise (§11) — le technicien doit ACCEPTER son
-    // rattachement ; l'entreprise ne modifie jamais ses données personnelles.
     companyMembers: defineTable({
       companyId: v.id("companies"),
       userId: v.id("users"),
