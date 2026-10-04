@@ -138,7 +138,9 @@ export const extensionTables = {
     isActive: v.boolean(),
     createdAt: v.number(),
     updatedAt: v.number(),
-  }).index("by_request", ["requestId"]),
+  })
+    .index("by_request", ["requestId"])
+    .index("by_client", ["clientId"]),
 
   // Pré-diagnostic IA (F°1) — traçabilité des réponses client + résultat du
   // moteur local (lib/diagnostic.ts). Aide au pré-diagnostic : le technicien

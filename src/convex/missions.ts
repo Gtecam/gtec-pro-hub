@@ -382,7 +382,7 @@ export const myActiveGuarantees = query({
     const user = await requireUser(ctx);
     const rows = (await ctx.db
       .query("workGuarantees")
-      .withIndex("by_request", (q: any) => q.eq("clientId", user._id))
+      .withIndex("by_client", (q: any) => q.eq("clientId", user._id))
       .collect()) as any[];
     const now = Date.now();
     const active = rows.filter((g) => g.status === "ACTIVE" && g.until > now);
