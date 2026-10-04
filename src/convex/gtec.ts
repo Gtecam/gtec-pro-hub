@@ -1252,14 +1252,22 @@ export async function settleMilestone(
   });
 
   if (isAdvance) {
-    // 1ʳᵉ tranche encaissée : les travaux peuvent démarrer.
-    await ctx.db.patch(payment.requestId, { status: "paye" });
+    // 1ʳᵉ tranche encaissée : les travaux peuvent démarrer. MARCHÉ (§18) :
+    // si l'équipe est déjà affectée (choix du client), on ne régresse JAMAIS
+    // le statut à « paye » (sinon adminStartIntervention refuserait de démarrer
+    // et l'admin recréerait un second affectation en doublon).
+    const alreadyAffected = request?.status === "affectee";
+    if (!alreadyAffected) {
+      await ctx.db.patch(payment.requestId, { status: "paye" });
+    }
     await addEvent(
       ctx,
       payment.requestId,
       "paiement",
       `Avance 50 % validée (${payment.amount.toLocaleString("fr-FR")} FCFA)`,
-      "L'équipe va être affectée — travaux autorisés",
+      alreadyAffected
+        ? "Mission affectée — travaux autorisés"
+        : "L'équipe va être affectée — travaux autorisés",
     );
     // ---- Répartition détaillée 90/10 (commission 2.0 §22 : 10 %)
     // §24 : pour un paiement EN ESPÈCES, le client a remis la totalité au
@@ -1360,7 +1368,9 @@ export const adminValidatePayment = mutation({
     }
     const wasPendingAdvance =
       payment.milestone !== "solde" &&
-      ["devis_accepte", "paye"].includes(request.status);
+      // MARCHÉ (§18) : le professionnel peut déjà être choisi/affecté avant
+      // le paiement — « affectee » est donc un état d'attente d'avance valide.
+      ["devis_accepte", "paye", "affectee"].includes(request.status);
     const wasPendingBalance =
       payment.milestone === "solde" &&
       ["en_intervention", "rapport_emis"].includes(request.status);
