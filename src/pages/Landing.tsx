@@ -5,7 +5,6 @@ import {
   CalendarClock,
   ClipboardCheck,
   FileText,
-  GraduationCap,
   MapPin,
   Phone,
   Receipt,
@@ -166,9 +165,6 @@ export default function Landing() {
             </a>
             <a href="#parcours" className="transition-colors hover:text-foreground">
               Comment ça marche
-            </a>
-            <a href="#b2b" className="transition-colors hover:text-foreground">
-              Entreprises & Académie
             </a>
             <a href="#techniciens" className="transition-colors hover:text-foreground">
               Techniciens
@@ -392,93 +388,6 @@ export default function Landing() {
               </Link>
             </Button>
           </Reveal>
-        </div>
-      </section>
-
-      {/* ---------- Marketplace B2B & Académie (phases 4 & 6) ---------- */}
-      <section id="b2b" className="border-y border-border/60 bg-muted/30">
-        <div className="mx-auto max-w-6xl px-4 py-20 sm:px-6">
-          <SectionHeading
-            kicker="Entreprises & talents"
-            title="Une marketplace B2B vérifiée, une académie pour monter en compétence"
-            sub="Côté entreprises : des prestataires dont l'identité, les diplômes et les capacités sont contrôlés par GTEC. Côté techniciens : un dossier professionnel vivant adossé au référentiel MINESUP."
-          />
-          <div className="mt-12 grid gap-4 lg:grid-cols-2">
-            <Reveal>
-              <Card className="card-layered flex h-full flex-col gap-4 p-6">
-                <div className="flex items-center gap-3">
-                  <span className="flex size-11 items-center justify-center rounded-xl bg-primary/10 text-primary">
-                    <Users className="size-5" />
-                  </span>
-                  <div>
-                    <p className="font-display text-lg font-semibold">Marketplace B2B</p>
-                    <p className="text-xs text-muted-foreground">Pour les entreprises clientes</p>
-                  </div>
-                </div>
-                <ul className="flex flex-col gap-2 text-sm text-muted-foreground">
-                  {[
-                    "Fiche entreprise vérifiable : RCCM / NIU contrôlés par GTEC",
-                    "Sites & agences multiples, comptes par rôle (technique, finance, demandeur)",
-                    "Cahier des charges guidé et budget indicatif avant chaque appel d'offres",
-                    "Dossier technique par site : équipements, QR codes, garanties, historique",
-                  ].map((li) => (
-                    <li key={li} className="flex items-start gap-2.5">
-                      <BadgeCheck className="mt-0.5 size-4 shrink-0 text-primary" />
-                      {li}
-                    </li>
-                  ))}
-                </ul>
-                <div className="mt-auto flex flex-wrap gap-2 pt-2">
-                  <Button className="halo-amber" asChild>
-                    <Link to="/auth?returnTo=%2Fdashboard">
-                      Ouvrir un compte entreprise
-                      <ArrowRight className="ml-1.5 size-4" />
-                    </Link>
-                  </Button>
-                  <Button variant="outline" asChild>
-                    <Link to="/buildings">Voir le dossier technique</Link>
-                  </Button>
-                </div>
-              </Card>
-            </Reveal>
-            <Reveal delay={0.1}>
-              <Card className="card-layered flex h-full flex-col gap-4 p-6">
-                <div className="flex items-center gap-3">
-                  <span className="flex size-11 items-center justify-center rounded-xl bg-primary/10 text-primary">
-                    <GraduationCap className="size-5" />
-                  </span>
-                  <div>
-                    <p className="font-display text-lg font-semibold">Académie & diplômes</p>
-                    <p className="text-xs text-muted-foreground">Pour les techniciens</p>
-                  </div>
-                </div>
-                <ul className="flex flex-col gap-2 text-sm text-muted-foreground">
-                  {[
-                    "Diplômes vérifiés dans le référentiel officiel MINESUP (universités, IPES…)",
-                    "Dossier professionnel vivant : expériences, compétences, réalisations, portfolio",
-                    "Badge « Vérifié GTEC PRO » décerné après contrôle des justificatifs",
-                    "Passeport professionnel PDF exportable et profil public partageable",
-                  ].map((li) => (
-                    <li key={li} className="flex items-start gap-2.5">
-                      <GraduationCap className="mt-0.5 size-4 shrink-0 text-primary" />
-                      {li}
-                    </li>
-                  ))}
-                </ul>
-                <div className="mt-auto flex flex-wrap gap-2 pt-2">
-                  <Button className="halo-amber" asChild>
-                    <Link to="/technician">
-                      Construire mon dossier
-                      <ArrowRight className="ml-1.5 size-4" />
-                    </Link>
-                  </Button>
-                  <Button variant="outline" asChild>
-                    <Link to="/auth?returnTo=%2Ftechnician">Rejoindre l'académie</Link>
-                  </Button>
-                </div>
-              </Card>
-            </Reveal>
-          </div>
         </div>
       </section>
 
