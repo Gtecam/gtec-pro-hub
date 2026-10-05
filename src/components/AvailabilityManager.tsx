@@ -58,7 +58,7 @@ const fmt = (ts: number) =>
   new Date(ts).toLocaleString("fr-FR", { weekday: "long", day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" });
 
 export function AvailabilityManager() {
-  const rules = useQuery(api.appointments.myAvailabilityRules, {});
+  const rules = useQuery(api.appointments.myAvailabilityRules, { userId: "me" });
   const appointments = useQuery(api.appointments.myAppointments, {});
   const upsertRule = useMutation(api.appointments.upsertAvailabilityRule);
   const removeRule = useMutation(api.appointments.removeAvailabilityRule);
@@ -165,7 +165,7 @@ export function AvailabilityManager() {
                     size="sm"
                     className="h-7 px-2 text-destructive"
                     disabled={busy}
-                    onClick={() => run(() => removeRule({ id: r._id }), "Disponibilité retirée")}
+                    onClick={() =>                    run(() => removeRule({ id: r._id as string }), "Disponibilité retirée")}
                     aria-label="Retirer"
                   >
                     <Trash2 className="size-3" />
@@ -220,7 +220,7 @@ export function AvailabilityManager() {
                         variant="outline"
                         disabled={busy}
                         onClick={() =>
-                          run(() => updateAppt({ id: a._id as never, action: "COMPLETE" }), "Rendez-vous clôturé — le client est notifié")
+                          run(() => updateAppt({ id: a._id as Id<"appointments">, action: "COMPLETE" }), "Rendez-vous clôturé — le client est notifié")
                         }
                       >
                         <CheckCircle2 className="mr-1 size-3.5" /> Terminé
@@ -230,7 +230,7 @@ export function AvailabilityManager() {
                         variant="ghost"
                         className="text-destructive"
                         disabled={busy}
-                        onClick={() => (setRefusing({ id: a._id as never, name: a.otherName }), setReason(""))}
+                        onClick={() => (setRefusing({ id: a._id as Id<"appointments">, name: a.otherName }), setReason(""))}
                       >
                         <XCircle className="mr-1 size-3.5" /> Refuser
                       </Button>

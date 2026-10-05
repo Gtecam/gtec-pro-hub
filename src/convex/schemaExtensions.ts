@@ -335,6 +335,8 @@ export const creditNotes = defineTable({
 export const extensionTables = {
   commissionRules,
   contracts,
+  chatRooms,
+  conversationMessages,
   contractTemplates,
   invoiceItems,
   invoicePayments,

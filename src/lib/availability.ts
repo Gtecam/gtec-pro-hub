@@ -1,181 +1,94 @@
-/**
- * GTEC PRO — Logique métier des rendez-vous (§8 « PRENDRE RENDEZ-VOUS »).
- *
- * Fonctions PURES (aucun accès base de données) : le client ne voit que les
- * créneaux réellement disponibles — horaires du professionnel, temps de
- * déplacement entre deux rendez-vous, capacité quotidienne, rendez-vous déjà
- * pris. Le même module est utilisé côté serveur (appointments.ts) pour
- * revérifier chaque réservation, et testé isolément (scripts/test-availability.ts).
- */
-
-export interface AvailabilityRule {
-  weekday: number; // 0 = dimanche … 6 = samedi
-  startMin: number; // minutes depuis minuit
-  endMin: number; // minutes depuis minuit
-  slotMinutes?: number; // durée d'un créneau (défaut 60)
-  travelMinutes?: number; // temps de déplacement entre deux rendez-vous (défaut 30)
-  capacityPerDay?: number; // nombre max de rendez-vous par jour (non défini = illimité)
-  effectiveFrom?: string; // YYYY-MM-DD
-  effectiveUntil?: string; // YYYY-MM-DD
+export function isoDate(ts: number): string {
+  return new Date(ts).toISOString().slice(0, 10);
 }
 
-export interface BookedSlot {
-  slotStart: number; // timestamp
-  slotEnd: number; // timestamp
+export function minutesToHHmm(minutes: number): string {
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
 }
 
-export interface AvailableSlot {
-  start: number;
-  end: number;
+export function parseHHmm(value: string): number {
+  const [h, m] = value.split(":").map(Number);
+  if (!Number.isFinite(h) || !Number.isFinite(m)) return 0;
+  return h * 60 + m;
 }
 
 export const WEEKDAY_LABELS = [
-  "Dimanche",
   "Lundi",
   "Mardi",
   "Mercredi",
   "Jeudi",
   "Vendredi",
   "Samedi",
-] as const;
+  "Dimanche",
+];
 
-export const WEEKDAY_SHORT = ["Dim", "Lun", "Mar", "Mer", "Jeu", "Ven", "Sam"] as const;
+/** Créneaux libres sur une plage de dates pour un jeu de règles et de créneaux déjà réservés. */
+export function generateAvailableSlots(params: {
+  rules: Array<{ weekday: number; startMin: number; endMin: number; slotMinutes?: number; travelMinutes?: number; capacityPerDay?: number }>;
+  booked: Array<{ start: number; end: number }>;
+  dateFrom: string;
+  dateTo: string;
+  now: number;
+}): Array<{ start: number; end: number }> {
+  const { rules, booked, dateFrom, dateTo, now } = params;
+  const from = Date.parse(dateFrom);
+  const to = Date.parse(dateTo);
+  if (!Number.isFinite(from) || !Number.isFinite(to)) return [];
 
-export const DEFAULT_SLOT_MINUTES = 60;
-export const DEFAULT_TRAVEL_MINUTES = 30;
+  const slots: Array<{ start: number; end: number }> = [];
+  const travel = 30;
 
-/** « 540 » → « 09:00 ». */
-export function minutesToHHmm(min: number): string {
-  const clamped = Math.max(0, Math.min(24 * 60, Math.round(min)));
-  const h = Math.floor(clamped / 60) % 24;
-  const m = clamped % 60;
-  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
-}
-
-/** « 09:30 » → 570. */
-export function parseHHmm(value: string): number {
-  const [h, m] = value.split(":").map((x) => Number(x) || 0);
-  return Math.max(0, Math.min(24 * 60, (h ?? 0) * 60 + (m ?? 0)));
-}
-
-/** Date locale au format YYYY-MM-DD (pas d'UTC : évite les décalages de fuseau). */
-export function isoDate(ts: number): string {
-  const d = new Date(ts);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
-
-export function overlaps(aStart: number, aEnd: number, bStart: number, bEnd: number): boolean {
-  return aStart < bEnd && bStart < aEnd;
-}
-
-interface DayCursor {
-  iso: string;
-  weekday: number;
-  midnight: number;
-}
-
-/** Liste les jours (dates locales) entre deux dates « YYYY-MM-DD », borné. */
-export function eachDay(dateFrom: string, dateTo: string, maxDays = 60): DayCursor[] {
-  const parse = (iso: string): Date | null => {
-    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
-    if (!m) return null;
-    return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), 0, 0, 0, 0);
-  };
-  const from = parse(dateFrom);
-  const to = parse(dateTo);
-  if (!from || !to || to.getTime() < from.getTime()) return [];
-  const out: DayCursor[] = [];
-  const cursor = new Date(from.getTime());
-  while (cursor.getTime() <= to.getTime() && out.length < maxDays) {
-    out.push({
-      iso: isoDate(cursor.getTime()),
-      weekday: cursor.getDay(),
-      midnight: cursor.getTime(),
-    });
-    cursor.setDate(cursor.getDate() + 1);
-  }
-  return out;
-}
-
-export interface GenerateOptions {
-  rules: AvailabilityRule[];
-  booked: BookedSlot[];
-  dateFrom: string; // YYYY-MM-DD
-  dateTo: string; // YYYY-MM-DD
-  now?: number;
-  /** Délai minimum avant le rendez-vous (défaut 60 min). */
-  minLeadMinutes?: number;
-}
-
-/**
- * Créneaux réellement disponibles : on part des horaires déclarés par le
- * professionnel, on retire le temps de déplacement autour des rendez-vous
- * déjà pris, on plafonne à la capacité quotidienne et on exclut le passé.
- */
-export function generateAvailableSlots(opts: GenerateOptions): AvailableSlot[] {
-  const {
-    rules,
-    booked,
-    dateFrom,
-    dateTo,
-    now = Date.now(),
-    minLeadMinutes = 60,
-  } = opts;
-  const active = rules.filter(
-    (r) =>
-      r.weekday >= 0 &&
-      r.weekday <= 6 &&
-      Number.isFinite(r.startMin) &&
-      Number.isFinite(r.endMin) &&
-      r.endMin > r.startMin &&
-      r.startMin >= 0 &&
-      r.endMin <= 24 * 60,
-  );
-  if (active.length === 0) return [];
-
-  const out: AvailableSlot[] = [];
-  const minStart = now + minLeadMinutes * 60_000;
-
-  for (const day of eachDay(dateFrom, dateTo)) {
-    const dayRules = active.filter(
-      (r) =>
-        r.weekday === day.weekday &&
-        (!r.effectiveFrom || day.iso >= r.effectiveFrom) &&
-        (!r.effectiveUntil || day.iso <= r.effectiveUntil),
-    );
+  for (let t = from; t <= to; t = t + 86_400_000) {
+    const day = new Date(t).getDay();
+    const dayRules = rules.filter((r) => r.weekday === day && r.endMin > r.startMin);
     if (dayRules.length === 0) continue;
+    const dayBooked = booked.filter((b) => {
+      const bs = new Date(b.start).setHours(0, 0, 0, 0);
+      const be = new Date(b.end).setHours(0, 0, 0, 0);
+      const ds = new Date(t).setHours(0, 0, 0, 0);
+      const de = new Date(t + 86_400_000).setHours(0, 0, 0, 0);
+      return bs < de && be > ds;
+    });
 
-    const dayBookings = booked.filter((b) => isoDate(b.slotStart) === day.iso);
-    // Capacité quotidienne : si le professionnel ne la définit pas, il peut
-    // enchaîner autant de créneaux que sa plage horaire le permet.
-    const capacity = Math.max(...dayRules.map((r) => r.capacityPerDay ?? Number.MAX_SAFE_INTEGER));
-    if (dayBookings.length >= capacity) continue; // journée complète
-
-    const daySlots: AvailableSlot[] = [];
-    for (const rule of dayRules) {
-      const slotMinutes = rule.slotMinutes ?? DEFAULT_SLOT_MINUTES;
-      const travelMinutes = rule.travelMinutes ?? DEFAULT_TRAVEL_MINUTES;
-      if (slotMinutes <= 0) continue;
-      for (let t = rule.startMin; t + slotMinutes <= rule.endMin; t += slotMinutes) {
-        const start = day.midnight + t * 60_000;
-        const end = start + slotMinutes * 60_000;
-        if (start < minStart) continue;
-        const buffer = travelMinutes * 60_000;
-        const clashWithBooking = dayBookings.some((b) =>
-          overlaps(start, end, b.slotStart - buffer, b.slotEnd + buffer),
-        );
-        if (clashWithBooking) continue;
-        if (daySlots.some((s) => overlaps(start, end, s.start, s.end))) continue;
-        daySlots.push({ start, end });
+    const capacityByMinute = new Map<number, number>();
+    for (const b of dayBooked) {
+      for (let m = b.start; m < b.end; m += 60_000) {
+        capacityByMinute.set(m, (capacityByMinute.get(m) ?? 0) + 1);
       }
     }
-    daySlots.sort((a, b) => a.start - b.start);
-    out.push(...daySlots);
-  }
-  return out;
-}
 
-/** Prochaines dates réservables depuis aujourd'hui (14 jours par défaut). */
-export function nextDays(now = Date.now(), count = 14): { iso: string; weekday: number; midnight: number }[] {
-  return eachDay(isoDate(now), isoDate(now + (count - 1) * 86_400_000), count);
+    for (const rule of dayRules) {
+      const dayStart = t + rule.startMin * 60_000;
+      const dayEnd = t + rule.endMin * 60_000;
+      if (dayEnd <= now) continue;
+      const slotMinutes = rule.slotMinutes ?? 60;
+      const travelMinutes = rule.travelMinutes ?? 0;
+      const gap = slotMinutes + travelMinutes;
+      const capacity = rule.capacityPerDay ?? 999;
+      let cursor = Math.max(dayStart, now - (now % 60_000) + (now % 60_000 > 0 ? 60_000 - (now % 60_000) : 0));
+      if (cursor < dayStart) cursor = dayStart;
+      const ceiling = dayEnd - slotMinutes * 60_000;
+      if (cursor > ceiling) continue;
+
+      let usedToday = 0;
+      for (let s = cursor; s <= ceiling; s = s + gap * 60_000) {
+        if (usedToday >= capacity) break;
+        const e = s + slotMinutes * 60_000;
+        let overlap = false;
+        for (let m = s; m < e; m += 60_000) {
+          if ((capacityByMinute.get(m) ?? 0) > 0) { overlap = true; break; }
+        }
+        if (overlap) continue;
+        slots.push({ start: s, end: e });
+        usedToday++;
+        for (let m = s; m < e; m += 60_000) {
+          capacityByMinute.set(m, (capacityByMinute.get(m) ?? 0) + 1);
+        }
+      }
+    }
+  }
+
+  return slots;
 }

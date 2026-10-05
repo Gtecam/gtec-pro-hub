@@ -6,6 +6,143 @@ import { generateAvailableSlots, isoDate } from "../lib/availability";
 
 const stamp = () => ({ isActive: true, createdAt: Date.now(), updatedAt: Date.now() });
 
+export const openConversation = mutation({
+  args: {
+    requestId: v.id("serviceRequests"),
+    clientUserId: v.id("users"),
+    clientName: v.optional(v.string()),
+    proUserId: v.optional(v.id("users")),
+    proName: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const user = await requireUser(ctx);
+    if (args.clientUserId !== user._id && args.proUserId !== user._id) {
+      throw new Error("Action non autorisée.");
+    }
+    const existing = await ctx.db
+      .query("chatRooms")
+      .withIndex("by_request", (q) => q.eq("requestId", args.requestId))
+      .first();
+    if (existing) {
+      await ctx.db.patch(existing._id, {
+        ...(args.clientName ? { clientName: args.clientName } : {}),
+        ...(args.proUserId && !existing.proUserId ? { proUserId: args.proUserId } : {}),
+        ...(args.proName && !existing.proName ? { proName: args.proName } : {}),
+        status: "active",
+        updatedAt: Date.now(),
+      });
+      return existing._id;
+    }
+    return await ctx.db.insert("chatRooms", {
+      requestId: args.requestId,
+      clientUserId: args.clientUserId,
+      proUserId: args.proUserId,
+      clientName: args.clientName ?? "Client GTEC PRO",
+      proName: args.proName ?? "Professionnel GTEC PRO",
+      status: "active",
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    });
+  },
+});
+
+export const sendMessage = mutation({
+  args: {
+    roomId: v.id("chatRooms"),
+    body: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const user = await requireUser(ctx);
+    const room = await ctx.db.get(args.roomId);
+    if (!room) throw new Error("Conversation introuvable.");
+    if (room.clientUserId !== user._id && room.proUserId !== user._id) {
+      throw new Error("Action non autorisée.");
+    }
+    const msgId = await ctx.db.insert("conversationMessages", {
+      roomId: args.roomId,
+      userId: user._id,
+      body: args.body.trim(),
+      createdAt: Date.now(),
+    });
+    await ctx.db.patch(args.roomId, { updatedAt: Date.now() });
+    const msg = await ctx.db.get(msgId);
+    if (msg && msg.userId !== room.proUserId) {
+      await ctx.db.patch(msgId, { readAt: Date.now() });
+    }
+    return msgId;
+  },
+});
+
+export const conversations = query({
+  args: { requestId: v.id("serviceRequests") },
+  handler: async (ctx, args) => {
+    const user = await requireUser(ctx);
+    const room = await ctx.db
+      .query("chatRooms")
+      .withIndex("by_request", (q) => q.eq("requestId", args.requestId))
+      .first();
+    if (!room) return null;
+    if (room.clientUserId !== user._id && room.proUserId !== user._id) {
+      throw new Error("Action non autorisée.");
+    }
+    const msgs = await ctx.db
+      .query("conversationMessages")
+      .withIndex("by_room", (q) => q.eq("roomId", room._id))
+      .collect();
+    const partners = msgs.filter((m) => m.userId !== room.clientUserId && m.userId !== room.proUserId);
+    return {
+      roomId: room._id,
+      requestId: room.requestId,
+      clientUserId: room.clientUserId,
+      proUserId: room.proUserId,
+      clientName: room.clientName,
+      proName: room.proName,
+      lastAt: room.updatedAt,
+      unreadCount: msgs.filter((m) => m.userId !== user._id && m.readAt === null).length,
+      messages: msgs,
+    };
+  },
+});
+
+export const listConversations = query({
+  args: { userId: v.id("users") },
+  handler: async (ctx, args) => {
+    const user = await requireUser(ctx);
+    const rooms = await ctx.db
+      .query("chatRooms")
+      .withIndex("by_client", (q) => q.eq("clientUserId", args.userId))
+      .collect();
+    const proRooms = await ctx.db
+      .query("chatRooms")
+      .withIndex("by_pro", (q) => q.eq("proUserId", args.userId))
+      .collect();
+    const allRooms = [...rooms, ...proRooms.filter((r) => r.status === "active")];
+    const enriched = await Promise.all(
+      allRooms.map(async (r) => {
+        const last = await ctx.db
+          .query("conversationMessages")
+          .withIndex("by_room", (q) => q.eq("roomId", r._id))
+          .first();
+        return {
+          roomId: r._id,
+          requestId: r.requestId,
+          clientUserId: r.clientUserId,
+          proUserId: r.proUserId,
+          clientName: r.clientName,
+          proName: r.proName,
+          lastMessage: last?.body ?? "",
+          lastAt: last?.createdAt ?? r.createdAt,
+          unreadCount: last && last.userId !== args.userId && last.readAt === null ? 1 : 0,
+        };
+      }),
+    );
+    if (user._id !== args.userId && user.role !== "admin") {
+      throw new Error("Action non autorisée.");
+    }
+    return enriched.sort((a, b) => b.lastAt - a.lastAt);
+  },
+});
+
 export const saveAppointment = mutation({
   args: {
     userId: v.id("users"),
