@@ -1123,5 +1123,4 @@ const schemaDefinition = defineSchema(
   { schemaValidation: false },
 );
 
-// Export the resolved schema definition so the Convex CLI can push it.
 export default schemaDefinition;
