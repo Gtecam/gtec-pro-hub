@@ -194,6 +194,182 @@ function quoteTotals(items: { qty: number; unitPrice: number }[]) {
   return { subtotal, vatRate, total };
 }
 
+// ===================== Conversations après mise en relation =====================
+
+/**
+ * Ouvre (ou réutilise) une salle de discussion entre les participants d'une
+ * demande GTEC, après la mise en relation / l'acceptation du devis.
+ */
+export const createChatRoom = mutation({
+  args: {
+    requestId: v.optional(v.id("serviceRequests")),
+    participantIds: v.array(v.id("users")),
+    subject: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    await requireUser(ctx);
+    if (args.participantIds.length < 2) {
+      throw new Error("Une conversation doit contenir au moins deux participants.");
+    }
+    if (args.requestId) {
+      const existing = (
+        await ctx.db
+          .query("chatRooms")
+          .withIndex("by_request", (q) => q.eq("requestId", args.requestId))
+          .collect()
+      ).filter(
+        (r) =>
+          args.participantIds.every((p) => r.participantIds.includes(p)),
+      );
+      if (existing.length > 0) {
+        return existing[0]._id;
+      }
+    }
+    const id = await ctx.db.insert("chatRooms", {
+      requestId: args.requestId,
+      participantIds: args.participantIds,
+      subject: args.subject,
+      status: "active",
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    });
+    await addEvent(
+      ctx,
+      args.requestId,
+      "conversation",
+      "Conversation ouverte",
+      args.subject ?? "Nouveau message",
+    );
+    return id;
+  },
+});
+
+/**
+ * Envoie un message texte dans une conversation.
+ * L'argument `callKind` permet de notifier un appel (« appeler le client »,
+ * « technicien a décroché », etc.) sans message texte.
+ */
+export const sendMessage = mutation({
+  args: {
+    roomId: v.id("chatRooms"),
+    body: v.optional(v.string()),
+    callKind: v.optional(
+      v.union(
+        v.literal("appel_sortant"),
+        v.literal("appel_entrant"),
+        v.literal("appel_accepte"),
+        v.literal("appel_recu"),
+        v.literal("appel_decroche"),
+        v.literal("appel_terminé"),
+      ),
+    ),
+  },
+  handler: async (ctx, args) => {
+    const user = await requireUser(ctx);
+    if (!args.body && !args.callKind) {
+      throw new Error("Un message doit contenir du texte ou une notification d'appel.");
+    }
+    const room = await ctx.db.get(args.roomId);
+    if (!room) throw new Error("Conversation introuvable.");
+    if (!room.participantIds.includes(user._id)) {
+      throw new Error("Vous n'êtes pas participant de cette conversation.");
+    }
+    if (room.status !== "active") {
+      throw new Error("Cette conversation est clôturée.");
+    }
+    const id = await ctx.db.insert("conversationMessages", {
+      roomId: room._id,
+      senderId: user._id,
+      body: args.body,
+      callKind: args.callKind,
+      at: Date.now(),
+    });
+    await ctx.db.patch(room._id, { updatedAt: Date.now() });
+    // Notifie les participants (hors expéditeur) via les ecoutes Convex.
+    for (const pid of room.participantIds) {
+      if (pid === user._id) continue;
+      await notify(
+        ctx,
+        pid,
+        "conversation",
+        "Nouveau message",
+        args.callKind
+          ? `Nouvelle notification d'appel dans ${room.subject ?? "la conversation"}.`
+          : args.body ?? "Nouveau message",
+        room.requestId,
+      );
+    }
+    return id;
+  },
+});
+
+/**
+ * Liste les conversations auxquelles l'utilisateur connecté participe.
+ */
+export const listConversations = query({
+  args: {},
+  handler: async (ctx) => {
+    const user = await requireUser(ctx);
+    const rooms = await ctx.db
+      .query("chatRooms")
+      .withIndex("by_participants", (q) => q.eq("participantIds", user._id))
+      .order("desc")
+      .collect();
+    return Promise.all(
+      rooms.map(async (room) => {
+        const last = (
+          await ctx.db
+            .query("conversationMessages")
+            .withIndex("by_room", (q) => q.eq("roomId", room._id))
+            .order("desc")
+            .take(1)
+        )[0];
+        const otherIds = room.participantIds.filter((p) => p !== user._id);
+        const others = await Promise.all(
+          otherIds.map(async (p) => {
+            const u = await ctx.db.get(p);
+            return u
+              ? { _id: u._id, name: u.name ?? "Utilisateur", phone: u.phone }
+              : null;
+          }),
+        );
+        return {
+          room,
+          lastMessage: last ?? null,
+          otherParticipants: others.filter(Boolean),
+        };
+      }),
+    );
+  },
+});
+
+/**
+ * Liste les messages d'une conversation, ordre chronologique décroissant.
+ */
+export const listMessages = query({
+  args: { roomId: v.id("chatRooms") },
+  handler: async (ctx, args) => {
+    await requireUser(ctx);
+    const room = await ctx.db.get(args.roomId);
+    if (!room) throw new Error("Conversation introuvable.");
+    const messages = await ctx.db
+      .query("conversationMessages")
+      .withIndex("by_room", (q) => q.eq("roomId", args.roomId))
+      .order("desc")
+      .collect();
+    return Promise.all(
+      messages.map(async (m) => {
+        const sender = await ctx.db.get(m.senderId);
+        return {
+          ...m,
+          senderName: sender?.name ?? "Utilisateur",
+          isMe: sender?._id === (await requireUser(ctx))._id,
+        };
+      }),
+    );
+  },
+});
+
 // ===================== V6 : KYC anti-fraude & doublons =====================
 
 /**

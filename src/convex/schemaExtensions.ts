@@ -78,6 +78,36 @@ export const contracts = defineTable({
 .index("by_status", ["status"])
 .index("by_reference", ["reference"]);
 
+/** Conversations après mise en relation (§§…). */
+export const chatRooms = defineTable({
+  requestId: v.optional(v.id("serviceRequests")),
+  participantIds: v.array(v.id("users")),
+  subject: v.optional(v.string()),
+  status: v.union(
+    v.literal("active"),
+    v.literal("archived"),
+    v.literal("closed"),
+  ),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+}).index("by_request", ["requestId"])
+.index("by_participants", ["participantIds"])
+.index("by_status", ["status"]);
+
+/** Messages de conversation (texte + notification de « appel »). */
+export const conversationMessages = defineTable({
+  roomId: v.id("chatRooms"),
+  senderId: v.id("users"),
+  body: v.optional(v.string()),
+  /** Notification d'appel sortant ou entrant dans la conversation. */
+  callKind: v.optional(
+    v.union(v.literal("appel_sortant"), v.literal("appel_entrant"), v.literal("appel_accepte"), v.literal("appel_recu"), v.literal("appel_decroche"), v.literal("appel_terminé")),
+  ),
+  at: v.number(),
+}).index("by_room", ["roomId"])
+.index("by_sender", ["senderId"])
+.index("by_at", ["at"]);
+
 /** Gabarits de contrats (§5..§10). */
 export const contractTemplates = defineTable({
   kind: v.string(),

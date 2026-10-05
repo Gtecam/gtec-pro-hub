@@ -62,9 +62,7 @@ export function AppointmentsClientCard() {
   const mine = useQuery(api.appointments.myAppointments, {});
   const book = useMutation(api.appointments.bookAppointment);
   const updateAppt = useMutation(api.appointments.updateAppointment);
-  const openConversation = useMutation(api.appointments.openConversation);
-  const conversations = useQuery(api.appointments.conversations, { requestId: "skip" });
-  const listConversations = useQuery(api.appointments.listConversations, { userId: "skip" });
+  const openConversation = useMutation(api.appointments.createChatRoom);
 
   const slotsByDay = useMemo(() => {
     const map = new Map<string, Array<{ start: number; end: number }>>();
@@ -114,7 +112,10 @@ export function AppointmentsClientCard() {
   const openChat = async (requestId: Id<"serviceRequests">, clientUserId: Id<"users">) => {
     setBusy(true);
     try {
-      const room = await openConversation({ requestId, clientUserId });
+      const room = await openConversation({
+        requestId,
+        participantIds: [clientUserId],
+      });
       toast.success("Conversation ouverte");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Erreur");

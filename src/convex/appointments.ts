@@ -4,144 +4,15 @@ import type { Doc, Id } from "./_generated/dataModel";
 import { requireUser } from "./gtec";
 import { generateAvailableSlots, isoDate } from "../lib/availability";
 
-const stamp = () => ({ isActive: true, createdAt: Date.now(), updatedAt: Date.now() });
+const stamp = () => ({ status: "active" });
 
-export const openConversation = mutation({
-  args: {
-    requestId: v.id("serviceRequests"),
-    clientUserId: v.id("users"),
-    clientName: v.optional(v.string()),
-    proUserId: v.optional(v.id("users")),
-    proName: v.optional(v.string()),
-  },
-  handler: async (ctx, args) => {
-    const user = await requireUser(ctx);
-    if (args.clientUserId !== user._id && args.proUserId !== user._id) {
-      throw new Error("Action non autorisée.");
-    }
-    const existing = await ctx.db
-      .query("chatRooms")
-      .withIndex("by_request", (q) => q.eq("requestId", args.requestId))
-      .first();
-    if (existing) {
-      await ctx.db.patch(existing._id, {
-        ...(args.clientName ? { clientName: args.clientName } : {}),
-        ...(args.proUserId && !existing.proUserId ? { proUserId: args.proUserId } : {}),
-        ...(args.proName && !existing.proName ? { proName: args.proName } : {}),
-        status: "active",
-        updatedAt: Date.now(),
-      });
-      return existing._id;
-    }
-    return await ctx.db.insert("chatRooms", {
-      requestId: args.requestId,
-      clientUserId: args.clientUserId,
-      proUserId: args.proUserId,
-      clientName: args.clientName ?? "Client GTEC PRO",
-      proName: args.proName ?? "Professionnel GTEC PRO",
-      status: "active",
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-    });
-  },
-});
 
-export const sendMessage = mutation({
-  args: {
-    roomId: v.id("chatRooms"),
-    body: v.string(),
-  },
-  handler: async (ctx, args) => {
-    const user = await requireUser(ctx);
-    const room = await ctx.db.get(args.roomId);
-    if (!room) throw new Error("Conversation introuvable.");
-    if (room.clientUserId !== user._id && room.proUserId !== user._id) {
-      throw new Error("Action non autorisée.");
-    }
-    const msgId = await ctx.db.insert("conversationMessages", {
-      roomId: args.roomId,
-      userId: user._id,
-      body: args.body.trim(),
-      createdAt: Date.now(),
-    });
-    await ctx.db.patch(args.roomId, { updatedAt: Date.now() });
-    const msg = await ctx.db.get(msgId);
-    if (msg && msg.userId !== room.proUserId) {
-      await ctx.db.patch(msgId, { readAt: Date.now() });
-    }
-    return msgId;
-  },
-});
 
-export const conversations = query({
-  args: { requestId: v.id("serviceRequests") },
-  handler: async (ctx, args) => {
-    const user = await requireUser(ctx);
-    const room = await ctx.db
-      .query("chatRooms")
-      .withIndex("by_request", (q) => q.eq("requestId", args.requestId))
-      .first();
-    if (!room) return null;
-    if (room.clientUserId !== user._id && room.proUserId !== user._id) {
-      throw new Error("Action non autorisée.");
-    }
-    const msgs = await ctx.db
-      .query("conversationMessages")
-      .withIndex("by_room", (q) => q.eq("roomId", room._id))
-      .collect();
-    const partners = msgs.filter((m) => m.userId !== room.clientUserId && m.userId !== room.proUserId);
-    return {
-      roomId: room._id,
-      requestId: room.requestId,
-      clientUserId: room.clientUserId,
-      proUserId: room.proUserId,
-      clientName: room.clientName,
-      proName: room.proName,
-      lastAt: room.updatedAt,
-      unreadCount: msgs.filter((m) => m.userId !== user._id && m.readAt === null).length,
-      messages: msgs,
-    };
-  },
-});
 
-export const listConversations = query({
-  args: { userId: v.id("users") },
-  handler: async (ctx, args) => {
-    const user = await requireUser(ctx);
-    const rooms = await ctx.db
-      .query("chatRooms")
-      .withIndex("by_client", (q) => q.eq("clientUserId", args.userId))
-      .collect();
-    const proRooms = await ctx.db
-      .query("chatRooms")
-      .withIndex("by_pro", (q) => q.eq("proUserId", args.userId))
-      .collect();
-    const allRooms = [...rooms, ...proRooms.filter((r) => r.status === "active")];
-    const enriched = await Promise.all(
-      allRooms.map(async (r) => {
-        const last = await ctx.db
-          .query("conversationMessages")
-          .withIndex("by_room", (q) => q.eq("roomId", r._id))
-          .first();
-        return {
-          roomId: r._id,
-          requestId: r.requestId,
-          clientUserId: r.clientUserId,
-          proUserId: r.proUserId,
-          clientName: r.clientName,
-          proName: r.proName,
-          lastMessage: last?.body ?? "",
-          lastAt: last?.createdAt ?? r.createdAt,
-          unreadCount: last && last.userId !== args.userId && last.readAt === null ? 1 : 0,
-        };
-      }),
-    );
-    if (user._id !== args.userId && user.role !== "admin") {
-      throw new Error("Action non autorisée.");
-    }
-    return enriched.sort((a, b) => b.lastAt - a.lastAt);
-  },
-});
+
+
+
+
 
 export const saveAppointment = mutation({
   args: {
@@ -170,6 +41,7 @@ export const saveAppointment = mutation({
     if (existing) {
       await ctx.db.patch(existing._id, {
         ...args,
+        status: "active",
         updatedAt: Date.now(),
       });
       return existing._id;
@@ -177,7 +49,9 @@ export const saveAppointment = mutation({
     return await ctx.db.insert("appointments", {
       ...args,
       clientUserId: args.userId,
-      ...stamp(),
+      status: "active",
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
     });
   },
 });
@@ -224,9 +98,46 @@ export const bookableTechnicians = query({
   },
 });
 
+export const createChatRoom = mutation({
+  args: {
+    requestId: v.optional(v.id("serviceRequests")),
+    participantIds: v.array(v.id("users")),
+    subject: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const user = await requireUser(ctx);
+    if (args.participantIds.length < 2) {
+      throw new Error("Une conversation doit contenir au moins deux participants.");
+    }
+    const existing = (
+      await ctx.db
+        .query("chatRooms")
+        .filter((q) => q.eq(q.field("requestId"), args.requestId ?? ""))
+        .collect()
+    ).filter(
+      (r) =>
+        r.requestId === args.requestId &&
+        args.participantIds.every((p) => r.participantIds.includes(p)),
+    );
+    if (existing.length > 0) {
+      return existing[0]._id;
+    }
+    return await ctx.db.insert("chatRooms", {
+      requestId: args.requestId,
+      participantIds: args.participantIds,
+      subject: args.subject,
+      status: "active",
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    });
+  },
+});
+
+
 export const availableSlots = query({
   args: { proUserId: v.id("users") },
   handler: async (ctx, args) => {
+    if (!args.proUserId) return [];
     const profile = await ctx.db
       .query("technicianProfiles")
       .withIndex("by_user", (q) => q.eq("userId", args.proUserId))
@@ -255,10 +166,7 @@ export const bookAppointment = mutation({
   },
   handler: async (ctx, args) => {
     const user = await requireUser(ctx);
-    const booked = {
-      slotStart: args.start,
-      slotEnd: args.start + 60 * 60_000,
-    };
+    const booked = { start: args.start, end: args.start + 60 * 60_000 };
     const slot = generateAvailableSlots({
       rules: [{ weekday: new Date(args.start).getDay(), startMin: 0, endMin: 24 * 60 }],
       booked: [booked],
@@ -337,6 +245,7 @@ export const updateAppointment = mutation({
       await ctx.db.patch(args.id, {
         slotStart: Date.parse(args.date),
         slotEnd: Date.parse(args.date) + 60 * 60_000,
+        status: "CONFIRME",
         updatedAt: Date.now(),
       });
     }
@@ -374,48 +283,23 @@ export const upsertAvailabilityRule = mutation({
     capacityPerDay: v.optional(v.number()),
     effectiveFrom: v.optional(v.string()),
     effectiveUntil: v.optional(v.string()),
-    rule: v.optional(
-      v.object({
-        weekday: v.number(),
-        startMin: v.number(),
-        endMin: v.number(),
-        slotMinutes: v.optional(v.number()),
-        travelMinutes: v.optional(v.number()),
-        capacityPerDay: v.optional(v.number()),
-        effectiveFrom: v.optional(v.string()),
-        effectiveUntil: v.optional(v.string()),
-      }),
-    ),
   },
   handler: async (ctx, args) => {
     const user = await requireUser(ctx);
-    // Compat UI : soit { userId, rule }, soit { id?, weekday, startMin, ... }.
-    const rule =
-      args.rule ??
-      (args.weekday !== undefined && args.startMin !== undefined && args.endMin !== undefined
-        ? {
-            weekday: args.weekday,
-            startMin: args.startMin,
-            endMin: args.endMin,
-            slotMinutes: args.slotMinutes,
-            travelMinutes: args.travelMinutes,
-            capacityPerDay: args.capacityPerDay,
-            effectiveFrom: args.effectiveFrom,
-            effectiveUntil: args.effectiveUntil,
-          }
-        : undefined);
-    if (!rule) throw new Error("Règle de disponibilité manquante.");
-    if (rule.endMin <= rule.startMin) throw new Error("Créneau invalide.");
     const target = args.userId ?? user._id;
     if (target !== user._id && user.role !== "admin") {
       throw new Error("Action non autorisée.");
     }
+    if (args.weekday === undefined || args.startMin === undefined || args.endMin === undefined) {
+      throw new Error("Règle de disponibilité manquante.");
+    }
+    if (args.endMin <= args.startMin) throw new Error("Créneau invalide.");
     const profile = await ctx.db
       .query("technicianProfiles")
       .withIndex("by_user", (q) => q.eq("userId", target))
       .unique();
     if (!profile) throw new Error("Profil introuvable.");
-    const rules = parseAvailability(profile.availability);
+    const rules = parseAvailability(profile.availabilityRulesJson);
     let idx = -1;
     if (args.id && args.id.includes(":")) {
       const parsed = Number(args.id.split(":").pop());
@@ -424,7 +308,17 @@ export const upsertAvailabilityRule = mutation({
           ? parsed
           : -1;
     }
-    if (idx < 0) idx = rules.findIndex((r) => r.weekday === rule.weekday);
+    if (idx < 0) idx = rules.findIndex((r) => r.weekday === args.weekday);
+    const rule = {
+      weekday: args.weekday,
+      startMin: args.startMin,
+      endMin: args.endMin,
+      slotMinutes: args.slotMinutes,
+      travelMinutes: args.travelMinutes,
+      capacityPerDay: args.capacityPerDay,
+      effectiveFrom: args.effectiveFrom,
+      effectiveUntil: args.effectiveUntil,
+    };
     if (idx >= 0) rules[idx] = rule;
     else rules.push(rule);
     await ctx.db.patch(profile._id, {
@@ -451,7 +345,7 @@ export const removeAvailabilityRule = mutation({
       .withIndex("by_user", (q) => q.eq("userId", target))
       .unique();
     if (!profile) throw new Error("Profil introuvable.");
-    const rules = parseAvailability(profile.availability);
+    const rules = parseAvailability(profile.availabilityRulesJson);
     let idx = -1;
     if (args.id && args.id.includes(":")) {
       const parsed = Number(args.id.split(":").pop());
@@ -470,6 +364,8 @@ export const removeAvailabilityRule = mutation({
     return { ok: true };
   },
 });
+
+
 
 export const listAppointmentsForPro = query({
   args: { proUserId: v.id("users") },

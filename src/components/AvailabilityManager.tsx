@@ -165,7 +165,7 @@ export function AvailabilityManager() {
                     size="sm"
                     className="h-7 px-2 text-destructive"
                     disabled={busy}
-                    onClick={() =>                    run(() => removeRule({ id: r._id as string }), "Disponibilité retirée")}
+                    onClick={() =>                    run(() => removeRule({ id: r._id as Id<"availabilityRules"> }), "Disponibilité retirée")}
                     aria-label="Retirer"
                   >
                     <Trash2 className="size-3" />
