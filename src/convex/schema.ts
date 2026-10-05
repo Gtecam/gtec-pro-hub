@@ -43,6 +43,7 @@ const schemaDefinition = defineSchema(
     // default auth tables using convex auth. do not remove or modify
     ...authTables,
 
+
     // the users table is the default users table that is brought in by the authTables
     users: defineTable({
       name: v.optional(v.string()), // name of the user. do not remove
