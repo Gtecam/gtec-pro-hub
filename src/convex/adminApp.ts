@@ -27,7 +27,7 @@ export const ensureDemoAdmin = mutation({
     for (const legacy of LEGACY_ADMIN_EMAILS) {
       const old = await ctx.db
         .query("users")
-        .withIndex("email", (q) => q.eq("email", legacy))
+        .withIndex("by_email", (q) => q.eq("email", legacy))
         .unique();
       if (old && old.role === "admin") {
         await ctx.db.patch(old._id, { role: "user" });
@@ -35,7 +35,7 @@ export const ensureDemoAdmin = mutation({
     }
     const existing = await ctx.db
       .query("users")
-      .withIndex("email", (q) => q.eq("email", ADMIN_EMAIL))
+      .withIndex("by_email", (q) => q.eq("email", ADMIN_EMAIL))
       .unique();
     if (existing) {
       if (existing.role !== "admin") {
