@@ -24,14 +24,10 @@ export const ensureDemoAdmin = mutation({
   args: {},
   handler: async (ctx) => {
     const LEGACY_ADMIN_EMAILS = ["admin@gtecpro.cm"];
-// NOTE: the Convex users table defines its email index as "email", not "by_email";
-// the import below re-exports the real adminApp from the canonical file to avoid a
-// locally-stale copy. If a local edit is needed, update it there.
-const LEGACY_ADMIN_EMAILS = ["admin@gtecpro.cm"];
     for (const legacy of LEGACY_ADMIN_EMAILS) {
       const old = await ctx.db
         .query("users")
-        .withIndex("by_email", (q) => q.eq("email", legacy))
+        .filter((q) => q.eq(q.field("email"), legacy))
         .unique();
       if (old && old.role === "admin") {
         await ctx.db.patch(old._id, { role: "user" });
@@ -39,7 +35,7 @@ const LEGACY_ADMIN_EMAILS = ["admin@gtecpro.cm"];
     }
     const existing = await ctx.db
       .query("users")
-      .withIndex("by_email", (q) => q.eq("email", ADMIN_EMAIL))
+      .filter((q) => q.eq(q.field("email"), ADMIN_EMAIL))
       .unique();
     if (existing) {
       if (existing.role !== "admin") {

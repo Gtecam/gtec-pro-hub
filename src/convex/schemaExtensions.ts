@@ -290,6 +290,34 @@ export const documentAccessLogs = defineTable({
 }).index("by_document", ["documentId"])
 .index("by_accessedAt", ["accessedAt"]);
 
+/** Avoirs (§17) — contreparties d'annulation et remboursements. */
+export const creditNotes = defineTable({
+  reference: v.string(), // GTEC-AVR-2026-NNNNNN
+  invoiceId: v.optional(v.id("invoices")),
+  contractId: v.optional(v.id("contracts")),
+  requestId: v.optional(v.id("serviceRequests")),
+  clientId: v.id("users"),
+  professionalId: v.id("users"),
+  reason: v.string(),
+  amountHT: v.number(),
+  taxRate: v.number(),
+  taxAmount: v.number(),
+  totalTTC: v.number(),
+  currency: v.string(),
+  status: v.union(
+    v.literal("emis"),
+    v.literal("utilise"),
+    v.literal("rembourse"),
+    v.literal("annule"),
+  ),
+  issuedById: v.optional(v.id("users")),
+  issuedAt: v.number(),
+  validatedById: v.optional(v.id("users")),
+  validatedAt: v.optional(v.number()),
+}).index("by_client", ["clientId"])
+.index("by_invoice", ["invoiceId"])
+.index("by_reference", ["reference"]);
+
 // =====================================================================
 // FUSION AVEC LE SCHÉMA PRINCIPAL
 // =====================================================================
@@ -303,7 +331,7 @@ export const extensionTables = {
   invoiceItems,
   invoicePayments,
   invoiceSequences,
-  creditNotes: undefined as unknown,
+  creditNotes,
   commissionRecords,
   contractSignatures,
   contractAmendments,
