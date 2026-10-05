@@ -295,7 +295,7 @@ export function AppointmentsClientCard() {
               </div>
             ))}
             {history.map((a) => {
-              const meta = STATUS_BADGE[a.status] ?? STATUS_BADGE.CONFIRME;
+              const meta = STATUS_BADGE[a.status ?? ""] ?? STATUS_BADGE.CONFIRME;
               return (
                 <div key={a._id} className="flex items-center justify-between gap-2 rounded-lg border border-border/60 bg-muted/30 px-3 py-2">
                   <div className="min-w-0">

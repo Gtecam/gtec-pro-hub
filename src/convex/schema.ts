@@ -272,17 +272,53 @@ const schemaDefinition = defineSchema(
       receivedAt: v.optional(v.number()),
     }).index("by_request", ["requestId"]),
 
+    // Factures — fusion V1 + module CONTRATS/FACTURATION (schemaExtensions).
+    // Champs V1 (number/amount/status/issuedAt) + champs module optionnels.
     invoices: defineTable({
       requestId: v.id("serviceRequests"),
       clientId: v.id("users"),
       number: v.string(),
       amount: v.number(),
       currency: v.string(),
-      status: v.union(v.literal("emise"), v.literal("payee")),
+      status: v.union(
+        v.literal("a_venir"),
+        v.literal("emise"),
+        v.literal("en_attente"),
+        v.literal("payee"),
+        v.literal("en_retard"),
+        v.literal("annulee"),
+        v.literal("remboursee"),
+      ),
       issuedAt: v.number(),
+      // ---- champs module CONTRATS/FACTURATION (optionnels) ----
+      reference: v.optional(v.string()), // GTEC-FAC-2026-NNNNNN
+      type: v.optional(v.string()),
+      contractId: v.optional(v.id("contracts")),
+      professionalId: v.optional(v.id("users")),
+      issueDate: v.optional(v.number()),
+      dueDate: v.optional(v.number()),
+      paymentTerm: v.optional(v.number()),
+      subTotal: v.optional(v.number()),
+      taxRate: v.optional(v.number()),
+      taxAmount: v.optional(v.number()),
+      discount: v.optional(v.number()),
+      totalHT: v.optional(v.number()),
+      totalTTCRef: v.optional(v.number()),
+      totalPaid: v.optional(v.number()),
+      remaining: v.optional(v.number()),
+      hashDocument: v.optional(v.string()),
+      numVersion: v.optional(v.number()),
+      pdfUrl: v.optional(v.string()),
+      pdfUrlSigned: v.optional(v.string()),
+      issuedById: v.optional(v.id("users")),
+      validatedById: v.optional(v.id("users")),
+      validatedAt: v.optional(v.number()),
     })
       .index("by_request", ["requestId"])
-      .index("by_client", ["clientId"]),
+      .index("by_client", ["clientId"])
+      .index("by_professional", ["professionalId"])
+      .index("by_status", ["status"])
+      .index("by_reference", ["reference"]),
 
     requestEvents: defineTable({
       requestId: v.id("serviceRequests"),
@@ -452,6 +488,8 @@ const schemaDefinition = defineSchema(
           v.literal("conge"),
         ),
       ),
+      // Règles de disponibilité hebdomadaires (JSON de AvailabilityRule[], §8).
+      availabilityRulesJson: v.optional(v.string()),
     })
       .index("by_user", ["userId"])
       .index("by_status", ["status"]),
@@ -1119,6 +1157,429 @@ const schemaDefinition = defineSchema(
       .index("by_user", ["userId"]),
 
     // ============ EXTENSIONS GTEC PRO — DOSSIER TECHNIQUE (PHASES 2-4) ===========
+    // ============ MODULES RAPPELS, CONSEILLER, BÂTIMENTS, MARCHÉ, =============
+    // ============ MISSIONS AVANCÉES, CLIENT ENTREPRISE, PROFIL ================
+
+    // Rappels / prise de rendez-vous (§8 — agenda).
+    appointments: defineTable({
+      userId: v.id("users"),
+      proUserId: v.optional(v.id("users")),
+      requestId: v.optional(v.id("serviceRequests")),
+      clientUserId: v.id("users"),
+      proUserIdField: v.optional(v.id("users")),
+      slotStart: v.optional(v.number()),
+      slotEnd: v.optional(v.number()),
+      mode: v.optional(v.union(v.literal("SUR_SITE"), v.literal("A_DISTANCE"))),
+      city: v.optional(v.string()),
+      address: v.optional(v.string()),
+      note: v.optional(v.string()),
+      status: v.optional(v.string()),
+      contactName: v.optional(v.string()),
+      contactPhone: v.optional(v.string()),
+      choice: v.optional(
+        v.union(
+          v.literal("rappeler"),
+          v.literal("rappeler_plus_tard"),
+          v.literal("passer_plus_tard"),
+          v.literal("refuser"),
+          v.literal("suspension"),
+          v.literal("souscrire"),
+        ),
+      ),
+      message: v.optional(v.string()),
+      emoji: v.optional(v.string()),
+      date: v.optional(v.string()),
+      reason: v.optional(v.string()),
+      dismissedAt: v.optional(v.number()),
+      isActive: v.optional(v.boolean()),
+      createdAt: v.number(),
+      updatedAt: v.number(),
+    })
+      .index("by_user", ["userId"])
+      .index("by_pro", ["proUserId"])
+      .index("by_client", ["clientUserId"]),
+
+    // Règles de disponibilité récurrentes (miroir documenté du JSON profil).
+    availabilityRules: defineTable({
+      userId: v.id("users"),
+      weekday: v.number(),
+      startMin: v.number(),
+      endMin: v.number(),
+      slotMinutes: v.optional(v.number()),
+      travelMinutes: v.optional(v.number()),
+      capacityPerDay: v.optional(v.number()),
+      effectiveFrom: v.optional(v.string()),
+      effectiveUntil: v.optional(v.string()),
+      isActive: v.optional(v.boolean()),
+      createdAt: v.number(),
+      updatedAt: v.number(),
+    }).index("by_user", ["userId"]),
+
+    // Favoris client (§35).
+    favorites: defineTable({
+      userId: v.id("users"),
+      targetType: v.union(v.literal("technician"), v.literal("company"), v.literal("service")),
+      targetId: v.string(),
+      label: v.string(),
+      subtitle: v.optional(v.string()),
+      createdAt: v.number(),
+    }).index("by_user", ["userId"]),
+
+    // Client entreprise (§14) + sites/agences + équipe multi-utilisateurs.
+    clientCompanies: defineTable({
+      ownerUserId: v.id("users"),
+      name: v.string(),
+      tradeName: v.optional(v.string()),
+      rccm: v.optional(v.string()),
+      niu: v.optional(v.string()),
+      sector: v.optional(v.string()),
+      logoUrl: v.optional(v.string()),
+      address: v.optional(v.string()),
+      region: v.optional(v.string()),
+      city: v.optional(v.string()),
+      phone: v.optional(v.string()),
+      email: v.optional(v.string()),
+      status: v.union(
+        v.literal("DRAFT"),
+        v.literal("SUBMITTED"),
+        v.literal("UNDER_REVIEW"),
+        v.literal("VERIFIED"),
+        v.literal("REJECTED"),
+      ),
+      reviewNote: v.optional(v.string()),
+      verifiedAt: v.optional(v.number()),
+      verifiedBy: v.optional(v.id("users")),
+      isActive: v.boolean(),
+      createdAt: v.number(),
+      updatedAt: v.number(),
+    }).index("by_owner", ["ownerUserId"]),
+
+    clientSites: defineTable({
+      companyId: v.id("clientCompanies"),
+      label: v.string(),
+      city: v.string(),
+      quarter: v.optional(v.string()),
+      address: v.string(),
+      region: v.optional(v.string()),
+      isDefault: v.boolean(),
+      isActive: v.boolean(),
+      createdAt: v.number(),
+      updatedAt: v.number(),
+    }).index("by_company", ["companyId"]),
+
+    clientTeamMembers: defineTable({
+      companyId: v.id("clientCompanies"),
+      userId: v.id("users"),
+      role: v.string(),
+      status: v.union(v.literal("INVITED"), v.literal("ACTIVE"), v.literal("DECLINED")),
+      invitedBy: v.id("users"),
+      invitedAt: v.number(),
+      respondedAt: v.optional(v.number()),
+      isActive: v.boolean(),
+      createdAt: v.number(),
+      updatedAt: v.number(),
+    })
+      .index("by_company", ["companyId"])
+      .index("by_user", ["userId"]),
+
+    // MON MATÉRIEL (§10) + confirmation annuelle (§22).
+    technicianEquipment: defineTable({
+      userId: v.id("users"),
+      label: v.string(),
+      brand: v.optional(v.string()),
+      model: v.optional(v.string()),
+      quantity: v.number(),
+      condition: v.optional(
+        v.union(
+          v.literal("neuf"),
+          v.literal("bon_etat"),
+          v.literal("use"),
+          v.literal("a_reparer"),
+          v.literal("reforme"),
+        ),
+      ),
+      photoUrl: v.optional(v.string()),
+      acquiredAt: v.optional(v.number()),
+      isActive: v.boolean(),
+      createdAt: v.number(),
+      updatedAt: v.number(),
+    }).index("by_user", ["userId"]),
+
+    profileConfirmations: defineTable({
+      userId: v.id("users"),
+      confirmedAt: v.number(),
+    }).index("by_user", ["userId"]),
+
+    // Conseiller IA : diagnostic, estimation budget, cahier des charges.
+    aiDiagnostics: defineTable({
+      userId: v.id("users"),
+      sessionKey: v.string(),
+      serviceKey: v.optional(v.string()),
+      question: v.string(),
+      answers: v.array(v.object({ question: v.string(), answer: v.string() })),
+      resultJson: v.string(),
+      convertedRequestId: v.optional(v.id("serviceRequests")),
+      isActive: v.optional(v.boolean()),
+      createdAt: v.number(),
+      updatedAt: v.number(),
+    }).index("by_user", ["userId"]),
+
+    budgetEstimates: defineTable({
+      userId: v.id("users"),
+      sessionKey: v.string(),
+      inputsJson: v.string(),
+      resultJson: v.string(),
+      convertedRequestId: v.optional(v.id("serviceRequests")),
+      isActive: v.optional(v.boolean()),
+      createdAt: v.number(),
+      updatedAt: v.number(),
+    }).index("by_user", ["userId"]),
+
+    projectBriefs: defineTable({
+      userId: v.id("users"),
+      sessionKey: v.string(),
+      title: v.string(),
+      answers: v.array(v.object({ question: v.string(), answer: v.string() })),
+      contentJson: v.string(),
+      convertedRequestId: v.optional(v.id("serviceRequests")),
+      isActive: v.optional(v.boolean()),
+      createdAt: v.number(),
+      updatedAt: v.number(),
+    }).index("by_user", ["userId"]),
+
+    // Dossier technique du bâtiment (F°5/6/7/33).
+    buildings: defineTable({
+      ownerUserId: v.id("users"),
+      name: v.string(),
+      kind: v.string(),
+      city: v.string(),
+      quarter: v.optional(v.string()),
+      address: v.optional(v.string()),
+      description: v.optional(v.string()),
+      publicToken: v.string(),
+      publicEnabled: v.boolean(),
+      isActive: v.boolean(),
+      createdAt: v.number(),
+      updatedAt: v.number(),
+    })
+      .index("by_owner", ["ownerUserId"])
+      .index("by_token", ["publicToken"]),
+
+    buildingAssets: defineTable({
+      buildingId: v.id("buildings"),
+      ownerUserId: v.id("users"),
+      label: v.string(),
+      domainCode: v.optional(v.string()),
+      model: v.optional(v.string()),
+      brand: v.optional(v.string()),
+      serialNumber: v.optional(v.string()),
+      installedAt: v.optional(v.number()),
+      warrantyMonths: v.optional(v.number()),
+      warrantyUntil: v.optional(v.number()),
+      nextMaintenanceAt: v.optional(v.number()),
+      status: v.optional(v.string()),
+      qrToken: v.string(),
+      publicEnabled: v.boolean(),
+      isActive: v.boolean(),
+      createdAt: v.number(),
+      updatedAt: v.number(),
+    })
+      .index("by_building", ["buildingId"])
+      .index("by_token", ["qrToken"]),
+
+    buildingDocuments: defineTable({
+      buildingId: v.id("buildings"),
+      kind: v.string(),
+      title: v.string(),
+      documentUrl: v.optional(v.string()),
+      note: v.optional(v.string()),
+      expiresAt: v.optional(v.number()),
+      isActive: v.boolean(),
+      createdAt: v.number(),
+      updatedAt: v.number(),
+    }).index("by_building", ["buildingId"]),
+
+    buildingEvents: defineTable({
+      buildingId: v.id("buildings"),
+      assetId: v.optional(v.id("buildingAssets")),
+      kind: v.string(),
+      label: v.string(),
+      detail: v.optional(v.string()),
+      at: v.number(),
+    }).index("by_building", ["buildingId"]),
+
+    buildingAccessGrants: defineTable({
+      buildingId: v.id("buildings"),
+      grantedToUserId: v.id("users"),
+      grantedByUserId: v.id("users"),
+      scope: v.union(v.literal("lecture"), v.literal("intervention")),
+      until: v.number(),
+      isActive: v.boolean(),
+      createdAt: v.number(),
+      updatedAt: v.number(),
+    })
+      .index("by_user", ["grantedToUserId"])
+      .index("by_building", ["buildingId"]),
+
+    // Marché de services (§3-§20) : matching, shortlist, devis, présence.
+    professionalMatches: defineTable({
+      requestId: v.id("serviceRequests"),
+      clientId: v.id("users"),
+      proUserIds: v.array(v.id("users")),
+      expanded: v.optional(v.boolean()),
+      at: v.number(),
+    }),
+
+    matchingScores: defineTable({
+      requestId: v.id("serviceRequests"),
+      proUserId: v.id("users"),
+      total: v.number(),
+      detail: v.object({
+        skills: v.number(),
+        proximity: v.number(),
+        availability: v.number(),
+        quality: v.number(),
+        experience: v.number(),
+        certifications: v.number(),
+        load: v.number(),
+        history: v.number(),
+      }),
+      at: v.number(),
+    }),
+
+    professionalComparisons: defineTable({
+      requestId: v.id("serviceRequests"),
+      clientId: v.id("users"),
+      proUserIds: v.array(v.id("users")),
+      at: v.number(),
+    }),
+
+    clientShortlists: defineTable({
+      requestId: v.id("serviceRequests"),
+      clientId: v.id("users"),
+      proUserIds: v.array(v.id("users")),
+      updatedAt: v.number(),
+      isActive: v.boolean(),
+    }).index("by_request", ["requestId"]),
+
+    quoteRequests: defineTable({
+      requestId: v.id("serviceRequests"),
+      clientId: v.id("users"),
+      proUserId: v.id("users"),
+      status: v.union(
+        v.literal("envoyee"),
+        v.literal("proposee"),
+        v.literal("acceptee"),
+        v.literal("refusee"),
+        v.literal("expiree"),
+      ),
+      responseDeadline: v.number(),
+      respondedAt: v.optional(v.number()),
+      proposal: v.optional(
+        v.object({
+          amount: v.number(),
+          arrivalDelayMin: v.optional(v.number()),
+          plannedAt: v.optional(v.number()),
+          warrantyDays: v.optional(v.number()),
+          message: v.optional(v.string()),
+        }),
+      ),
+      createdAt: v.number(),
+      updatedAt: v.number(),
+    })
+      .index("by_request", ["requestId"])
+      .index("by_pro", ["proUserId"])
+      .index("by_request_pro", ["requestId", "proUserId"]),
+
+    selectionEvents: defineTable({
+      requestId: v.id("serviceRequests"),
+      clientId: v.id("users"),
+      kind: v.string(),
+      proUserId: v.optional(v.id("users")),
+      detail: v.optional(v.string()),
+      at: v.number(),
+    }),
+
+    professionalPresence: defineTable({
+      userId: v.id("users"),
+      status: v.union(
+        v.literal("disponible"),
+        v.literal("occupe"),
+        v.literal("en_intervention"),
+        v.literal("indisponible"),
+        v.literal("hors_ligne"),
+      ),
+      availableFrom: v.optional(v.number()),
+      note: v.optional(v.string()),
+      updatedAt: v.number(),
+    }).index("by_user", ["userId"]),
+
+    professionalServiceZones: defineTable({
+      userId: v.id("users"),
+      city: v.string(),
+      district: v.optional(v.string()),
+      radiusKm: v.number(),
+      center: v.optional(v.object({ lat: v.number(), lon: v.number() })),
+      isActive: v.boolean(),
+      createdAt: v.number(),
+      updatedAt: v.number(),
+    }).index("by_user", ["userId"]),
+
+    availabilitySlots: defineTable({
+      userId: v.id("users"),
+      start: v.number(),
+      end: v.number(),
+      status: v.union(v.literal("libre"), v.literal("bloque")),
+      createdAt: v.number(),
+      updatedAt: v.number(),
+    }).index("by_user", ["userId"]),
+
+    // Missions avancées (F°10/12/13) : check-lists, certificats, garanties.
+    missionChecklists: defineTable({
+      requestId: v.id("serviceRequests"),
+      assignmentId: v.optional(v.id("assignments")),
+      status: v.union(v.literal("ACTIVE"), v.literal("COMPLETE")),
+      isActive: v.boolean(),
+      createdAt: v.number(),
+      updatedAt: v.number(),
+    }).index("by_request", ["requestId"]),
+
+    checklistItems: defineTable({
+      checklistId: v.id("missionChecklists"),
+      label: v.string(),
+      mandatory: v.boolean(),
+      done: v.boolean(),
+      doneAt: v.optional(v.number()),
+      doneBy: v.optional(v.id("users")),
+      createdAt: v.number(),
+      updatedAt: v.number(),
+    }).index("by_checklist", ["checklistId"]),
+
+    digitalCertificates: defineTable({
+      requestId: v.id("serviceRequests"),
+      number: v.string(),
+      verifyToken: v.string(),
+      payloadHash: v.string(),
+      payload: v.string(),
+      issuedAt: v.number(),
+    })
+      .index("by_request", ["requestId"])
+      .index("by_token", ["verifyToken"]),
+
+    workGuarantees: defineTable({
+      requestId: v.id("serviceRequests"),
+      clientId: v.id("users"),
+      startedAt: v.number(),
+      days: v.number(),
+      until: v.number(),
+      status: v.union(v.literal("ACTIVE"), v.literal("EXPIRED")),
+      isActive: v.boolean(),
+      createdAt: v.number(),
+      updatedAt: v.number(),
+    })
+      .index("by_request", ["requestId"])
+      .index("by_client", ["clientId"]),
+
     ...extensionTables,
   },
   { schemaValidation: false },

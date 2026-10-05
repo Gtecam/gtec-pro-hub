@@ -34,8 +34,10 @@ import { requireAdminScope } from "./gtec";
 export const getCommissionRateQuery = query({
   args: {},
   handler: async (ctx) => {
-    const rows = await ctx.db.query("commissionRules").order("updatedAt").collect();
-    return rows.length > 0 ? rows[rows.length - 1] : null;
+    const rows = (await ctx.db.query("commissionRules").withIndex("by_updatedAt").collect()).sort(
+      (a, b) => b.updatedAt - a.updatedAt,
+    );
+    return rows.length > 0 ? rows[0] : null;
   },
 });
 
@@ -53,11 +55,12 @@ export const setCommissionRate = internalMutation({
     if (args.newRatePercent < 0 || args.newRatePercent > 100) {
       throw new Error("Le taux de commission doit être entre 0 et 100 %.");
     }
-    const existing = await ctx.db
-      .query("commissionRules")
-      .order("updatedAt")
-      .sort("desc")
-      .first();
+    const existing = (
+      await ctx.db
+        .query("commissionRules")
+        .withIndex("by_updatedAt")
+        .collect()
+    ).sort((a, b) => b.updatedAt - a.updatedAt)[0];
     await ctx.db.insert("commissionRules", {
       adminId: args.adminId,
       oldRatePercent: existing?.newRatePercent ?? 15,
@@ -157,7 +160,7 @@ export const createContractFromQuote = mutation({
         : "Nouveau contrat de maintenance",
       clientId: args.clientId,
       professionalId: args.professionalId,
-      description: args.description,
+      description: undefined,
       durationMonths: args.durationMonths,
       frequency: args.frequency,
       frequencyCustom: args.frequencyCustom,
@@ -185,6 +188,7 @@ export const createContractFromQuote = mutation({
       amount: commission,
       netAmount: net,
       currency: "FCFA",
+      paymentStatus: "en_attente",
       version: 1,
     });
 
@@ -371,9 +375,12 @@ export const addDocumentVersion = internalMutation({
 export const listClientDocuments = query({
   args: { clientId: v.id("users"), type: v.optional(v.string()) },
   handler: async (ctx, args) => {
-    const q = ctx.db.query("documents").withIndex("by_client", (q) => q.eq("clientId", args.clientId));
-    if (args.type) q.withIndex("by_type", (q) => q.eq("type", args.type));
-    return await q.collect();
+    let rows = await ctx.db
+      .query("documents")
+      .withIndex("by_client", (q) => q.eq("clientId", args.clientId))
+      .collect();
+    if (args.type) rows = rows.filter((d) => d.type === args.type);
+    return rows;
   },
 });
 
@@ -381,11 +388,12 @@ export const listClientDocuments = query({
 export const listProfessionalDocuments = query({
   args: { professionalId: v.id("users"), type: v.optional(v.string()) },
   handler: async (ctx, args) => {
-    const q = ctx.db
+    let rows = await ctx.db
       .query("documents")
-      .withIndex("by_professional", (q) => q.eq("professionalId", args.professionalId));
-    if (args.type) q.withIndex("by_type", (q) => q.eq("type", args.type));
-    return await q.collect();
+      .withIndex("by_professional", (q) => q.eq("professionalId", args.professionalId))
+      .collect();
+    if (args.type) rows = rows.filter((d) => d.type === args.type);
+    return rows;
   },
 });
 
@@ -468,6 +476,9 @@ export const adminAuditLogs = query({
   args: {},
   handler: async (ctx) => {
     await requireAdminScope(ctx, "finance", "super_admin");
-    return await ctx.db.query("auditLogs").order("desc").take(200);
+    const logs = (await ctx.db.query("auditLogs").withIndex("by_at").collect()).sort(
+      (a, b) => b.at - a.at,
+    );
+    return logs.slice(0, 200);
   },
 });

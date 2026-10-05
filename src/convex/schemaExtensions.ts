@@ -64,6 +64,10 @@ export const contracts = defineTable({
     v.literal("annule"),
     v.literal("favorisé"),
   ),
+  // État de signature électronique (§15) — patché par contracts.ts.
+  clientAccepted: v.optional(v.boolean()),
+  professionalAccepted: v.optional(v.boolean()),
+  documentHash: v.optional(v.string()),
   originalContractId: v.optional(v.id("contracts")),
   createdAt: v.number(),
   updatedAt: v.number(),
@@ -89,9 +93,11 @@ export const contractTemplates = defineTable({
   createdAt: v.number(),
   updatedAt: v.number(),
 }).index("by_kind", ["kind"])
-.index("by_active", ["active"]);
-
-/** Factures / avoirs (§16..§18). */
+.index("by_active", ["active"]);/**Factures / avoirs (§16..§18).
+ * NB : la définition canonique fusionnée (champs V1 + module) vit dans
+ * schema.ts — ce doublet n'est PAS intégré à `extensionTables` pour éviter
+ * d'écraser la table fusionnée (TS2783).
+ */
 export const invoices = defineTable({
   reference: v.string(), // GTEC-FAC-2026-NNNNNN
   type: v.string(),
@@ -322,12 +328,14 @@ export const creditNotes = defineTable({
 // FUSION AVEC LE SCHÉMA PRINCIPAL
 // =====================================================================
 
-/** Table de fusion pour schema.ts (spread). */
+/** Table de fusion pour schema.ts (spread).
+ *  `invoices` est volontairement absent : la table fusionnée (V1 + module)
+ *  est définie dans schema.ts (index by_request/by_client requis par gtec.ts).
+ */
 export const extensionTables = {
   commissionRules,
   contracts,
   contractTemplates,
-  invoices,
   invoiceItems,
   invoicePayments,
   invoiceSequences,

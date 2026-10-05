@@ -382,3 +382,65 @@ gestion administrative des commandes diaspora (validation à distance du bénéf
 - **Non couvert** (hors périmètre V1) : matching avancé score, shortlists multi-pros, comparateurs de devis détaillés, marketplace B2B, bâtiments/équipements, garanties, maintenance, IoT.
 - **Clarté V1** : le policier métier reste celui du cahier des charges — la demande est un simple flux, le devis est le loup de la situation, l'acceptation déclenche l'affectation, le suivi est en temps réel, la réception est signée, le paiement est sécurisé, l'évaluation est laissée libre.
 - L'espace admin conserve les indicateurs administratifs de la V1 (clients, pros, demandes, prestations, PA, commissions, abonnements, réclamations, notes, délais).
+
+---
+
+## 11. Module CONTRATS, COMMISSIONS ET FACTURATION (V2)
+
+Tables définies dans `src/convex/schemaExtensions.ts` et fusionnées dans le
+schéma principal via le spread `...extensionTables` de `src/convex/schema.ts`
+(`schemaValidation: false`). API métier : `src/convex/contracts.ts` — le
+front-end n'accède jamais aux tables directement.
+
+### 11.1 Tables du module
+
+| Table | Rôle (référentiel) | Champs clés |
+|---|---|---|
+| `commissionRules` | Taux de commission figé par transaction, 15 % initial, journal d'audit (§1) | `newRatePercent`, `oldRatePercent`, `adminId`, `updatedAt` |
+| `contracts` | Contrats GTEC-CTR-YYYY-NNNNNN, durée/fréquence/conditions, versions immuables (§14) | `reference`, `type`, `clientId`, `professionalId`, `amountHT`, `commissionRatePercent`, `commissionAmount`, `netAmount`, `status`, `version`, `clientAccepted`, `professionalAccepted`, `documentHash` |
+| `contractTemplates` | Gabarits par type de maintenance, clauses et obligations (§5-§10) | `kind`, `label`, `clauses`, `active` |
+| `invoiceItems` | Lignes de facture (désignation, quantité, prix unitaire, TVA) | `invoiceId`, `designation`, `quantity`, `unitPrice`, `total`, `taxRate` |
+| `invoicePayments` | Encaissements partiels par facture, idempotence `externalRef`/`transactionRef` (§16) | `invoiceId`, `amount`, `method`, `status`, `transactionRef` |
+| `invoiceSequences` | Compteur partagé de numérotation CTR/FAC (§24) | `sequence`, `lastRefNumber` |
+| `commissionRecords` | Commission due/payée par transaction (§19), rattachable devis/contrat/facture | `requestId`, `quoteId`, `contractId`, `invoiceId`, `baseAmount`, `ratePercent`, `amount`, `paymentStatus` |
+| `contractSignatures` | Signatures électroniques horodatées (IP, user-agent, hash document) (§15) | `contractId`, `version`, `documentHash`, `clientSignedAt`, `professionalSignedAt` |
+| `contractAmendments` | Avenants — le contrat signé original reste immuable (§15) | `contractId`, `version`, `signatories[]`, `status` |
+| `documents` / `documentVersions` / `documentAccessLogs` | Archive documentaire versionnée, jamais écrasée, accès journalisés (§23) | `documentHash`, `versionNumber`, `pdfUrl`, `status` ; `documentId`, `hash` ; `viewerId`, `accessedAt` |
+| `creditNotes` | Avoirs GTEC-AVR-2026-NNNNNN contreparties d'annulation/remboursement (§17) | `reference`, `invoiceId`, `clientId`, `amountHT`, `totalTTC`, `status` (`emis/utilise/rembourse/annule`) |
+
+La table `invoices` (factures GTEC-FAC-YYYY-NNNNNN, §16-§18) est définie dans
+`schema.ts` comme fusion des champs V1 (`number`, `amount`, `status`, `issuedAt`,
+index `by_request`/`by_client`) et des champs module (`reference`, `type`,
+`contractId`, `professionalId`, `dueDate`, `subTotal`, `taxRate`, `totalPaid`,
+`remaining`, `pdfUrl`…) ; sa définition « double » de `schemaExtensions.ts`
+n'est pas propagée dans `extensionTables` (le spread écraserait la fusion).
+
+### 11.2 Index
+
+| Table | Index |
+|---|---|
+| `commissionRules` | `by_admin(adminId)`, `by_updatedAt(updatedAt)` |
+| `contracts` | `by_client`, `by_professional`, `by_status`, `by_reference` |
+| `contractTemplates` | `by_kind`, `by_active` |
+| `invoices` | `by_request`, `by_client`, `by_professional`, `by_status`, `by_reference` |
+| `invoiceItems` / `invoicePayments` | `by_invoice(invoiceId)` ; `by_invoice`, `by_external_ref` |
+| `invoiceSequences` | `by_sequence(sequence)` |
+| `commissionRecords` | `by_request`, `by_contract`, `by_invoice`, `by_professional`, `by_status(paymentStatus)` |
+| `contractSignatures` | `by_contract`, `by_client`, `by_professional` |
+| `contractAmendments` | `by_contract`, `by_version` |
+| `documents` | `by_client`, `by_professional`, `by_contract`, `by_invoice`, `by_number`, `by_status` |
+| `documentVersions` / `documentAccessLogs` | `by_document(documentId)` ; `by_document`, `by_accessedAt` |
+| `creditNotes` | `by_client`, `by_invoice`, `by_reference` |
+
+### 11.3 Règles métier appliquées
+
+- Montants en FCFA entiers ; commission figée à 15 % par transaction (§1, §19),
+  modifiable uniquement par l'administration avec trace dans `auditLogs`.
+- Numérotation unique : GTEC-CTR / GTEC-FAC / GTEC-AVR / GTEC-MIS-YYYY-NNNNNN (§24).
+- Immuabilité : tout contrat signé ne se modifie plus — un avenant crée une
+  version séparée (`contractAmendments`), les documents se versionnent
+  (`documentVersions`), les accès s'enregistrent (`documentAccessLogs`).
+- Idempotence financière : `externalRef` / `transactionRef` sur paiements et
+  commissions ; avoirs tracés de l'émission au remboursement.
+- Journalisation : `auditLogs` pour chaque opération sensible (changement de
+  taux, signature, avenant appliqué, archivage).
