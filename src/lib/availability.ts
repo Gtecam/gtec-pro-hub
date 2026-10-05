@@ -3,6 +3,7 @@ export function isoDate(ts: number): string {
 }
 
 export function minutesToHHmm(minutes: number): string {
+  if (minutes < 0 || minutes >= 1440) return "00:00";
   const h = Math.floor(minutes / 60);
   const m = minutes % 60;
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
@@ -14,20 +15,24 @@ export function parseHHmm(value: string): number {
   return h * 60 + m;
 }
 
+export function overlaps(start1: number, end1: number, start2: number, end2: number): boolean {
+  return start1 < end2 && start2 < end1;
+}
+
 export const WEEKDAY_LABELS = [
+  "Dimanche",
   "Lundi",
   "Mardi",
   "Mercredi",
   "Jeudi",
   "Vendredi",
   "Samedi",
-  "Dimanche",
 ];
 
 /** Créneaux libres sur une plage de dates pour un jeu de règles et de créneaux déjà réservés. */
 export function generateAvailableSlots(params: {
-  rules: Array<{ weekday: number; startMin: number; endMin: number; slotMinutes?: number; travelMinutes?: number; capacityPerDay?: number }>;
-  booked: Array<{ start: number; end: number }>;
+  rules: Array<{ weekday: number; startMin: number; endMin: number; slotMinutes?: number; travelMinutes?: number; capacityPerDay?: number; effectiveFrom?: string; effectiveUntil?: string }>;
+  booked: Array<{ start?: number; end?: number; slotStart?: number; slotEnd?: number }>;
   dateFrom: string;
   dateTo: string;
   now: number;
@@ -38,53 +43,75 @@ export function generateAvailableSlots(params: {
   if (!Number.isFinite(from) || !Number.isFinite(to)) return [];
 
   const slots: Array<{ start: number; end: number }> = [];
-  const travel = 30;
 
   for (let t = from; t <= to; t = t + 86_400_000) {
     const day = new Date(t).getDay();
-    const dayRules = rules.filter((r) => r.weekday === day && r.endMin > r.startMin);
+    const dayRules = rules.filter(
+      (r) =>
+        r.weekday === day &&
+        r.endMin > r.startMin &&
+        (!r.effectiveFrom || t >= Date.parse(r.effectiveFrom)) &&
+        (!r.effectiveUntil || t < Date.parse(r.effectiveUntil)),
+    );
     if (dayRules.length === 0) continue;
+    const dayStartOfDay = t;
+    const dayEndOfDay = t + 86_400_000;
     const dayBooked = booked.filter((b) => {
-      const bs = new Date(b.start).setHours(0, 0, 0, 0);
-      const be = new Date(b.end).setHours(0, 0, 0, 0);
-      const ds = new Date(t).setHours(0, 0, 0, 0);
-      const de = new Date(t + 86_400_000).setHours(0, 0, 0, 0);
-      return bs < de && be > ds;
+      const bs = new Date(b.start ?? b.slotStart ?? 0).getTime();
+      const be = new Date(b.end ?? b.slotEnd ?? 0).getTime();
+      return bs < dayEndOfDay && be > dayStartOfDay;
     });
 
-    const capacityByMinute = new Map<number, number>();
+    // Determine the max travel buffer needed across all rules for this day
+    let maxTravel = 0;
+    for (const r of dayRules) {
+      if (r.travelMinutes && r.travelMinutes > maxTravel) maxTravel = r.travelMinutes;
+    }
+    const busyMinutes = new Set<number>();
     for (const b of dayBooked) {
-      for (let m = b.start; m < b.end; m += 60_000) {
-        capacityByMinute.set(m, (capacityByMinute.get(m) ?? 0) + 1);
+      const bStart = new Date(b.start ?? b.slotStart ?? 0).getTime();
+      const bEnd = new Date(b.end ?? b.slotEnd ?? 0).getTime();
+      // Add travel buffer before and after each booked slot
+      const bufferedStart = bStart - maxTravel * 60_000;
+      const bufferedEnd = bEnd + maxTravel * 60_000;
+      for (let m = bufferedStart; m < bufferedEnd; m += 60_000) {
+        busyMinutes.add(m);
       }
     }
 
+    // Count already-booked slots for capacity tracking
+    const bookedSlotCount = dayBooked.length;
+
     for (const rule of dayRules) {
+      const slotMinutes = rule.slotMinutes ?? 60;
+      const travelMinutes = rule.travelMinutes ?? 0;
+      const capacity = rule.capacityPerDay ?? 999;
       const dayStart = t + rule.startMin * 60_000;
       const dayEnd = t + rule.endMin * 60_000;
       if (dayEnd <= now) continue;
-      const slotMinutes = rule.slotMinutes ?? 60;
-      const travelMinutes = rule.travelMinutes ?? 0;
-      const gap = slotMinutes + travelMinutes;
-      const capacity = rule.capacityPerDay ?? 999;
-      let cursor = Math.max(dayStart, now - (now % 60_000) + (now % 60_000 > 0 ? 60_000 - (now % 60_000) : 0));
-      if (cursor < dayStart) cursor = dayStart;
+      const cursor = Math.max(dayStart, now + 60_000 - ((now - dayStart) % 60_000));
       const ceiling = dayEnd - slotMinutes * 60_000;
       if (cursor > ceiling) continue;
 
-      let usedToday = 0;
-      for (let s = cursor; s <= ceiling; s = s + gap * 60_000) {
+      let usedToday = rule.capacityPerDay !== undefined ? bookedSlotCount : 0;
+      for (let s = cursor; s <= ceiling; s += slotMinutes * 60_000) {
         if (usedToday >= capacity) break;
         const e = s + slotMinutes * 60_000;
-        let overlap = false;
+        let blocked = false;
         for (let m = s; m < e; m += 60_000) {
-          if ((capacityByMinute.get(m) ?? 0) > 0) { overlap = true; break; }
+          if (busyMinutes.has(m)) { blocked = true; break; }
         }
-        if (overlap) continue;
+        if (blocked) continue;
         slots.push({ start: s, end: e });
         usedToday++;
         for (let m = s; m < e; m += 60_000) {
-          capacityByMinute.set(m, (capacityByMinute.get(m) ?? 0) + 1);
+          busyMinutes.add(m);
+        }
+        // Add travel buffer after this slot
+        if (travelMinutes > 0) {
+          for (let m = e; m < e + travelMinutes * 60_000; m += 60_000) {
+            busyMinutes.add(m);
+          }
         }
       }
     }

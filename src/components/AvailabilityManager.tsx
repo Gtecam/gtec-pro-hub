@@ -2,6 +2,7 @@ import { useMutation, useQuery } from "convex/react";
 import { CalendarDays, CheckCircle2, Clock, MapPin, Plus, Trash2, XCircle } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
+import { useAuth } from "@/hooks/use-auth";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { Button } from "@/components/ui/button";
@@ -58,7 +59,8 @@ const fmt = (ts: number) =>
   new Date(ts).toLocaleString("fr-FR", { weekday: "long", day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" });
 
 export function AvailabilityManager() {
-  const rules = useQuery(api.appointments.myAvailabilityRules, { userId: "me" });
+  const { user } = useAuth();
+  const rules = useQuery(api.appointments.myAvailabilityRules, { userId: user?._id });
   const appointments = useQuery(api.appointments.myAppointments, {});
   const upsertRule = useMutation(api.appointments.upsertAvailabilityRule);
   const removeRule = useMutation(api.appointments.removeAvailabilityRule);

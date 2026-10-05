@@ -212,10 +212,11 @@ export const createChatRoom = mutation({
       throw new Error("Une conversation doit contenir au moins deux participants.");
     }
     if (args.requestId) {
+      const requestId = args.requestId;
       const existing = (
         await ctx.db
           .query("chatRooms")
-          .withIndex("by_request", (q) => q.eq("requestId", args.requestId))
+          .withIndex("by_request", (q) => q.eq("requestId", requestId))
           .collect()
       ).filter(
         (r) =>
@@ -233,13 +234,15 @@ export const createChatRoom = mutation({
       createdAt: Date.now(),
       updatedAt: Date.now(),
     });
-    await addEvent(
-      ctx,
-      args.requestId,
-      "conversation",
-      "Conversation ouverte",
-      args.subject ?? "Nouveau message",
-    );
+    if (args.requestId) {
+      await addEvent(
+        ctx,
+        args.requestId,
+        "conversation",
+        "Conversation ouverte",
+        args.subject ?? "Nouveau message",
+      );
+    }
     return id;
   },
 });
@@ -312,7 +315,7 @@ export const listConversations = query({
     const user = await requireUser(ctx);
     const rooms = await ctx.db
       .query("chatRooms")
-      .withIndex("by_participants", (q) => q.eq("participantIds", user._id))
+      .withIndex("by_participants", (q) => q.eq("participantIds", [user._id]))
       .order("desc")
       .collect();
     return Promise.all(

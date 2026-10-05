@@ -377,7 +377,47 @@ gestion administrative des commandes diaspora (validation à distance du bénéf
 
 ---
 
-## 10. Documentation & dette assumée
+## 11. Module de messagerie (CONVERSATIONS — V2)
+
+Tables définies dans `src/convex/schemaExtensions.ts` et fusionnées dans le
+schéma principal via le spread `...extensionTables` de `src/convex/schema.ts`
+(`schemaValidation: false`). API métier : `src/convex/gtec.ts` — le
+front-end n'accède jamais aux tables directement.
+
+### 11.1 Tables du module
+
+| Table | Rôle | Champs clés |
+|---|---|---|
+| `chatRooms` | Salles de discussion après mise en relation / acceptation du devis | `requestId?`, `participantIds`, `subject?`, `status` (active/closed/archived), `createdAt`, `updatedAt` |
+| `conversationMessages` | Messagestexte et notifications d'appel (sans contenu audio) | `roomId`, `senderId`, `body?`, `callKind?`, `at` |
+
+### 11.2 Index
+
+| Table | Index |
+|---|---|
+| `chatRooms` | `by_request(requestId)`, `by_participants(participantIds)`, `by_status(status)` |
+| `conversationMessages` | `by_room(roomId)`, `by_sender(senderId)`, `by_at(at)` |
+
+### 11.3 API Convex
+
+| Fonction | Type | Rôle |
+|---|---|---|
+| `createChatRoom` | mutation | Ouvre ou réutilise une salle entre participants d'une demande (réutilise si 존재하는 room pour même requestId + mêmes participants) |
+| `sendMessage` | mutation | Envoie un message texte ou une notification d'appel (callKind) ; vérifie participation + statut actif ; notifie les autres participants |
+| `listConversations` | query | Liste les salles du participant connecté avec dernier message et autres participants |
+| `listMessages` | query | Messages d'une salle, ordre chronologique décroissant, enrichis avec senderName et isMe |
+
+### 11.4 Règles métier
+
+- Une conversation nécessite ≥ 2 participants.
+- Réutilisation : si une room existe déjà pour le même `requestId` et les mêmes participants, on retourne celle-ci.
+- Messages : texte OU notification d'appel (`callKind` : appel_sortant/entrant/accepte/recu/decroche/terminé).
+- Sécurité : seuls les participants peuvent envoyer des messages ; les rooms clôturées (`status !== "active"`) n'acceptent plus de messages.
+- Notifications : chaque message notifie les autres participants via `notify` (file e-mail + in-app).
+
+---
+
+## 12. Documentation & dette assumée
 
 - **Non couvert** (hors périmètre V1) : matching avancé score, shortlists multi-pros, comparateurs de devis détaillés, marketplace B2B, bâtiments/équipements, garanties, maintenance, IoT.
 - **Clarté V1** : le policier métier reste celui du cahier des charges — la demande est un simple flux, le devis est le loup de la situation, l'acceptation déclenche l'affectation, le suivi est en temps réel, la réception est signée, le paiement est sécurisé, l'évaluation est laissée libre.
@@ -385,7 +425,7 @@ gestion administrative des commandes diaspora (validation à distance du bénéf
 
 ---
 
-## 11. Module CONTRATS, COMMISSIONS ET FACTURATION (V2)
+## 12. Module CONTRATS, COMMISSIONS ET FACTURATION (V2)
 
 Tables définies dans `src/convex/schemaExtensions.ts` et fusionnées dans le
 schéma principal via le spread `...extensionTables` de `src/convex/schema.ts`
@@ -432,7 +472,7 @@ n'est pas propagée dans `extensionTables` (le spread écraserait la fusion).
 | `documentVersions` / `documentAccessLogs` | `by_document(documentId)` ; `by_document`, `by_accessedAt` |
 | `creditNotes` | `by_client`, `by_invoice`, `by_reference` |
 
-### 11.3 Règles métier appliquées
+### 12.3 Règles métier appliquées
 
 - Montants en FCFA entiers ; commission figée à 15 % par transaction (§1, §19),
   modifiable uniquement par l'administration avec trace dans `auditLogs`.
