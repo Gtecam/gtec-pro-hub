@@ -21,6 +21,15 @@ Format : Keep a Changelog (approx.) — versions internes V1 / V2.
   `NewRequest`, `ReportForm`, `TechnicianSpace`) affichent désormais un
   message adapté au lieu de produire un rejet de promesse non géré
   signalé comme erreur bloquante en preview.
+- `gtec.ts` `getRequestDetail` — la query ne lève plus « Action non autorisée »
+  quand le demandeur n'est ni le client propriétaire ni un admin (ni quand la
+  demande est introuvable) : elle renvoie `null`. Une erreur levée dans une
+  query Convex est rejouée côté client comme une erreur bloquante (page entière
+  en erreur), par ex. pour un technicien arrivant via un lien de notification
+  vers `/dashboard/requests/:id`. La page affiche déjà un état null neutre
+  (« Demande introuvable ») et aucune donnée n'est exposée — `null` est
+  strictement équivalent à « introuvable » pour le demandeur. Les consommateurs
+  (`RequestDetail`, `AdminConsole`) géraient déjà `null`.
 
 ### Vérifié
 - `bun scripts/test-availability.ts` — 26/26 assertions réussies (exit 0).

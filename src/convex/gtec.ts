@@ -792,9 +792,15 @@ export const getRequestDetail = query({
   handler: async (ctx, args) => {
     const user = await requireUser(ctx);
     const request = await ctx.db.get(args.requestId);
-    if (!request) throw new Error("Demande introuvable.");
+    // Introuvable OU non autorisé → null (jamais de throw dans une query) :
+    // la page gère déjà l'état null avec un message neutre « Demande
+    // introuvable », et une erreur levée serait rejetée côté client comme une
+    // erreur bloquante (ex. technicien arrivant via un lien de notification).
+    // Aucune donnée n'est exposée — null est strictement équivalent à
+    // « introuvable » pour le demandeur.
+    if (!request) return null;
     if (request.clientId !== user._id && user.role !== "admin") {
-      throw new Error("Action non autorisée.");
+      return null;
     }
     const quote = (
       await ctx.db
