@@ -1,17 +1,22 @@
 import {
   Bell,
   Check,
+  ClipboardList,
   Eraser,
   Inbox,
+  Home as HomeIcon,
   Loader2,
   LogOut,
   MessageSquare,
   PenLine,
+  Search,
   ShieldCheck,
   Smartphone,
+  UserRound,
   Wrench,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { useLocation } from "react-router";
 import { useAction, useMutation, useQuery } from "convex/react";
 import { toast } from "sonner";
 import { api } from "@/convex/_generated/api";
@@ -477,8 +482,32 @@ export function AppShell({
 }) {
   const { user, signOut, isAuthenticated } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const isAdmin = user?.role === "admin";
   const isTech = user?.accountType === "technicien";
+
+  // ACCUEIL CLIENT SIMPLIFIÉ : barre inférieure à 5 onglets, réservée à
+  // l'espace client (accueil, recherche, demandes, messages, profil).
+  // Admin et techniciens conservent leur navigation existante.
+  const showBottomNav = !isAdmin && !isTech;
+  const bottomNav = [
+    { key: "home", label: "Accueil", icon: HomeIcon, to: "/home" },
+    { key: "search", label: "Rechercher", icon: Search, to: "/search" },
+    {
+      key: "requests",
+      label: "Mes demandes",
+      icon: ClipboardList,
+      to: "/dashboard",
+    },
+    {
+      key: "messages",
+      label: "Messages",
+      icon: MessageSquare,
+      to: "/dashboard?tab=messages",
+    },
+    { key: "profile", label: "Profil", icon: UserRound, to: "/profile" },
+  ];
+
 
   // V5 : vide la file d'e-mails (Resend) au chargement de chaque espace.
   const flushEmails = useAction(api.emails.flushEmails);
@@ -567,14 +596,13 @@ export function AppShell({
         : isAdmin
           ? "Administration"
           : "Espace client");
-
   return (
     <div className="min-h-screen bg-background">
       <header className="sticky top-0 z-40 border-b border-border/70 bg-background/80 backdrop-blur-md">
         <div className="mx-auto flex h-16 max-w-6xl items-center justify-between gap-3 px-4 sm:px-6">
           <button
             className="flex items-center gap-2.5"
-            onClick={() => navigate("/")}
+            onClick={() => navigate(showBottomNav ? "/home" : "/")}
           >
             <img src={logo} alt="GTEC PRO" className="size-8 rounded-lg" />
             <span className="font-display text-base font-bold tracking-tight">
@@ -585,20 +613,80 @@ export function AppShell({
             </span>
           </button>
           <div className="flex items-center gap-2">
-            {links}
-            <NotificationBell />
-            <span className="hidden max-w-40 truncate text-sm text-muted-foreground md:block">
-              {user?.name || user?.email || "Compte"}
-            </span>
-            <Button variant="outline" size="sm" onClick={handleSignOut}>
-              <LogOut className="size-4" />
-              <span className="hidden sm:inline">Quitter</span>
-            </Button>
+            {showBottomNav ? (
+              // ACCUEIL SIMPLIFIÉ : uniquement notifications + profil (§2).
+              <>
+                <NotificationBell />
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-1.5 rounded-full px-3"
+                  onClick={() => navigate("/profile")}
+                  aria-label="Profil"
+                >
+                  <UserRound className="size-4" />
+                  <span className="hidden max-w-24 truncate sm:inline">
+                    {user?.name || user?.email || "Profil"}
+                  </span>
+                </Button>
+              </>
+            ) : (
+              <>
+                {links}
+                <NotificationBell />
+                <span className="hidden max-w-40 truncate text-sm text-muted-foreground md:block">
+                  {user?.name || user?.email || "Compte"}
+                </span>
+                <Button variant="outline" size="sm" onClick={handleSignOut}>
+                  <LogOut className="size-4" />
+                  <span className="hidden sm:inline">Quitter</span>
+                </Button>
+              </>
+            )}
           </div>
         </div>
       </header>
       <PhoneVerificationBanner />
-      <main className="mx-auto max-w-6xl px-4 py-8 sm:px-6">{children}</main>
+      <main className="mx-auto max-w-6xl px-4 pb-28 pt-6 sm:px-6">{children}</main>
+      {showBottomNav && (
+        <nav
+          aria-label="Navigation principale"
+          className="fixed inset-x-0 bottom-0 z-40 border-t border-border/70 bg-background/95 backdrop-blur-md"
+          style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
+        >
+          <div className="mx-auto grid max-w-xl grid-cols-5">
+            {bottomNav.map(({ key, label, icon: Icon, to }) => {
+              const target = to.split("?")[0];
+              const active =
+                key === "home"
+                  ? location.pathname === "/home"
+                  : key === "requests"
+                    ? location.pathname.startsWith("/dashboard") &&
+                      !location.search.includes("tab=messages")
+                    : key === "messages"
+                      ? location.pathname === "/dashboard" &&
+                        location.search.includes("tab=messages")
+                      : location.pathname === target;
+              return (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => navigate(to)}
+                  className={cn(
+                    "flex min-h-[56px] flex-col items-center justify-center gap-0.5 px-1 py-2 text-[10px] font-medium transition-colors",
+                    active
+                      ? "text-primary"
+                      : "text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  <Icon className="size-5" />
+                  <span className="truncate">{label}</span>
+                </button>
+              );
+            })}
+          </div>
+        </nav>
+      )}
     </div>
   );
 }

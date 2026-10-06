@@ -79,6 +79,12 @@ export default function NewRequest() {
   const [searchParams] = useSearchParams();
   const diasporaMode = searchParams.get("diaspora") === "1";
   const presetBeneficiary = searchParams.get("beneficiary") ?? "";
+  // LIEN ACCUEIL → FORMULAIRE : service présélectionné (?service=clé) et
+  // intervention urgente (?urgent=1 → urgence « urgente »). Le client part
+  // de la recherche/catégorie de l'accueil et arrive directement au bon
+  // endroit du parcours.
+  const presetService = searchParams.get("service") as ServiceKey | null;
+  const urgentEntry = searchParams.get("urgent") === "1";
   const beneficiaries = useQuery(
     api.diaspora.listBeneficiaries,
     diasporaMode ? {} : "skip",
@@ -94,7 +100,9 @@ export default function NewRequest() {
   const [proSent, setProSent] = useState(false);
   const [beneficiaryId, setBeneficiaryId] = useState<string>(presetBeneficiary);
 
-  const [serviceKey, setServiceKey] = useState<ServiceKey | null>(null);
+  const [serviceKey, setServiceKey] = useState<ServiceKey | null>(
+    presetService,
+  );
   const [subcategory, setSubcategory] = useState<string | null>(null);
   const [interventionCode, setInterventionCode] = useState<string>("");
   const [title, setTitle] = useState("");
@@ -106,7 +114,10 @@ export default function NewRequest() {
   const [specialtyCode, setSpecialtyCode] = useState<string>("");
   const [requiredSkills, setRequiredSkills] = useState<string[]>([]);
   // Formulaire enrichi : urgence, date souhaitée, budget, message vocal.
-  const [urgency, setUrgency] = useState<string>("normale");
+  // Entrée « Besoin urgent ? » de l'accueil → urgence pré-cochée.
+  const [urgency, setUrgency] = useState<string>(
+    urgentEntry ? "urgente" : "normale",
+  );
   const [desiredDate, setDesiredDate] = useState("");
   const [budgetHint, setBudgetHint] = useState("");
   const [voiceNoteUrl, setVoiceNoteUrl] = useState<string | null>(null);
