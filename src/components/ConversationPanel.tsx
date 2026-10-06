@@ -24,6 +24,11 @@ type Props = {
   className?: string;
 };
 
+/** La liste des conversations n'a pas besoin de salle active. */
+type ListProps = {
+  className?: string;
+};
+
 type ConvRoom = {
   _id: Id<"chatRooms">;
   _creationTime: number;
@@ -96,7 +101,7 @@ type ListRow = {
   isLastMine: boolean;
 };
 
-export function ConversationListPanel({ className }: Props) {
+export function ConversationListPanel({ className }: ListProps) {
   const { user } = useAuth();
   const list = useQuery(api.gtec.listConversations, {});
 

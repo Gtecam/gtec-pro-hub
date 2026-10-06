@@ -407,6 +407,7 @@ front-end n'accède jamais aux tables directement.
 | `sendMessage` | mutation | Envoie un message texte ou une notification d'appel (`callKind`) ; vérifie participation + statut actif ; notifie les autres participants |
 | `listConversations` | query | Liste les salles du participant connecté avec dernier message et autres participants |
 | `listMessages` | query | Messages d'une salle, ordre chronologique décroissant, enrichis avec `senderName` et `isMe` |
+| `chatRoomForRequest` | query | Salle liée à une demande pour le participant connecté (index `by_request` + appartenance), sinon `null` |
 
 ### 12.4 Règles métier
 

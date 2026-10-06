@@ -71,7 +71,9 @@ Format : Keep a Changelog (approx.) — versions internes V1 / V2.
   - Index `by_request`/`by_participants`/`by_status` sur `chatRooms` et
     `by_room`/`by_sender`/`by_at` sur `conversationMessages`.
   - API Convex `src/convex/gtec.ts` : `createChatRoom`,
-    `sendMessage`, `listConversations`, `listMessages`.
+    `sendMessage`, `listConversations`, `listMessages`,
+    `chatRoomForRequest` (salle d'une demande pour le participant connecté,
+    sinon `null`).
   - Composants front `src/components/ConversationPanel.tsx` :
     `ConversationListPanel` (liste des conversations du participant) et
     `ConversationPanel` (fil de discussion actif).
@@ -85,6 +87,17 @@ Format : Keep a Changelog (approx.) — versions internes V1 / V2.
   clôturées (`status !== "active"`) n'acceptent plus de messages.
 - Notifications : chaque message notifie les autres participants via `notify`
   (file e-mail + in-app).
+
+### Corrigé
+- `RequestDetail.tsx` : imports manquants rétablis (`AppShell`, `StatusBadge`,
+  `JourneyStepper`, `SignaturePad`, `ConversationPanel`,
+  `ConversationListPanel`) et fil de messagerie branché sur
+  `chatRoomForRequest` — l'embed passait un id de demande (`as never`) là où
+  un id de `chatRooms` est attendu ; la page retombe sur la liste générale des
+  conversations tant que l'utilisateur n'est pas participant d'une salle liée
+  à la demande.
+- `ConversationPanel.tsx` : `ConversationListPanel` n'exige plus `roomId`
+  (props dédiées `ListProps`).
 
 ### Vérifié
 - `bunx convex dev --once` — exit 0 (push + typecheck serveur OK).

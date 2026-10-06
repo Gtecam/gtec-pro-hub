@@ -373,6 +373,25 @@ export const listMessages = query({
   },
 });
 
+/**
+ * Salle de discussion liée à une demande pour l'utilisateur connecté (§12).
+ * Retourne l'identifiant de la room uniquement si l'utilisateur en est
+ * participant — sinon null. Permet au front d'ouvrir le fil d'une demande
+ * sans jamais manipuler les tables directement.
+ */
+export const chatRoomForRequest = query({
+  args: { requestId: v.id("serviceRequests") },
+  handler: async (ctx, args) => {
+    const user = await requireUser(ctx);
+    const rooms = await ctx.db
+      .query("chatRooms")
+      .withIndex("by_request", (q) => q.eq("requestId", args.requestId))
+      .collect();
+    const mine = rooms.find((r) => r.participantIds.includes(user._id));
+    return mine?._id ?? null;
+  },
+});
+
 // ===================== V6 : KYC anti-fraude & doublons =====================
 
 /**

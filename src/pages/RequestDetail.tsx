@@ -80,6 +80,16 @@ import { URGENCY_BADGE } from "@/lib/interventions";
 import { formatGps, gmapsCoordsUrl, haversineKm } from "@/lib/gps";
 import { openDossierPdf, openInvoicePdf, openQuotePdf, openReceptionPdf } from "@/lib/invoicePdf";
 import { compressImageIfNeeded, dataUrlBytes, humanSize } from "@/lib/imageCompress";
+import {
+  AppShell,
+  JourneyStepper,
+  SignaturePad,
+  StatusBadge,
+} from "@/components/gtec";
+import {
+  ConversationListPanel,
+  ConversationPanel,
+} from "@/components/ConversationPanel";
 
 function serviceMeta(key: string) {
   return SERVICES.find((s) => s.key === key);
@@ -118,6 +128,13 @@ export default function RequestDetail() {
     requestId ? { requestId: requestId as never } : "skip",
   );
   const guarantees = useQuery(api.missions.myActiveGuarantees, {});
+  // Messagerie (§11) : salle liée à cette demande pour l'utilisateur connecté
+  // (null s'il n'y participe pas) — évite de passer un id de demande là où un
+  // id de room est attendu.
+  const requestRoomId = useQuery(
+    api.gtec.chatRoomForRequest,
+    detail?.request ? { requestId: detail.request._id } : "skip",
+  );
   const startMomoPayment = useAction(api.momo.startMomoPayment);
   const checkMomoPayment = useAction(api.momo.checkMomoPayment);
 
@@ -2249,21 +2266,22 @@ export default function RequestDetail() {
                   </>
                 )}
               </div>
-            )}              {/* Messagerie (§11) : ce bloc est réservé au client/bénéficiaire
-                ou au technicien lié à la demande pour éviter d'exposer les
-                conversations à un visiteur non participant. */}
-              {detail?.request && detail.request._id ? (
-                <div className="mt-4">
+            )}
+
+              {/* Messagerie (§11) : fil de discussion de la demande si une salle
+                existe et que l'utilisateur connecté y participe (client,
+                bénéficiaire ou technicien lié) — sinon la liste générale des
+                conversations, jamais une conversation d'un non participant. */}
+              <div className="mt-4">
+                {requestRoomId ? (
                   <ConversationPanel
-                    roomId={detail.request._id as never}
+                    roomId={requestRoomId}
                     className="max-w-md"
                   />
-                </div>
-              ) : (
-                <div className="mt-4">
+                ) : (
                   <ConversationListPanel className="max-w-md" />
-                </div>
-              )}
+                )}
+              </div>
 
               {/* Mobile Money : flux automatique (V5) */}
             {(method === "mtn_momo" || method === "orange_money") && (
