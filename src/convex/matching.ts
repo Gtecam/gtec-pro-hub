@@ -555,9 +555,13 @@ export const quoteRequestsForRequest = query({
   handler: async (ctx, args) => {
     const user = await requireUserLocal(ctx);
     const request = (await ctx.db.get(args.requestId)) as any;
-    if (!request) throw new Error("Demande introuvable.");
+    // Introuvable ou non autorisé → null (jamais de throw dans une query) :
+    // l'appelant masque déjà le bloc quand la valeur est fausse, et une erreur
+    // levée serait rejouée côté client comme une erreur bloquante (ex.
+    // technicien ouvrant le détail d'une demande via un lien de notification).
+    if (!request) return null;
     if (request.clientId !== user._id && user.role !== "admin") {
-      throw new Error("Action non autorisée.");
+      return null;
     }
     const rows = (await ctx.db
       .query("quoteRequests")

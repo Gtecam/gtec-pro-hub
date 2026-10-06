@@ -30,6 +30,13 @@ Format : Keep a Changelog (approx.) — versions internes V1 / V2.
   (« Demande introuvable ») et aucune donnée n'est exposée — `null` est
   strictement équivalent à « introuvable » pour le demandeur. Les consommateurs
   (`RequestDetail`, `AdminConsole`) géraient déjà `null`.
+- Même classe d'erreur pour les autres queries appelées sans condition par la
+  page de détail, corrigées de la même façon :
+  `matching.quoteRequestsForRequest` et `gtec.getReviewForRequest` → `null`,
+  `missions.getCertificateByRequest` → `null`, `gtec.listRequestDisputes` →
+  `[]` (la page lit `.length` sur cette liste). Seuls les cas « introuvable »
+  et « non autorisé » sont concernés ; `requireUser` et toutes les autres
+  vérifications de périmètre restent inchangées.
 
 ### Vérifié
 - `bun scripts/test-availability.ts` — 26/26 assertions réussies (exit 0).

@@ -292,7 +292,9 @@ export const getCertificateByRequest = query({
   handler: async (ctx, args) => {
     const user = await requireUser(ctx);
     const request = (await ctx.db.get(args.requestId)) as Doc<"serviceRequests"> | null;
-    if (!request) throw new Error("Mission introuvable.");
+    // Introuvable ou non autorisé → null (« pas de certificat »), jamais de
+    // throw dans une query : la page affiche déjà l'absence de certificat.
+    if (!request) return null;
     const assignment = (
       (await ctx.db
         .query("assignments")
@@ -301,7 +303,7 @@ export const getCertificateByRequest = query({
     ).slice(-1)[0];
     const isMember = assignment?.members?.some((m: any) => m.id === user._id);
     if (request.clientId !== user._id && !isMember && user.role !== "admin")
-      throw new Error("Accès refusé.");
+      return null;
     return (
       (await ctx.db
         .query("digitalCertificates")

@@ -3513,9 +3513,11 @@ export const getReviewForRequest = query({
   handler: async (ctx, args) => {
     const user = await requireUser(ctx);
     const request = await ctx.db.get(args.requestId);
-    if (!request) throw new Error("Demande introuvable.");
+    // Introuvable ou non autorisé → null (« pas encore d'avis »), jamais de
+    // throw dans une query : la page masque déjà le bloc pour null.
+    if (!request) return null;
     if (request.clientId !== user._id && user.role !== "admin") {
-      throw new Error("Action non autorisée.");
+      return null;
     }
     const review = (
       await ctx.db
@@ -4493,7 +4495,9 @@ export const listRequestDisputes = query({
   handler: async (ctx, args) => {
     const user = await requireUser(ctx);
     const request = await ctx.db.get(args.requestId);
-    if (!request) throw new Error("Demande introuvable.");
+    // Introuvable → [] (forme « liste vide » attendue par la page, qui lit
+    // .length), jamais de throw dans une query.
+    if (!request) return [];
     const assignment = (
       await ctx.db
         .query("assignments")
@@ -4502,7 +4506,7 @@ export const listRequestDisputes = query({
     ).slice(-1)[0];
     const isTeamMember = assignment?.members.some((m) => m.id === user._id);
     if (request.clientId !== user._id && user.role !== "admin" && !isTeamMember) {
-      throw new Error("Action non autorisée.");
+      return [];
     }
     const disputes = await ctx.db
       .query("disputes")
