@@ -33,12 +33,6 @@ import { toast } from "sonner";
 import type { Doc } from "@/convex/_generated/dataModel";
 import { useNavigate, useParams } from "react-router";
 import { api } from "@/convex/_generated/api";
-import {
-  AppShell,
-  JourneyStepper,
-  SignaturePad,
-  StatusBadge,
-} from "@/components/gtec";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -191,6 +185,20 @@ export default function RequestDetail() {
   const [busy, setBusy] = useState(false);
   /** V6 : tranche à payer dans le dialog (avance = 1ʳᵉ, solde = 2ᵉ). */
   const [milestone, setMilestone] = useState<"avance" | "solde">("avance");
+
+  // Messagerie (§11) : afficher la liste et, si une salle est sélectionnée,
+  // le fil de discussion dédié.
+  const [activeRoomId, setActiveRoomId] = useState<string | null>(null);
+
+  useEffect(() => {
+    function handleOpenConversation(e: Event) {
+      const detail = (e as CustomEvent<{ roomId: string }>).detail;
+      setActiveRoomId(detail.roomId ?? null);
+    }
+    window.addEventListener("gtc:open-conversation", handleOpenConversation);
+    return () =>
+      window.removeEventListener("gtc:open-conversation", handleOpenConversation);
+  }, []);
 
   // Champs spécifiques par moyen de paiement
   const [proofUrl, setProofUrl] = useState<string | null>(null);
@@ -2241,9 +2249,23 @@ export default function RequestDetail() {
                   </>
                 )}
               </div>
-            )}
+            )}              {/* Messagerie (§11) : ce bloc est réservé au client/bénéficiaire
+                ou au technicien lié à la demande pour éviter d'exposer les
+                conversations à un visiteur non participant. */}
+              {detail?.request && detail.request._id ? (
+                <div className="mt-4">
+                  <ConversationPanel
+                    roomId={detail.request._id as never}
+                    className="max-w-md"
+                  />
+                </div>
+              ) : (
+                <div className="mt-4">
+                  <ConversationListPanel className="max-w-md" />
+                </div>
+              )}
 
-            {/* Mobile Money : flux automatique (V5) */}
+              {/* Mobile Money : flux automatique (V5) */}
             {(method === "mtn_momo" || method === "orange_money") && (
               <div className="flex flex-col gap-3 rounded-xl border border-primary/25 bg-primary/[0.04] p-3">
                 {momoFlow && momoFlow.provider === (method === "mtn_momo" ? "mtn" : "orange") ? (

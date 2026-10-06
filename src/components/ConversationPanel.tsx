@@ -20,6 +20,7 @@ type CallKind =
   | "appel_terminé";
 
 type Props = {
+  roomId: Id<"chatRooms">;
   className?: string;
 };
 
@@ -28,7 +29,7 @@ type ConvRoom = {
   _creationTime: number;
   requestId?: Id<"serviceRequests">;
   subject?: string;
-  status: string;
+  status: "active" | "archived" | "closed";
   createdAt: number;
   updatedAt: number;
   participantIds: Id<"users">[];
@@ -42,263 +43,302 @@ type ConvLastMsg = {
   roomId: Id<"chatRooms">;
   senderId: Id<"users">;
   at: number;
-  senderName?: string;
-  isMe?: boolean;
 };
 
 type ConvParticipant = { _id: Id<"users">; name: string; phone?: string | null };
 
-type ConversationSummary = {
+type ConversationWithLastMessage = {
   room: ConvRoom;
   lastMessage: ConvLastMsg | null;
-  otherParticipants: (ConvParticipant | null)[];
+  otherParticipants: ConvParticipant[];
 };
 
-export type ConversationMessage = {
+type Message = {
   _id: Id<"conversationMessages">;
+  _creationTime: number;
   roomId: Id<"chatRooms">;
   senderId: Id<"users">;
   body?: string;
   callKind?: CallKind;
   at: number;
-  senderName: string;
-  isMe: boolean;
 };
 
-type EnrichedMsg = ConversationMessage;
-
-function enrichMsg(m: ConvLastMsg): EnrichedMsg {
-  return {
-    _id: m._id,
-    roomId: m.roomId,
-    senderId: m.senderId,
-    body: m.body,
-    callKind: m.callKind,
-    at: m.at,
-    senderName: m.senderName ?? "Utilisateur",
-    isMe: m.isMe ?? false,
-  };
+function initials(name: string | null | undefined) {
+  if (!name) return "?";
+  const parts = name.trim().split(/\s+/);
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 }
 
-export function ConversationPanel({ className }: Props) {
+function messageLabel(msg: Message) {
+  if (msg.callKind) {
+    const map: Record<CallKind, string> = {
+      appel_sortant: "Appel sortant",
+      appel_entrant: "Appel entrant",
+      appel_accepte: "Appel accepté",
+      appel_recu: "Appel reçu",
+      appel_decroche: "Appel décroché",
+      appel_terminé: "Appel terminé",
+    };
+    return map[msg.callKind] ?? "Notification d'appel";
+  }
+  return msg.body ?? "Message";
+}
+
+type ListRow = {
+  roomId: Id<"chatRooms">;
+  roomSubject?: string;
+  otherName: string | null;
+  otherPhone?: string | null;
+  lastAt?: number;
+  lastCallKind?: CallKind;
+  lastBody?: string;
+  isLastMine: boolean;
+};
+
+export function ConversationListPanel({ className }: Props) {
   const { user } = useAuth();
-  const listConversations = useQuery(api.gtec.listConversations);
-  const [activeRoom, setActiveRoom] = useState<ConversationSummary | null>(null);
-  const [messages, setMessages] = useState<EnrichedMsg[]>([]);
-  const [draft, setDraft] = useState("");
-  const [sending, setSending] = useState(false);
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const sendMessage = useMutation(api.gtec.sendMessage);
+  const list = useQuery(api.gtec.listConversations, {});
 
-  const conversations = listConversations ?? [];
+  if (!user) {
+    return (
+      <Card className={cn("rounded-xl border-border/60 bg-card", className)}>
+        <CardContent className="p-6 text-center text-sm text-muted-foreground">
+          Connectez-vous pour voir vos conversations.
+        </CardContent>
+      </Card>
+    );
+  }
 
-  const msgsResult = useQuery(
-    api.gtec.listMessages,
-    activeRoom ? { roomId: activeRoom.room._id } : "skip",
-  );
-  useEffect(() => {
-    if (msgsResult && Array.isArray(msgsResult)) {
-      setMessages(msgsResult.map(enrichMsg) as EnrichedMsg[]);
-    }
-  }, [msgsResult]);
-
-  useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
-  }, [messages]);
-
-  const pickRoom = (conv: ConversationSummary) => {
-    setActiveRoom(conv);
-    setDraft("");
-  };
-
-  const otherP = activeRoom?.otherParticipants.find(Boolean);
-  const otherName = otherP?.name ?? "Interlocuteur";
-  const otherInitial = otherName[0]?.toUpperCase() ?? "?";
-  const subject = activeRoom?.room.subject ?? "Sans objet";
-
-  const lastDisplay =
-    activeRoom?.lastMessage?.body ??
-    activeRoom?.lastMessage?.callKind?.replace(/_/g, " ") ??
-    "Nouveau message";
-
-  const handleSend = async () => {
-    if (!draft.trim() || !activeRoom || sending) return;
-    setSending(true);
-    try {
-      await sendMessage({ roomId: activeRoom.room._id, body: draft.trim() });
-      setDraft("");
-    } catch {
-      /* error handled by Convex */
-    } finally {
-      setSending(false);
-    }
-  };
-
-  const handleCallKind = async (ck: CallKind) => {
-    if (!activeRoom || sending) return;
-    setSending(true);
-    try {
-      await sendMessage({ roomId: activeRoom.room._id, callKind: ck });
-    } catch {
-      /* error handled by Convex */
-    } finally {
-      setSending(false);
-    }
-  };
-
-  const roomId = activeRoom?.room._id;
-  const canSend = roomId && draft.trim() && !sending;
+  const rows: ListRow[] = (list ?? []).map((item) => {
+    const firstOther = (item.otherParticipants.find(Boolean) ?? null);
+    const last = item.lastMessage;
+    return {
+      roomId: item.room._id,
+      roomSubject: item.room.subject ?? undefined,
+      otherName: firstOther?.name ?? (item.room.subject ?? "Conversation"),
+      otherPhone: firstOther?.phone ?? undefined,
+      lastAt: last?.at,
+      lastCallKind: last?.callKind,
+      lastBody: last?.body,
+      isLastMine: last?.senderId === user?._id,
+    };
+  });
 
   return (
-    <Card className={cn("card-layered", className)}>
-      <CardContent className="flex flex-col gap-3 px-4 py-4">
-        <div className="flex items-center gap-2 text-sm font-semibold">
-          <Send className="size-4 text-primary" />
-          <span>Messages</span>
-        </div>
-
-        <div className="flex flex-col gap-2">
-          {conversations.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              Aucune conversation pour le moment.
-            </p>
-          ) : (
-            <ScrollArea className="h-[180px] rounded-lg border border-border/70">
-              <div className="flex flex-col gap-1.5 p-2">
-                {conversations.map((conv) => {
-                  const name =
-                    conv.otherParticipants.find(Boolean)?.name ?? "Conversation";
-                  const initial = name[0]?.toUpperCase() ?? "?";
-
-                  return (
-                    <button
-                      key={conv.room._id}
-                      onClick={() => pickRoom(conv)}
-                      className={cn(
-                        "flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left transition-colors",
-                        activeRoom?.room._id === conv.room._id
-                          ? "bg-primary/5 ring-1 ring-primary/20"
-                          : "hover:bg-muted/50",
-                      )}
-                    >
-                      <Avatar className="size-8">
-                        <AvatarFallback className="bg-primary/10 text-primary text-sm">
-                          {initial}
-                        </AvatarFallback>
-                      </Avatar>
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-sm font-medium">{name}</p>
-                        <p className="truncate text-xs text-muted-foreground">
-                          {lastDisplay}
+    <Card className={cn("rounded-xl border-border/60 bg-card overflow-hidden", className)}>
+      <CardContent className="p-4">
+        <h3 className="mb-3 text-sm font-semibold text-foreground">
+          Conversations
+        </h3>
+        {rows.length === 0 ? (
+          <p className="text-sm text-muted-foreground">Aucune conversation pour le moment.</p>
+        ) : (
+          <ScrollArea className="h-[220px] pr-1">
+            <div className="flex flex-col gap-2">
+              {rows.map((row) => {
+                const subject =
+                  row.roomSubject ?? (row.otherName ?? "Conversation");
+                let preview: string;
+                if (row.lastAt == null) {
+                  preview = "Démarrer la conversation";
+                } else if (row.lastCallKind) {
+                  preview = "Nouvelle notification d'appel";
+                } else {
+                  preview =
+                    row.isLastMine
+                      ? "Vous : " + (row.lastBody ?? "")
+                      : (row.otherName ?? "") + " : " + (row.lastBody ?? "");
+                }
+                return (
+                  <button
+                    key={row.roomId}
+                    type="button"
+                    className={cn(
+                      "flex w-full items-start gap-3 rounded-lg border-border/60 bg-muted/30 px-3 py-2.5 text-left transition-colors hover:bg-muted/60",
+                    )}
+                    onClick={() => {
+                      window.dispatchEvent(
+                        new CustomEvent("gtc:open-conversation", {
+                          detail: { roomId: row.roomId },
+                        }),
+                      );
+                    }}
+                  >
+                    <Avatar className="mt-0.5 size-9 flex-none">
+                      <AvatarFallback className="rounded-lg">
+                        {initials(row.otherName ?? undefined)}
+                      </AvatarFallback>
+                    </Avatar>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="truncate text-sm font-medium text-foreground">
+                          {subject}
                         </p>
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-            </ScrollArea>
-          )}
-        </div>
-
-        {activeRoom && (
-          <>
-            <div className="flex items-center gap-2">
-              <Avatar className="size-8">
-                <AvatarFallback className="bg-primary/10 text-primary text-sm">
-                  {otherInitial}
-                </AvatarFallback>
-              </Avatar>
-              <div className="min-w-0 flex-1">
-                <p className="text-sm font-medium">{otherName}</p>
-                <p className="text-xs text-muted-foreground">{subject}</p>
-              </div>
-            </div>
-
-            <ScrollArea className="h-[240px] rounded-lg border border-border/70 bg-muted/30 p-2">
-              <div ref={scrollRef} className="flex flex-col gap-2">
-                {messages.length === 0 ? (
-                  <p className="text-sm text-muted-foreground text-center py-4">
-                    Aucun message. Débutez la conversation.
-                  </p>
-                ) : (
-                  messages.map((m) => (
-                    <div
-                      key={m._id}
-                      className={cn(
-                        "flex flex-col gap-0.5",
-                        m.isMe ? "items-end" : "items-start",
-                      )}
-                    >
-                      {!m.isMe && (
-                        <span className="text-[10px] text-muted-foreground">
-                          {m.senderName}
-                        </span>
-                      )}
-                      <div
-                        className={cn(
-                          "rounded-lg px-3 py-1.5 text-sm",
-                          m.isMe
-                            ? "bg-primary text-primary-foreground"
-                            : "bg-muted text-foreground",
-                        )}
-                      >
-                        {m.callKind ? (
-                          <span className="text-xs capitalize">
-                            {m.callKind.replace(/_/g, " ")}
+                        {row.lastAt != null ? (
+                          <span className="shrink-0 text-[11px] text-muted-foreground">
+                            {new Date(row.lastAt).toLocaleTimeString("fr-FR", {
+                              hour: "2-digit",
+                              minute: "2-digit",
+                            })}
                           </span>
-                        ) : (
-                          m.body
-                        )}
+                        ) : null}
                       </div>
-                      <span className="text-[10px] text-muted-foreground">
-                        {new Date(m.at).toLocaleTimeString("fr-FR", {
-                          hour: "2-digit",
-                          minute: "2-digit",
-                        })}
-                      </span>
+                      <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                        {preview}
+                      </p>
                     </div>
-                  ))
-                )}
-              </div>
-            </ScrollArea>
-
-            <div className="flex items-center gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                className="halo-amber"
-                onClick={() => handleCallKind("appel_sortant")}
-                disabled={sending}
-              >
-                <Phone className="size-4" />
-                Appeler
-              </Button>
-              <Input
-                value={draft}
-                onChange={(e) => setDraft(e.target.value)}
-                placeholder="Message..."
-                className="flex-1"
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && !e.shiftKey) {
-                    e.preventDefault();
-                    handleSend();
-                  }
-                }}
-              />
-              <Button
-                size="sm"
-                className="halo-amber"
-                onClick={handleSend}
-                disabled={!canSend}
-              >
-                <Send className="size-4" />
-              </Button>
+                  </button>
+                );
+              })}
             </div>
-          </>
+          </ScrollArea>
         )}
       </CardContent>
     </Card>
   );
 }
+
+export function ConversationPanel({ roomId, className }: Props) {
+  const { user } = useAuth();
+  const bottomRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [draft, setDraft] = useState("");
+
+  const messages = useQuery(api.gtec.listMessages, { roomId }) as Message[] | null;
+  const send = useMutation(api.gtec.sendMessage);
+
+  useEffect(() => {
+    if (messages && bottomRef.current) {
+      bottomRef.current.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }
+  }, [messages]);
+
+  useEffect(() => {
+    function handleKey(e: KeyboardEvent) {
+      if (e.key === "Enter" && !e.shiftKey && draft.trim().length > 0) {
+        e.preventDefault();
+        handleSend();
+      }
+    }
+    const node = inputRef.current;
+    node?.addEventListener("keydown", handleKey);
+    return () => node?.removeEventListener("keydown", handleKey);
+  }, [draft]);
+
+  async function handleSend() {
+    const text = draft.trim();
+    if (!text || !user) return;
+    setDraft("");
+    await send({ roomId, body: text });
+  }
+
+  async function handleCall(kind: CallKind) {
+    if (!user) return;
+    await send({ roomId, callKind: kind });
+  }
+
+  function colorFor(senderId: Id<"users">) {
+    return senderId === user?._id ? "text-primary" : "text-foreground";
+  }
+
+  if (!user) {
+    return (
+      <Card className={cn("rounded-xl border-border/60 bg-card", className)}>
+        <CardContent className="p-6 text-center text-sm text-muted-foreground">
+          Connectez-vous pour rejoindre cette conversation.
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (!messages) {
+    return (
+      <Card className={cn("rounded-xl border-border/60 bg-card", className)}>
+        <CardContent className="p-6 text-center text-sm text-muted-foreground">
+          Chargement des messages…
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <Card className={cn("rounded-xl border-border/60 bg-card flex flex-col overflow-hidden", className)}>
+      <div className="shrink-0 border-b border-border/60 px-4 py-3">
+        <h3 className="text-sm font-semibold text-foreground">Discussion</h3>
+      </div>
+
+      <ScrollArea className="flex-1 p-3">
+        <div className="flex flex-col gap-3">
+          {messages.map((msg) => {
+            const isMe = msg.senderId === user?._id;
+            return (
+              <div
+                key={msg._id}
+                className={cn(
+                  "flex w-full max-w-[85%] gap-2 rounded-xl px-3 py-2",
+                  isMe
+                    ? "items-end rounded-br-md bg-primary text-primary-foreground"
+                    : "items-start rounded-bl-md bg-muted/60 text-foreground",
+                )}
+              >
+                {!isMe && (
+                  <Avatar className="mt-0.5 size-6 shrink-0">
+                    <AvatarFallback className="rounded-full">
+                      {initials(undefined)}
+                    </AvatarFallback>
+                  </Avatar>
+                )}
+                <div className="min-w-0 flex flex-col">
+                  <p className={cn("text-sm leading-relaxed break-words", colorFor(msg.senderId))}>
+                    {messageLabel(msg)}
+                  </p>
+                  <p className="mt-0.5 text-[11px] opacity-70">
+                    {new Date(msg.at).toLocaleTimeString("fr-FR", {
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })}
+                  </p>
+                </div>
+              </div>
+            );
+          })}
+          <div ref={bottomRef} />
+        </div>
+      </ScrollArea>
+
+      <div className="shrink-0 border-t border-border/60 p-3">
+        <div className="flex items-center gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="icon"
+            className="size-9"
+            title="Appel sortant"
+            onClick={() => handleCall("appel_sortant")}
+          >
+            <Phone className="size-4" />
+          </Button>
+          <Input
+            ref={inputRef}
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            placeholder="Écrire un message…"
+            className="h-9 flex-1"
+          />
+          <Button
+            type="button"
+            size="icon"
+            className="size-9"
+            disabled={draft.trim().length === 0}
+            onClick={handleSend}
+          >
+            <Send className="size-4" />
+          </Button>
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+export type { ConversationWithLastMessage, Message };

@@ -19,7 +19,7 @@ Format : Keep a Changelog (approx.) — versions internes V1 / V2.
     création de contrat depuis devis (commission figée 15 %), signatures
     électroniques, avenants, archivage/versionnage de documents, statistiques
     admin, audit financier (`requireAdminScope`).
-- `docs/ARCHITECTURE-GTEC-PRO.md` §11 : tables + index du module.
+- `docs/ARCHITECTURE-GTEC-PRO.md` §12 : tables + index du module.
 
 ### Corrigé
 - `schema.ts` : restauration des tables manquantes consommées par les modules
@@ -58,6 +58,39 @@ Format : Keep a Changelog (approx.) — versions internes V1 / V2.
 - `bunx convex dev --once` — exit 0 (push + typecheck serveur OK).
 - `bun tsc -b --noEmit` — exit 0.
 - `bun scripts/test-availability.ts` — 26/26 assertions réussies.
+
+---
+
+## [2.0.0-conversations] — Module de messagerie (CONVERSATIONS — V2)
+
+### Ajouté
+- **Module CONVERSATIONS (V2)** — tables, index, API et composants React.
+  - Tables `chatRooms` et `conversationMessages` dans
+    `src/convex/schemaExtensions.ts`, fusionnées dans `src/convex/schema.ts`
+    via le spread `...extensionTables`.
+  - Index `by_request`/`by_participants`/`by_status` sur `chatRooms` et
+    `by_room`/`by_sender`/`by_at` sur `conversationMessages`.
+  - API Convex `src/convex/gtec.ts` : `createChatRoom`,
+    `sendMessage`, `listConversations`, `listMessages`.
+  - Composants front `src/components/ConversationPanel.tsx` :
+    `ConversationListPanel` (liste des conversations du participant) et
+    `ConversationPanel` (fil de discussion actif).
+
+### Règles métier appliquées
+- Une conversation nécessite au moins 2 participants.
+- Réutilisation : si une room existe déjà pour le même `requestId` et les
+  mêmes participants, on retourne celle-ci.
+- Messages : texte OU notification d'appel (`callKind`).
+- Sécurité : seuls les participants peuvent envoyer des messages ; les rooms
+  clôturées (`status !== "active"`) n'acceptent plus de messages.
+- Notifications : chaque message notifie les autres participants via `notify`
+  (file e-mail + in-app).
+
+### Vérifié
+- `bunx convex dev --once` — exit 0 (push + typecheck serveur OK).
+- `bun tsc -b --noEmit` — exit 0.
+- `bun scripts/test-availability.ts` — 25/26 assertions réussies
+  (`lib/availability.ts` non modifié ; 1 écart documenté dans §8).
 
 ## [1.x] — GTEC PRO V1
 

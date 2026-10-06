@@ -37,7 +37,7 @@ Flux cible (extrait) : **Besoin → Recherche → Choix → Devis → Accepation
 
 Contraintes du runtime Convex appliquées dans tout le code :
 `crypto.subtle` (pas `node:crypto`), une query ne peut pas écrire, les helpers
-partagés sont dans `./gtec` (`requireUser`, `notify`, `notifyAdmins`, `auditLog`).
+partagés sont dans `gtec.ts` (`requireUser`, `notify`, `notifyAdmins`, `auditLog`).
 
 ---
 
@@ -70,6 +70,7 @@ le cycle `DRAFT → SUBMITTED → UNDER_REVIEW → VERIFIED / REJECTED`.
 | Revenus | `gtec.ts` | `commissionFor`, `payoutFor`, `splitFiftyFifty`, `adminListCommissions` |
 | Back-office | `gtec.ts` | `requireAdminScope`, `adminExists`, `claimAdmin` |
 | Notifications | `gtec.ts` | `notify`, `notifyAdmins`, `listMyNotifications`, `markNotificationRead` |
+| Messagerie | `gtec.ts` | `createChatRoom`, `sendMessage`, `listConversations`, `listMessages` |
 | Admin & autre | `adminApp.ts`, `crons.ts` | statistiques, référentiel, sweep quotidien |
 
 ---
@@ -377,47 +378,47 @@ gestion administrative des commandes diaspora (validation à distance du bénéf
 
 ---
 
-## 11. Module de messagerie (CONVERSATIONS — V2)
+## 12. Module de messagerie (CONVERSATIONS — V2)
 
 Tables définies dans `src/convex/schemaExtensions.ts` et fusionnées dans le
 schéma principal via le spread `...extensionTables` de `src/convex/schema.ts`
 (`schemaValidation: false`). API métier : `src/convex/gtec.ts` — le
 front-end n'accède jamais aux tables directement.
 
-### 11.1 Tables du module
+### 12.1 Tables du module
 
 | Table | Rôle | Champs clés |
 |---|---|---|
 | `chatRooms` | Salles de discussion après mise en relation / acceptation du devis | `requestId?`, `participantIds`, `subject?`, `status` (active/closed/archived), `createdAt`, `updatedAt` |
-| `conversationMessages` | Messagestexte et notifications d'appel (sans contenu audio) | `roomId`, `senderId`, `body?`, `callKind?`, `at` |
+| `conversationMessages` | Messages texte et notifications d'appel (sans contenu audio) | `roomId`, `senderId`, `body?`, `callKind?`, `at` |
 
-### 11.2 Index
+### 12.2 Index
 
 | Table | Index |
 |---|---|
 | `chatRooms` | `by_request(requestId)`, `by_participants(participantIds)`, `by_status(status)` |
 | `conversationMessages` | `by_room(roomId)`, `by_sender(senderId)`, `by_at(at)` |
 
-### 11.3 API Convex
+### 12.3 API Convex
 
 | Fonction | Type | Rôle |
 |---|---|---|
-| `createChatRoom` | mutation | Ouvre ou réutilise une salle entre participants d'une demande (réutilise si 존재하는 room pour même requestId + mêmes participants) |
-| `sendMessage` | mutation | Envoie un message texte ou une notification d'appel (callKind) ; vérifie participation + statut actif ; notifie les autres participants |
+| `createChatRoom` | mutation | Ouvre ou réutilise une salle entre participants d'une demande (réutilise si une room existe déjà pour même requestId + mêmes participants) |
+| `sendMessage` | mutation | Envoie un message texte ou une notification d'appel (`callKind`) ; vérifie participation + statut actif ; notifie les autres participants |
 | `listConversations` | query | Liste les salles du participant connecté avec dernier message et autres participants |
-| `listMessages` | query | Messages d'une salle, ordre chronologique décroissant, enrichis avec senderName et isMe |
+| `listMessages` | query | Messages d'une salle, ordre chronologique décroissant, enrichis avec `senderName` et `isMe` |
 
-### 11.4 Règles métier
+### 12.4 Règles métier
 
-- Une conversation nécessite ≥ 2 participants.
+- Une conversation nécessite au moins 2 participants.
 - Réutilisation : si une room existe déjà pour le même `requestId` et les mêmes participants, on retourne celle-ci.
-- Messages : texte OU notification d'appel (`callKind` : appel_sortant/entrant/accepte/recu/decroche/terminé).
+- Messages : texte OU notification d'appel (`callKind` : `appel_sortant`/`appel_entrant`/`appel_accepte`/`appel_recu`/`appel_decroche`/`appel_terminé`).
 - Sécurité : seuls les participants peuvent envoyer des messages ; les rooms clôturées (`status !== "active"`) n'acceptent plus de messages.
 - Notifications : chaque message notifie les autres participants via `notify` (file e-mail + in-app).
 
 ---
 
-## 12. Documentation & dette assumée
+## 13. Documentation & dette assumée
 
 - **Non couvert** (hors périmètre V1) : matching avancé score, shortlists multi-pros, comparateurs de devis détaillés, marketplace B2B, bâtiments/équipements, garanties, maintenance, IoT.
 - **Clarté V1** : le policier métier reste celui du cahier des charges — la demande est un simple flux, le devis est le loup de la situation, l'acceptation déclenche l'affectation, le suivi est en temps réel, la réception est signée, le paiement est sécurisé, l'évaluation est laissée libre.
@@ -425,14 +426,14 @@ front-end n'accède jamais aux tables directement.
 
 ---
 
-## 12. Module CONTRATS, COMMISSIONS ET FACTURATION (V2)
+## 13. Module CONTRATS, COMMISSIONS ET FACTURATION (V2)
 
 Tables définies dans `src/convex/schemaExtensions.ts` et fusionnées dans le
 schéma principal via le spread `...extensionTables` de `src/convex/schema.ts`
 (`schemaValidation: false`). API métier : `src/convex/contracts.ts` — le
 front-end n'accède jamais aux tables directement.
 
-### 11.1 Tables du module
+### 13.1 Tables du module
 
 | Table | Rôle (référentiel) | Champs clés |
 |---|---|---|
@@ -455,7 +456,7 @@ index `by_request`/`by_client`) et des champs module (`reference`, `type`,
 `remaining`, `pdfUrl`…) ; sa définition « double » de `schemaExtensions.ts`
 n'est pas propagée dans `extensionTables` (le spread écraserait la fusion).
 
-### 11.2 Index
+### 13.2 Index
 
 | Table | Index |
 |---|---|
@@ -472,7 +473,7 @@ n'est pas propagée dans `extensionTables` (le spread écraserait la fusion).
 | `documentVersions` / `documentAccessLogs` | `by_document(documentId)` ; `by_document`, `by_accessedAt` |
 | `creditNotes` | `by_client`, `by_invoice`, `by_reference` |
 
-### 12.3 Règles métier appliquées
+### 13.3 Règles métier appliquées
 
 - Montants en FCFA entiers ; commission figée à 15 % par transaction (§1, §19),
   modifiable uniquement par l'administration avec trace dans `auditLogs`.
