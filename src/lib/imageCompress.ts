@@ -10,7 +10,12 @@
 
 export type CompressResult =
   | { ok: true; dataUrl: string; compressed: boolean; originalSize: number }
-  | { ok: false; reason: "trop-lourd"; originalSize: number };
+  | {
+      ok: false;
+      /** "trop-lourd" : non compressible ; "lecture-impossible" : fichier illisible. */
+      reason: "trop-lourd" | "lecture-impossible";
+      originalSize: number;
+    };
 
 /** Charge un fichier image dans un bitmap HTML (décode aussi l'EXIF d'orientation). */
 function loadImage(src: string): Promise<HTMLImageElement> {
@@ -73,13 +78,19 @@ export async function compressImageIfNeeded(
     return { ok: true, dataUrl: "", compressed: false, originalSize: file.size };
   }
 
-  // Lecture du fichier en data URL.
-  const raw = await new Promise<string>((resolve, reject) => {
+  // Lecture du fichier en data URL. Un échec de lecture (fichier déplacé,
+  // supprimé ou flux indisponible) ne lève jamais : les appelants gèrent déjà
+  // `ok: false`, et une promesse rejetée non rattrapée s'afficherait comme une
+  // erreur bloquante dans la console/preview.
+  const raw = await new Promise<string | null>((resolve) => {
     const reader = new FileReader();
     reader.onload = () => resolve(String(reader.result));
-    reader.onerror = () => reject(new Error("Lecture du fichier impossible."));
+    reader.onerror = () => resolve(null);
     reader.readAsDataURL(file);
   });
+  if (raw === null) {
+    return { ok: false, reason: "lecture-impossible", originalSize: file.size };
+  }
 
   // GIF animé / formats exotiques : non ré-encodables proprement.
   if (file.type === "image/gif" || file.type === "image/svg+xml") {

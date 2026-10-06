@@ -282,7 +282,11 @@ export default function ClientDashboard() {
     }
     const res = await compressImageIfNeeded(file);
     if (!res.ok) {
-      toast.error(`Photo trop lourde même après compression (max ${MAX_FILE_SIZE_LABEL}).`);
+      toast.error(
+        res.reason === "lecture-impossible"
+          ? "Fichier illisible, réessayez."
+          : `Photo trop lourde même après compression (max ${MAX_FILE_SIZE_LABEL}).`,
+      );
       return;
     }
     if (res.compressed) {

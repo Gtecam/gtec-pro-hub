@@ -13,6 +13,14 @@ Format : Keep a Changelog (approx.) — versions internes V1 / V2.
   (`capacityPerDay` non défini) et ne définit pas `travelMinutes`. Une valeur
   explicite de `travelMinutes` (y compris 0) reste respectée, et les règles
   avec `capacityPerDay` conservent leur comportement exact.
+- `src/lib/imageCompress.ts` — un échec de lecture de fichier
+  (`reader.onerror`, « Lecture du fichier impossible ») ne lève plus : la
+  promesse se résout et la fonction renvoie
+  `{ ok: false, reason: "lecture-impossible" }` (motif ajouté à
+  `CompressResult`). Les appels (`RequestDetail`, `ClientDashboard` ×2,
+  `NewRequest`, `ReportForm`, `TechnicianSpace`) affichent désormais un
+  message adapté au lieu de produire un rejet de promesse non géré
+  signalé comme erreur bloquante en preview.
 
 ### Vérifié
 - `bun scripts/test-availability.ts` — 26/26 assertions réussies (exit 0).

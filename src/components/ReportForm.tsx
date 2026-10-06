@@ -58,7 +58,9 @@ export function ReportForm({
       const res = await compressImageIfNeeded(file);
       if (!res.ok) {
         toast.error(
-          `${file.name} : trop lourde même après compression (max ${MAX_FILE_SIZE_LABEL}).`,
+          res.reason === "lecture-impossible"
+            ? `${file.name} : fichier illisible, réessayez.`
+            : `${file.name} : trop lourde même après compression (max ${MAX_FILE_SIZE_LABEL}).`,
         );
         continue;
       }

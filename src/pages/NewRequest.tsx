@@ -201,7 +201,9 @@ export default function NewRequest() {
       const res = await compressImageIfNeeded(file);
       if (!res.ok) {
         toast.error(
-          `${file.name} : trop lourd même après compression (max ${MAX_FILE_SIZE_LABEL}).`,
+          res.reason === "lecture-impossible"
+            ? `${file.name} : fichier illisible, réessayez.`
+            : `${file.name} : trop lourd même après compression (max ${MAX_FILE_SIZE_LABEL}).`,
         );
         continue;
       }
