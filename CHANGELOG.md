@@ -2,6 +2,26 @@
 
 Format : Keep a Changelog (approx.) — versions internes V1 / V2.
 
+## [2.0.1] — Correctif disponibilité (2026-10-06)
+
+### Corrigé
+- `src/lib/availability.ts` — écart « capacité non définie : plage ouverte
+  malgré un rendez-vous » (3 créneaux au lieu de 2) : un buffer de déplacement
+  par défaut (`DEFAULT_TRAVEL_MINUTES = 30`, même valeur que l'UI
+  `AvailabilityManager`) est désormais appliqué autour des rendez-vous déjà
+  pris quand une règle ne gère pas sa capacité journalière
+  (`capacityPerDay` non défini) et ne définit pas `travelMinutes`. Une valeur
+  explicite de `travelMinutes` (y compris 0) reste respectée, et les règles
+  avec `capacityPerDay` conservent leur comportement exact.
+
+### Vérifié
+- `bun scripts/test-availability.ts` — 26/26 assertions réussies (exit 0).
+- `bunx convex dev --once` — exit 0 (push + typecheck serveur OK ; la lib est
+  consommée côté serveur par `appointments.ts`).
+- `bun tsc -b --noEmit` — exit 0.
+
+---
+
 ## [2.0.0] — Module CONTRATS, COMMISSIONS ET FACTURATION (2026-10-05)
 
 ### Ajouté

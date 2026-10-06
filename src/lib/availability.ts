@@ -29,6 +29,15 @@ export const WEEKDAY_LABELS = [
   "Samedi",
 ];
 
+/**
+ * Buffer de déplacement par défaut (minutes) autour d'un rendez-vous déjà
+ * pris, appliqué quand la règle ne gère pas sa capacité journalière
+ * (`capacityPerDay` non défini — « plage ouverte ») et ne définit pas
+ * `travelMinutes`. Même valeur par défaut que l'UI (`AvailabilityManager` :
+ * `travelMinutes ?? 30`). Une valeur explicite (y compris 0) reste respectée.
+ */
+export const DEFAULT_TRAVEL_MINUTES = 30;
+
 /** Créneaux libres sur une plage de dates pour un jeu de règles et de créneaux déjà réservés. */
 export function generateAvailableSlots(params: {
   rules: Array<{ weekday: number; startMin: number; endMin: number; slotMinutes?: number; travelMinutes?: number; capacityPerDay?: number; effectiveFrom?: string; effectiveUntil?: string }>;
@@ -62,10 +71,19 @@ export function generateAvailableSlots(params: {
       return bs < dayEndOfDay && be > dayStartOfDay;
     });
 
-    // Determine the max travel buffer needed across all rules for this day
+    // Determine the max travel buffer needed across all rules for this day.
+    // Une valeur explicite de travelMinutes (0 compris) est respectée ; sinon,
+    // si la capacité journalière n'est pas gérée, on applique le buffer par
+    // défaut pour éviter d'enchaîner deux interventions sans temps de trajet.
     let maxTravel = 0;
     for (const r of dayRules) {
-      if (r.travelMinutes && r.travelMinutes > maxTravel) maxTravel = r.travelMinutes;
+      const effectiveTravel =
+        r.travelMinutes !== undefined
+          ? r.travelMinutes
+          : r.capacityPerDay === undefined
+            ? DEFAULT_TRAVEL_MINUTES
+            : 0;
+      if (effectiveTravel > maxTravel) maxTravel = effectiveTravel;
     }
     const busyMinutes = new Set<number>();
     for (const b of dayBooked) {
