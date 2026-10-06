@@ -154,12 +154,13 @@ export default function Home() {
                 })()}
               </span>
               <div className="min-w-0 flex-1">
-                <p className="text-sm font-semibold">
-                  {statusMeta(active.request.status).label}
-                </p>
+                <p className="text-sm font-semibold">Intervention en cours</p>
                 <p className="truncate text-sm text-muted-foreground">
                   {SERVICES.find((s) => s.key === active.request.serviceKey)
                     ?.label ?? active.request.serviceKey}
+                </p>
+                <p className="truncate text-xs text-muted-foreground">
+                  {statusMeta(active.request.status).label}
                 </p>
               </div>
               <Button
