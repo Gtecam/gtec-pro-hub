@@ -1,6 +1,7 @@
 import { useMutation, useQuery } from "convex/react";
 import { BadgeCheck, CheckCircle2, Copy, ExternalLink, RefreshCcw } from "lucide-react";
 import { toast } from "sonner";
+import { useNow } from "@/hooks/use-now";
 import { useNavigate } from "react-router";
 import { api } from "@/convex/_generated/api";
 import { useAuth } from "@/hooks/use-auth";
@@ -23,10 +24,11 @@ export function ProfileAnnualReviewCard() {
   const confirm = useMutation(api.profileExtras.confirmProfileUpToDate);
   const { user } = useAuth();
   const navigate = useNavigate();
+  const now = useNow();
 
   if (last === undefined) return null;
 
-  const stale = !last || Date.now() - last.confirmedAt > YEAR_MS;
+  const stale = !last || now - last.confirmedAt > YEAR_MS;
   const publicUrl = user?._id ? `${window.location.origin}/t/${user._id}` : null;
 
   const doConfirm = async () => {

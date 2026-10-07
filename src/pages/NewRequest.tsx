@@ -15,7 +15,7 @@ import {
   Trash2,
   Wallet,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { toast } from "sonner";
 import { useMutation, useQuery } from "convex/react";
 import { useNavigate } from "react-router";
@@ -126,8 +126,24 @@ export default function NewRequest() {
   const chunksRef = useRef<Blob[]>([]);
 
   // GPS du chantier : position capturée au moment de la demande (facultative).
-  const geo = useGeolocation();
   const [gpsCoords, setGpsCoords] = useState<GeoFix | null>(null);
+  const geo = useGeolocation({
+    // Appliqué dans le callback géolocalisation (pas dans un effet) : fix →
+    // coordonnées + ville GTEC la plus proche proposée automatiquement.
+    onFix: (fix) => {
+      setGpsCoords(fix);
+      const near = nearestCity(fix.coords);
+      if (near && near.distanceKm <= 40) {
+        setCity((c) => {
+          if (c !== near.city) {
+            toast.info(`Ville détectée : ${near.city} (${near.distanceKm} km)`);
+            return near.city;
+          }
+          return c;
+        });
+      }
+    },
+  });
 
   const captureGps = () => {
     geo.locate();
@@ -154,28 +170,6 @@ export default function NewRequest() {
           subcategories: [] as { key: string; label: string }[],
         }))
   );
-
-  // Dès qu'un fix GPS arrive (bouton « Ma position »), on l'enregistre et on
-  // propose automatiquement la ville GTEC la plus proche.
-  const lastFixKey = geo.position
-    ? `${geo.position.coords.lat},${geo.position.coords.lon}`
-    : "";
-  useEffect(() => {
-    if (!geo.position || geo.loading) return;
-    setGpsCoords(geo.position);
-    const near = nearestCity(geo.position.coords);
-    if (near && near.distanceKm <= 40) {
-      setCity((c) => {
-        if (c !== near.city) {
-          toast.info(`Ville détectée : ${near.city} (${near.distanceKm} km)`);
-          return near.city;
-        }
-        return c;
-      });
-    }
-    // Déclenché uniquement quand un nouveau fix GPS est reçu.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [lastFixKey]);
 
   const catalogue = serviceKey ? interventionsForService(serviceKey) : undefined;
   const intervention = interventionByCode(interventionCode);

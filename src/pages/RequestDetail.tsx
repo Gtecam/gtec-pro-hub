@@ -30,6 +30,7 @@ import {
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
+import { useNow } from "@/hooks/use-now";
 import type { Doc } from "@/convex/_generated/dataModel";
 import { useNavigate, useParams } from "react-router";
 import { api } from "@/convex/_generated/api";
@@ -98,6 +99,7 @@ export default function RequestDetail() {
   const { requestId } = useParams<{ requestId: string }>();
   const navigate = useNavigate();
   const { user } = useAuth();
+  const now = useNow();
 
   const detail = useQuery(api.gtec.getRequestDetail, {
     requestId: requestId as never,
@@ -721,7 +723,7 @@ export default function RequestDetail() {
                         request.coords as { lat: number; lon: number },
                       );
                     const ageMin = Math.round(
-                      (Date.now() - t.positionAt) / 60000,
+                      (now - t.positionAt) / 60000,
                     );
                     return (
                       <div

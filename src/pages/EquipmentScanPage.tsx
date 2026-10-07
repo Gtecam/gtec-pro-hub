@@ -1,5 +1,6 @@
 import { useQuery } from "convex/react";
 import { QrCode, ShieldAlert, SlidersHorizontal, CalendarClock, Archive, Download, Eye } from "lucide-react";
+import { useNow } from "@/hooks/use-now";
 import { useParams } from "react-router";
 import { api } from "@/convex/_generated/api";
 import { Button } from "@/components/ui/button";
@@ -12,6 +13,7 @@ import { PublicShell } from "@/components/gtec";
 export default function EquipmentScanPage() {
   const { token } = useParams<{ token: string }>();
   const data = useQuery(api.buildings.getScannedAsset, token ? { token } : "skip");
+  const now = useNow();
 
   const item = data?.asset;
   const building = data?.building;
@@ -67,7 +69,7 @@ export default function EquipmentScanPage() {
             <p className="text-sm"><span className="text-muted-foreground">Marque / modèle :</span> {item?.brand ?? ""} {item?.model ?? ""}</p>
             <p className="text-sm"><span className="text-muted-foreground">N° série :</span> {item?.serialNumber ?? "—"}</p>
             <p className="text-sm"><span className="text-muted-foreground">Installé le :</span> {item?.installedAt ? formatDate(item.installedAt) : "—"}</p>
-            <p className="text-sm"><span className="text-muted-foreground">Garantie :</span> {item?.warrantyUntil ? (item.warrantyUntil > Date.now() ? `active jusqu'au ${formatDate(item.warrantyUntil)}` : `expirée le ${formatDate(item.warrantyUntil)}`) : "non renseignée"}</p>
+            <p className="text-sm"><span className="text-muted-foreground">Garantie :</span> {item?.warrantyUntil ? (item.warrantyUntil > now ? `active jusqu'au ${formatDate(item.warrantyUntil)}` : `expirée le ${formatDate(item.warrantyUntil)}`) : "non renseignée"}</p>
             <p className="text-sm"><span className="text-muted-foreground">Prochain entretien :</span> {item?.nextMaintenanceAt ? formatDate(item.nextMaintenanceAt) : "—"}</p>
             <p className="text-sm"><span className="text-muted-foreground">Bâtiment :</span> {building?.name ?? "—"} ({building?.city ?? "—"})</p>
           </CardContent></Card>

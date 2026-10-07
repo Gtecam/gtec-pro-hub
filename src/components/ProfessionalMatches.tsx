@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import {
   ArrowRight,
@@ -401,10 +401,11 @@ export function ProfessionalMatches({
   }, [matches]);
 
   // Premier affichage avec demande réelle : traçabilité §19 (best effort).
-  const [recorded, setRecorded] = useState(false);
+  // Garde par ref (pas d'état) : évite un setState synchrone dans l'effet.
+  const recordedRef = useRef(false);
   useEffect(() => {
-    if (!requestId || !result || recorded) return;
-    setRecorded(true);
+    if (!requestId || !result || recordedRef.current) return;
+    recordedRef.current = true;
     void recordRun({
       requestId: requestId as never,
       proUserIds: result.matches.slice(0, 30).map((m) => m.proUserId as never),

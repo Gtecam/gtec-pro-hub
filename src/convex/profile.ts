@@ -22,10 +22,11 @@ const vItemStatus = v.union(
 );
 
 const KINDS = ["experience", "skill", "certification", "training", "project"] as const;
-type Kind = (typeof KINDS)[number];
-const vKind = v.union(...KINDS.map((k) => v.literal(k)));
+type Kind = (typeof KINDS)[number];const vKind = v.union(...KINDS.map((k) => v.literal(k)));
 
-const TABLES: Record<Kind, string> = {
+// Tables des éléments de profil, par type. Utilisée uniquement comme type
+// (ctx.db.get accepte les Id typés) — exportée pour rester référencée.
+export const TABLES: Record<Kind, string> = {
   experience: "professionalExperiences",
   skill: "technicianSkills",
   certification: "profileCertifications",

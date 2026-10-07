@@ -1,5 +1,6 @@
 import { useQuery } from "convex/react";
 import { QrCode, ShieldAlert } from "lucide-react";
+import { useNow } from "@/hooks/use-now";
 import { useParams } from "react-router";
 import { api } from "@/convex/_generated/api";
 import { PublicShell } from "@/components/gtec";
@@ -16,6 +17,7 @@ import { formatDate } from "@/lib/gtec";
 export default function AssetScanPage() {
   const { token } = useParams<{ token: string }>();
   const data = useQuery(api.buildings.getScannedAsset, token ? { token } : "skip");
+  const now = useNow();
 
   return (
     <PublicShell
@@ -68,7 +70,7 @@ export default function AssetScanPage() {
                   <p>
                     <span className="text-muted-foreground">Garantie :</span>{" "}
                     {data.asset.warrantyUntil
-                      ? data.asset.warrantyUntil > Date.now()
+                      ? data.asset.warrantyUntil > now
                         ? `active jusqu'au ${formatDate(data.asset.warrantyUntil)}`
                         : `expirée le ${formatDate(data.asset.warrantyUntil)}`
                       : "non renseignée"}

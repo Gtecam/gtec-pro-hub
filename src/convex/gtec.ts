@@ -4111,7 +4111,7 @@ export const adminAssignVisit = mutation({
       args.teamLeaderId,
       "visite",
       "Nouvelle visite de maintenance",
-      `Visite \« ${contract?.title ?? "contrat"} \» pr\u00e9vue le ${new Date(visit.scheduledAt).toLocaleDateString("fr-FR")}.`,
+      `Visite « ${contract?.title ?? "contrat"} » pr\u00e9vue le ${new Date(visit.scheduledAt).toLocaleDateString("fr-FR")}.`,
     );
   },
 });

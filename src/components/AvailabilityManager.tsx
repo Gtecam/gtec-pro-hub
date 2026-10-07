@@ -2,6 +2,7 @@ import { useMutation, useQuery } from "convex/react";
 import { CalendarDays, CheckCircle2, Clock, MapPin, Plus, Trash2, XCircle } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
+import { useNow } from "@/hooks/use-now";
 import { useAuth } from "@/hooks/use-auth";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
@@ -65,6 +66,7 @@ export function AvailabilityManager() {
   const upsertRule = useMutation(api.appointments.upsertAvailabilityRule);
   const removeRule = useMutation(api.appointments.removeAvailabilityRule);
   const updateAppt = useMutation(api.appointments.updateAppointment);
+  const now = useNow();
 
   const [busy, setBusy] = useState(false);
   const [open, setOpen] = useState(false);
@@ -119,7 +121,6 @@ export function AvailabilityManager() {
 
   if (rules === undefined || appointments === undefined) return null;
 
-  const now = useNow();
   const upcoming = appointments.asPro.filter((a) => a.slotEnd > now - 86_400_000);
   const openOnes = upcoming.filter((a) => a.status === "CONFIRME");
 

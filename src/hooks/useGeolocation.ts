@@ -32,7 +32,11 @@ export function geoErrorMessage(err: GeolocationPositionError): string {
  *  - `useGeolocation({ watch: true })` : suivi continu (partage temps réel).
  * Aucune donnée n'est envoyée automatiquement : c'est l'appelant qui décide.
  */
-export function useGeolocation(opts?: { watch?: boolean }) {
+export function useGeolocation(opts?: {
+  watch?: boolean;
+  /** Appelé à chaque fix GPS reçu (callback externe, pas un effet). */
+  onFix?: (fix: GeoFix) => void;
+}) {
   const [state, setState] = useState<GeoState>({
     position: null,
     error: null,
@@ -41,6 +45,12 @@ export function useGeolocation(opts?: { watch?: boolean }) {
   });
   const watchId = useRef<number | null>(null);
   const [watching, setWatching] = useState(false);
+  // Le callback est latest-ref (mis à jour dans l'effet, pas pendant le
+  // rendu — react-hooks/refs) : `locate` reste stable vis-à-vis des deps.
+  const onFixRef = useRef(opts?.onFix);
+  useEffect(() => {
+    onFixRef.current = opts?.onFix;
+  });
 
   const stop = useCallback(() => {
     if (watchId.current !== null) {
@@ -61,19 +71,21 @@ export function useGeolocation(opts?: { watch?: boolean }) {
     }
     setState((s) => ({ ...s, loading: true, error: null }));
     const onOk = (pos: GeolocationPosition) => {
-      setState({
-        position: {
-          coords: {
-            lat: pos.coords.latitude,
-            lon: pos.coords.longitude,
-          },
-          accuracy: pos.coords.accuracy,
-          at: pos.timestamp,
+      const fix: GeoFix = {
+        coords: {
+          lat: pos.coords.latitude,
+          lon: pos.coords.longitude,
         },
+        accuracy: pos.coords.accuracy,
+        at: pos.timestamp,
+      };
+      setState({
+        position: fix,
         error: null,
         loading: false,
         supported: true,
       });
+      onFixRef.current?.(fix);
     };
     const onErr = (err: GeolocationPositionError) => {
       setState((s) => ({

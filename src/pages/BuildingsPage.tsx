@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
+import { useNow } from "@/hooks/use-now";
 import { api } from "@/convex/_generated/api";
 import { AppShell } from "@/components/gtec";
 import { Badge } from "@/components/ui/badge";
@@ -75,6 +76,7 @@ export default function BuildingsPage() {
   const addEvent = useMutation(api.buildings.addBuildingEvent);
   const grant = useMutation(api.buildings.grantBuildingAccess);
   const revoke = useMutation(api.buildings.revokeBuildingAccess);
+  const now = useNow();
 
   const [selected, setSelected] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -354,7 +356,7 @@ export default function BuildingsPage() {
                           {a.serialNumber ? `N° ${a.serialNumber} · ` : ""}
                           {a.installedAt ? `Installé le ${formatDate(a.installedAt)} · ` : ""}
                           {a.warrantyUntil
-                            ? a.warrantyUntil > Date.now()
+                            ? a.warrantyUntil > now
                               ? `Garantie jusqu'au ${formatDate(a.warrantyUntil)}`
                               : "Garantie expirée"
                             : "Sans garantie enregistrée"}

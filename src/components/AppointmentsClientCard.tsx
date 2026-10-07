@@ -63,6 +63,7 @@ export function AppointmentsClientCard() {
   const mine = useQuery(api.appointments.myAppointments, {});
   const book = useMutation(api.appointments.bookAppointment);
   const updateAppt = useMutation(api.appointments.updateAppointment);
+  const now = useNow();
 
   const slotsByDay = useMemo(() => {
     const map = new Map<string, Array<{ start: number; end: number }>>();
@@ -111,7 +112,6 @@ export function AppointmentsClientCard() {
 
 
   if (pros === undefined || mine === undefined) return null;
-  const now = useNow();
   const upcoming = mine.asClient.filter((a) => a.slotEnd > now && a.status === "CONFIRME");
   const history = mine.asClient.filter((a) => a.slotEnd <= now || a.status !== "CONFIRME").slice(-6);
 

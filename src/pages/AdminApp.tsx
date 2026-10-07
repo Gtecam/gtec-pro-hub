@@ -34,7 +34,7 @@ import {
   InputOTPSlot,
 } from "@/components/ui/input-otp";
 import { cn } from "@/lib/utils";
-import { CONTRACT_STATUS_META, contractFrequencyLabel, fcfa, formatDate } from "@/lib/gtec";
+import { contractFrequencyLabel, fcfa, formatDate } from "@/lib/gtec";
 
 /**
  * Application web ADMIN — séparée de l'app clients/techniciens.

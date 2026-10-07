@@ -382,16 +382,17 @@ export function SignaturePad({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const drawing = useRef(false);
   const last = useRef<{ x: number; y: number } | null>(null);
+  const hasInkRef = useRef(false);
   const [hasInk, setHasInk] = useState(false);
 
+  // Effacement du canvas quand `value` repasse à null (réinitialisation par
+  // le parent) : pas de setState synchrone ici — l'état `hasInk` est
+  // resynchronisé par le bouton « Effacer » / le prochain tracé.
   useEffect(() => {
-    if (!value) {
-      setHasInk(false);
-      const canvas = canvasRef.current;
-      if (canvas) {
-        const ctx = canvas.getContext("2d");
-        ctx?.clearRect(0, 0, canvas.width, canvas.height);
-      }
+    if (!value && canvasRef.current) {
+      const ctx = canvasRef.current.getContext("2d");
+      ctx?.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
+      hasInkRef.current = false;
     }
   }, [value]);
 
@@ -422,14 +423,17 @@ export function SignaturePad({
     ctx.lineTo(p.x, p.y);
     ctx.stroke();
     last.current = p;
-    if (!hasInk) setHasInk(true);
+    if (!hasInkRef.current) {
+      hasInkRef.current = true;
+      setHasInk(true);
+    }
   };
 
   const stop = () => {
     if (!drawing.current) return;
     drawing.current = false;
     last.current = null;
-    if (hasInk && canvasRef.current) {
+    if (hasInkRef.current && canvasRef.current) {
       onChange(canvasRef.current.toDataURL("image/png"));
     }
   };
@@ -441,6 +445,7 @@ export function SignaturePad({
       ctx?.clearRect(0, 0, canvas.width, canvas.height);
     }
     setHasInk(false);
+    hasInkRef.current = false;
     onChange(null);
   };
 

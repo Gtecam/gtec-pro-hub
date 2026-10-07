@@ -10,8 +10,16 @@ import { useQuery } from "convex/react";
 import { useNavigate } from "react-router";
 import {
   ArrowRight,
+  Battery,
+  Building2,
   Flame,
+  Gauge,
+  Network,
+  Package,
   Search,
+  Sun,
+  Wind,
+  Zap,
 } from "lucide-react";
 import { api } from "@/convex/_generated/api";
 import { AppShell } from "@/components/gtec";
@@ -21,10 +29,10 @@ import { useAuth } from "@/hooks/use-auth";
 import {
   DEFAULT_CATEGORIES,
   SERVICES,
-  categoryIcon,
   statusMeta,
   type ServiceKey,
 } from "@/lib/gtec";
+import type { LucideIcon } from "lucide-react";
 
 /** Les 6 catégories mises en avant sur l'accueil (le reste : « Voir tout »). */
 const HOME_CATEGORY_KEYS: ServiceKey[] = [
@@ -36,6 +44,17 @@ const HOME_CATEGORY_KEYS: ServiceKey[] = [
   "maintenance", // Maintenance
 ];
 
+const CATEGORY_ICON_COMPONENTS: Record<string, LucideIcon> = {
+  Zap,
+  Sun,
+  Wind,
+  Network,
+  Battery,
+  Gauge,
+  Package,
+  Building2,
+};
+
 function HomeCategoryCard({
   categoryKey,
   label,
@@ -46,7 +65,9 @@ function HomeCategoryCard({
   icon: string;
 }) {
   const navigate = useNavigate();
-  const Icon = categoryIcon(icon);
+  // Référence stable (composant module-level) : jamais recréé pendant le
+  // rendu (react-hooks/static-components).
+  const Icon = CATEGORY_ICON_COMPONENTS[icon] ?? Zap;
   return (
     <button
       type="button"

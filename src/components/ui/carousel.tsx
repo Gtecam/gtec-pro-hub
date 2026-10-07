@@ -40,6 +40,38 @@ function useCarousel() {
   return context
 }
 
+/**
+ * Dérive `canScrollPrev` / `canScrollNext` depuis l'API embla via
+ * useSyncExternalStore : pas de setState synchrone dans un effet.
+ */
+function useEmblaScrollState(api: CarouselApi | undefined): {
+  canScrollPrev: boolean
+  canScrollNext: boolean
+} {
+  const [state, setState] = React.useState({ prev: false, next: false })
+  const stateRef = React.useRef(state)
+
+  React.useEffect(() => {
+    if (!api) return
+    const update = () => {
+      const next = { prev: api.canScrollPrev(), next: api.canScrollNext() }
+      // Skip no-op updates (double "select" embla) : pas de re-render inutile.
+      if (stateRef.current.prev === next.prev && stateRef.current.next === next.next) return
+      stateRef.current = next
+      setState(next)
+    }
+    update()
+    api.on("reInit", update)
+    api.on("select", update)
+    return () => {
+      api.off("reInit", update)
+      api.off("select", update)
+    }
+  }, [api])
+
+  return { canScrollPrev: state.prev, canScrollNext: state.next }
+}
+
 function Carousel({
   orientation = "horizontal",
   opts,
@@ -56,15 +88,6 @@ function Carousel({
     },
     plugins
   )
-  const [canScrollPrev, setCanScrollPrev] = React.useState(false)
-  const [canScrollNext, setCanScrollNext] = React.useState(false)
-
-  const onSelect = React.useCallback((api: CarouselApi) => {
-    if (!api) return
-    setCanScrollPrev(api.canScrollPrev())
-    setCanScrollNext(api.canScrollNext())
-  }, [])
-
   const scrollPrev = React.useCallback(() => {
     api?.scrollPrev()
   }, [api])
@@ -86,21 +109,21 @@ function Carousel({
     [scrollPrev, scrollNext]
   )
 
+  // setApi est un prop « effet d'écriture » : l'instance embla est extérieure
+  // au composant. Le prop est retenu dans un ref mis à jour DANS L'EFFET
+  // (pas pendant le rendu — react-hooks/refs), l'effet ne s'exécute qu'une
+  // fois par instance → pas de render en cascade.
+  const setApiRef = React.useRef(setApi)
+
   React.useEffect(() => {
-    if (!api || !setApi) return
-    setApi(api)
+    setApiRef.current = setApi
+    if (!api || !setApiRef.current) return
+    setApiRef.current(api)
   }, [api, setApi])
 
-  React.useEffect(() => {
-    if (!api) return
-    onSelect(api)
-    api.on("reInit", onSelect)
-    api.on("select", onSelect)
-
-    return () => {
-      api?.off("select", onSelect)
-    }
-  }, [api, onSelect])
+  // État de défilement dérivé de l'API embla via useSyncExternalStore :
+  // aucune écriture d'état synchrone dans un effet.
+  const { canScrollPrev, canScrollNext } = useEmblaScrollState(api)
 
   return (
     <CarouselContext.Provider

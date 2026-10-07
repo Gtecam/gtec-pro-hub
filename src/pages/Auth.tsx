@@ -26,7 +26,7 @@ import {
   Wrench,
 } from "lucide-react";
 import { CM_COUNTRY_CODE, formatCmPhone, toCmLocal } from "@/lib/gtec";
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { toast } from "sonner";
 import { useNavigate, useSearchParams } from "react-router";
@@ -59,7 +59,7 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
 
   // Écran 1 : choix de l'espace (client ou technicien) — écran 2 : connexion.
   const [space, setSpace] = useState<AccountType | null>(null);
-  const [registered, setRegistered] = useState(false);
+  const registeredRef = useRef(false);
   const [method, setMethod] = useState<"phone" | "email">("phone");
   const [step, setStep] = useState<
     "signIn" | { email?: string; phone?: string }
@@ -89,16 +89,15 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
 
   // Connexion réussie : enregistrer le type d'espace choisi (une fois).
   useEffect(() => {
-    if (!isAuthenticated || !user || !space || registered) return;
+    if (!isAuthenticated || !user || !space || registeredRef.current) return;
+    registeredRef.current = true;
     if (user.accountType === space || user.role === "admin") {
-      setRegistered(true);
       navigate(space === "technicien" ? "/technician" : redirect);
       return;
     }
     if (!user.accountType) {
       setAccountType({ accountType: space })
         .then(() => {
-          setRegistered(true);
           navigate(space === "technicien" ? "/technician" : redirect);
         })
         .catch((e) => {
@@ -112,11 +111,10 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
           ? "Ce compte est un compte technicien — connectez-vous via « Espace technicien »."
           : "Ce compte est un compte client — connectez-vous via « Espace client ».",
       );
-      setRegistered(true);
       navigate(user.accountType === "technicien" ? "/technician" : redirect);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAuthenticated, user, space, registered]);
+  }, [isAuthenticated, user, space]);
 
   const handleEmailSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();

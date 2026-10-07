@@ -1,61 +1,10 @@
 import { useQuery } from "convex/react";
-import { ArrowLeft, Wrench, Battery, Cloud, Snowflake, Network, ShieldAlert, FileText, Plus, PlusCircle, Zap, Scale, CircleDot, Landmark, Building2, Clock, AlertTriangle } from "lucide-react";
+import { ArrowLeft, FileText, Plus, Zap, Building2, Clock, AlertTriangle } from "lucide-react";
 import { useNavigate } from "react-router";
 import { formatDate } from "@/lib/gtec";
 import { api } from "@/convex/_generated/api";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-
-type SystemSection = { icon: React.ElementType; label: string; items: { label: string; value: string | null }[] };
-
-const SYSTEMS: SystemSection[] = [
-  { icon: Battery, label: "⚡ Électricité", items: [
-    { label: "Puissance", value: null },
-    { label: "Abonnement", value: null },
-    { label: "Tableau principal", value: null },
-    { label: "Tableaux secondaires", value: null },
-    { label: "Disjoncteurs", value: null },
-    { label: "Mise à la terre", value: null },
-    { label: "Interventions", value: null },
-  ]},
-  { icon: Cloud, label: "☀️ Énergie", items: [
-    { label: "Panneaux solaires", value: null },
-    { label: "Onduleurs", value: null },
-    { label: "Batteries", value: null },
-    { label: "Groupe électrogène", value: null },
-    { label: "Système de secours", value: null },
-    { label: "Production", value: null },
-    { label: "Consommation", value: null },
-  ]},
-  { icon: Snowflake, label: "❄️ Climatisation / Froid", items: [
-    { label: "Climatiseurs", value: null },
-    { label: "Groupes froids", value: null },
-    { label: "Chambresfroides", value: null },
-    { label: "Centrales", value: null },
-    { label: "Historique de maintenance", value: null },
-  ]},
-  { icon: Network, label: "📡 Courant faible", items: [
-    { label: "Réseau informatique", value: null },
-    { label: "Fibre", value: null },
-    { label: "Vidéosurveillance", value: null },
-    { label: "Contrôle d'accès", value: null },
-    { label: "Interphonie", value: null },
-  ]},
-  { icon: ShieldAlert, label: "🔥 Sécurité incendie", items: [
-    { label: "Détecteurs", value: null },
-    { label: "Alarmes", value: null },
-    { label: "Extincteurs", value: null },
-    { label: "Désenfumage", value: null },
-    { label: "Contrôles", value: null },
-    { label: "Maintenance", value: null },
-  ]},
-  { icon: Landmark, label: "🏗️ Infrastructure", items: [
-    { label: "Chemins de câbles", value: null },
-    { label: "Supports", value: null },
-    { label: "Installations techniques", value: null },
-    { label: "Équipements associés", value: null },
-  ]},
-];
 
 export default function BuildingPassportPage() {
   const navigate = useNavigate();
@@ -63,7 +12,6 @@ export default function BuildingPassportPage() {
 
   const goBack = () => navigate(-1);
   const openEquipment = (assetId: string) => navigate(`/e/${assetId}`);
-  const openDocument = (docId: string) => navigate(`/d/${docId}`);
 
   return (
     <div className="flex flex-col gap-5 px-4 py-6 max-w-6xl mx-auto">
