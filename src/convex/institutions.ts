@@ -506,6 +506,8 @@ export const submitInstitutionVerification = mutation({
       "general",
       "Nouvelle demande d'établissement",
       `${user.name ?? "Un utilisateur"} demande la vérification de « ${name} ».`,
+      undefined,
+      ["moderation", "technique"],
     );
     return id;
   },
