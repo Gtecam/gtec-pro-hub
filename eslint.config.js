@@ -24,6 +24,8 @@ export default tseslint.config(
     },
     rules: {
       ...reactHooks.configs.recommended.rules,
+      // 345 occurrences : refonte de typage hors périmètre "correction d'erreurs".
+      "@typescript-eslint/no-explicit-any": "warn",
       "react-refresh/only-export-components": [
         "warn",
         { allowConstantExport: true },

@@ -36,7 +36,7 @@ const DEFAULT_BASE = 50_000;
 export function estimateBudget(input: EstimateInput): EstimateResult {
   const detail: string[] = [];
   let base = 0;
-  let baseLabel = input.baseLabel?.trim() || "Intervention technique";
+  const baseLabel = input.baseLabel?.trim() || "Intervention technique";
 
   if (input.basePrice && input.basePrice > 0) {
     base = input.basePrice;

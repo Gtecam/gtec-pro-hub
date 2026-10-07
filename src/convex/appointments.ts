@@ -4,7 +4,6 @@ import type { Doc, Id } from "./_generated/dataModel";
 import { requireUser } from "./gtec";
 import { generateAvailableSlots, isoDate } from "../lib/availability";
 
-const stamp = () => ({ status: "active" });
 
 
 
@@ -105,7 +104,7 @@ export const createChatRoom = mutation({
     subject: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const user = await requireUser(ctx);
+    await requireUser(ctx);
     if (args.participantIds.length < 2) {
       throw new Error("Une conversation doit contenir au moins deux participants.");
     }

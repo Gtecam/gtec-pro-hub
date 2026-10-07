@@ -1,23 +1,20 @@
 import { useMutation, useQuery } from "convex/react";
 import { useState } from "react";
-import { ArrowRight, Building2, Plus, Trash2, MapPin, Clock, AlertTriangle, FileText, PlusCircle } from "lucide-react";
+import { Building2, Plus, PlusCircle } from "lucide-react";
 import { useNavigate } from "react-router";
 import { api } from "@/convex/_generated/api";
 
 
-import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { formatDate } from "@/lib/gtec";
 
 /** GTEC PRO — §3 « PASSEPORT NUMÉRIQUE DU BÂTIMENT » + §5 « HISTORIQUE TECHNIQUE » */
 export default function MyBuildingsPage() {
-  const { user } = useAuth();
   const [name, setName] = useState("");
   const [kind, setKind] = useState("maison");
   const [city, setCity] = useState("");
@@ -26,8 +23,6 @@ export default function MyBuildingsPage() {
   const navigate = useNavigate();
 
   const createBuilding = useMutation(api.buildings.upsertBuilding);
-  const setBuildingPublic = useMutation(api.buildings.setBuildingPublic);
-  const archiveBuilding = useMutation(api.buildings.archiveBuilding);
   const buildings = useQuery(api.buildings.myBuildings);
   const building = useQuery(api.buildings.getBuilding, "skip");
 
@@ -73,22 +68,6 @@ export default function MyBuildingsPage() {
   };
 
   const open = (id: string) => navigate(`/b/${id}`);
-  const togglePublic = async (id: any, enabled: boolean) => {
-    try {
-      await setBuildingPublic({ id, enabled });
-      toast.success(enabled ? "Affichage public activé (URL /verify)" : "Affichage public désactivé");
-    } catch (e) {
-      toast.error(String(e));
-    }
-  };
-  const archive = async (id: any) => {
-    try {
-      await archiveBuilding({ id });
-      toast.success("Archivé (données conservées)");
-    } catch (e) {
-      toast.error(String(e));
-    }
-  };
 
   const owned = buildings?.owned ?? [];
   const shared = buildings?.shared ?? [];

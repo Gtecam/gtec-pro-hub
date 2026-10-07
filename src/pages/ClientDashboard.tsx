@@ -61,7 +61,6 @@ import {
   contractFrequencyLabel,
   fcfa,
   formatDate,
-  MAX_FILE_SIZE,
   MAX_FILE_SIZE_LABEL,
   SERVICES,
   statusMeta,

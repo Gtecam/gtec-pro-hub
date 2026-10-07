@@ -179,8 +179,6 @@ function computeScore(
     serviceKey: string;
   },
 ): { total: number; detail: Record<string, number> } {
-  const now = Date.now();
-
   // 1. Compétences (30 %) — nomenclature (spécialité, métier, diplôme,
   //    compétences) normalisée sur 30.
   const nomen = nomenMatchScore(
@@ -604,7 +602,6 @@ export const myQuoteRequests = query({
       .query("quoteRequests")
       .withIndex("by_pro", (q: any) => q.eq("proUserId", user._id))
       .collect()) as any[];
-    const now = Date.now();
     return await Promise.all(
       rows
         .sort((a, b) => b.createdAt - a.createdAt)

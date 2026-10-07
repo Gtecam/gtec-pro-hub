@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
+import { useNow } from "@/hooks/use-now";
 import {
   BadgeCheck,
   CalendarClock,
@@ -10,7 +11,6 @@ import {
   MapPin,
   Plus,
   Trash2,
-  XCircle,
 } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/convex/_generated/api";
@@ -35,7 +35,6 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { CITIES } from "@/lib/gtec";
 import { cn } from "@/lib/utils";
-import { formatDateTime } from "@/lib/gtec";
 
 /**
  * GTEC PRO — Espace professionnel côté MARCHÉ (§8, §9, §15, §16, §20).
@@ -59,6 +58,7 @@ const PRESENCE_OPTIONS = [
 
 function ProMarketInbox() {
   const items = useQuery(api.matching.myQuoteRequests, {});
+  const now = useNow();
   const respond = useMutation(api.matching.respondToQuoteRequest);
   const [openId, setOpenId] = useState<string | null>(null);
   const [amount, setAmount] = useState("");
@@ -120,8 +120,8 @@ function ProMarketInbox() {
   return (
     <div className="flex flex-col gap-3">
       {pending.map((q) => {
-        const minutesLeft = Math.round((q.responseDeadline - Date.now()) / 60000);
-        const expired = q.responseDeadline < Date.now();
+        const minutesLeft = Math.round((q.responseDeadline - now) / 60000);
+        const expired = q.responseDeadline < now;
         return (
           <Card key={q._id} className={cn("card-layered", expired && "border-amber-500/30")}>
             <CardHeader className="pb-2">

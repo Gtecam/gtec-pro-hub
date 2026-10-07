@@ -2,6 +2,7 @@ import { useMutation, useQuery } from "convex/react";
 import { Activity, Gauge, Plus } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
+import { useNow } from "@/hooks/use-now";
 import { api } from "@/convex/_generated/api";
 import { Button } from "@/components/ui/button";
 import {
@@ -41,6 +42,7 @@ const KINDS = [
 export function AssetIotCard({ buildingId }: { buildingId: string }) {
   const overview = useQuery(api.iot.buildingIotOverview, { buildingId });
   const addReading = useMutation(api.iot.addReading);
+  const nowFallback = useNow();
 
   const [assetId, setAssetId] = useState("");
   const [kind, setKind] = useState("conso_elec");
@@ -190,7 +192,7 @@ export function AssetIotCard({ buildingId }: { buildingId: string }) {
                     {o.readingCount} relevé{o.readingCount > 1 ? "s" : ""}
                   </span>
                   <span className="text-[11px] text-muted-foreground/70">
-                    {formatDate(o.lastReading?.at ?? Date.now())}
+                    {formatDate(o.lastReading?.at ?? nowFallback)}
                   </span>
                 </div>
               </div>

@@ -16,7 +16,6 @@ import {
   Wrench,
 } from "lucide-react";
 import { useEffect, useState } from "react";
-import { toast } from "sonner";
 import { useNavigate } from "react-router";
 import logo from "@/assets/logo.svg";
 import { Button } from "@/components/ui/button";
@@ -102,7 +101,6 @@ export default function AdminApp() {
 // ---------- Écran de connexion admin (application séparée) ----------
 
 function AdminSignIn() {
-  const navigate = useNavigate();
   const [email, setEmail] = useState("etsgreentech@yahoo.com");
   const [code, setCode] = useState("");
   const [step, setStep] = useState<"email" | "code">("email");
@@ -134,7 +132,7 @@ function AdminSignIn() {
       fd.set("code", code);
       await signIn("email-otp", fd);
       // L'affichage bascule sur la console via l'état d'auth du composant parent.
-    } catch (e) {
+    } catch {
       setError("Code incorrect ou expiré.");
       setCode("");
     } finally {
@@ -454,7 +452,6 @@ function AdminConsole({ signOut }: { signOut: () => Promise<void> }) {
             </CardHeader>
             <CardContent className="flex flex-col gap-2">
               {(contracts ?? []).map(({ contract, clientName, visitsCount, doneVisits }) => {
-                const meta = CONTRACT_STATUS_META[contract.status] ?? CONTRACT_STATUS_META.actif;
                 return (
                   <div
                     key={contract._id}

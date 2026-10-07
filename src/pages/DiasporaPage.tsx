@@ -42,7 +42,7 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
-import { CITIES, fcfa } from "@/lib/gtec";
+import { CITIES } from "@/lib/gtec";
 import { statusMeta } from "@/lib/gtec";
 import {
   BENEFICIARY_RELATIONS,

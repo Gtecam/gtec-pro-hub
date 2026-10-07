@@ -59,14 +59,6 @@ type ProMatch = {
   zones: string[];
 };
 
-type FindResult = {
-  matches: ProMatch[];
-  excludedCount: number;
-  expanded: boolean;
-  urgency?: string;
-  deadlineMinutes?: number;
-};
-
 /** 🟢🟠🔵⚫ — indicateurs de statut (§15). */
 export function availabilityMeta(a: string): {
   dot: string;

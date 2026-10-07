@@ -409,7 +409,6 @@ export const submitForVerification = mutation({
   handler: async (ctx, args) => {
     const user = await requireUser(ctx);
     if (!(KINDS as readonly string[]).includes(args.kind)) throw new Error("Type inconnu.");
-    const table = TABLES[args.kind] as never;
     const row = (await ctx.db.get(args.id as never)) as { userId: Id<"users">; status: string } | null;
     if (!row || row.userId !== user._id) throw new Error("Élément introuvable.");
     const doc = row as unknown as Record<string, unknown>;
@@ -675,7 +674,6 @@ export const adminReviewProfileItem = mutation({
       verifiedBy: args.decision === "VERIFIED" ? admin._id : undefined,
       ...nowFields(),
     });
-    const table = TABLES[args.kind] as never;
     await ctx.db.insert("profileChanges" as never, {
       userId: row.userId,
       kind: `${args.kind}.${args.decision.toLowerCase()}`,

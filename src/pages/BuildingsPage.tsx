@@ -8,7 +8,6 @@ import {
   FileText,
   KeyRound,
   Plus,
-  QrCode,
   ShieldCheck,
   Trash2,
 } from "lucide-react";

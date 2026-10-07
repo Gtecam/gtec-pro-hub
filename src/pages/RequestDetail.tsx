@@ -66,7 +66,6 @@ import {
   BANK_DETAILS,
   fcfa,
   formatDateTime,
-  MAX_FILE_SIZE,
   MAX_FILE_SIZE_LABEL,
   MERCHANT_NUMBERS,
   MILESTONE_LABELS,
@@ -203,19 +202,6 @@ export default function RequestDetail() {
   /** V6 : tranche à payer dans le dialog (avance = 1ʳᵉ, solde = 2ᵉ). */
   const [milestone, setMilestone] = useState<"avance" | "solde">("avance");
 
-  // Messagerie (§11) : afficher la liste et, si une salle est sélectionnée,
-  // le fil de discussion dédié.
-  const [activeRoomId, setActiveRoomId] = useState<string | null>(null);
-
-  useEffect(() => {
-    function handleOpenConversation(e: Event) {
-      const detail = (e as CustomEvent<{ roomId: string }>).detail;
-      setActiveRoomId(detail.roomId ?? null);
-    }
-    window.addEventListener("gtc:open-conversation", handleOpenConversation);
-    return () =>
-      window.removeEventListener("gtc:open-conversation", handleOpenConversation);
-  }, []);
 
   // Champs spécifiques par moyen de paiement
   const [proofUrl, setProofUrl] = useState<string | null>(null);

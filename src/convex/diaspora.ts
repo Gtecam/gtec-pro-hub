@@ -13,7 +13,6 @@ import { action, internalMutation, internalQuery, mutation, query } from "./_gen
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import { requireUser } from "./gtec";
-import { BENEFICIARY_RELATIONS } from "../lib/diaspora";
 import { toCmLocal } from "../lib/gtec";
 import { interventionsForService } from "../lib/interventions";
 

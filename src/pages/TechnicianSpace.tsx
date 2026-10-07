@@ -49,7 +49,6 @@ import { useGeolocation } from "@/hooks/useGeolocation";
 import {
   formatGps,
   gmapsDirectionsUrl,
-  gmapsCoordsUrl,
   haversineKm,
   type GpsCoords,
 } from "@/lib/gps";
@@ -538,7 +537,6 @@ export default function TechnicianSpace() {
   const setAvailability = useMutation(api.gtec.setAvailability);
   const myScore = useQuery(api.gtec.myProviderScore);
   const mySanctions = useQuery(api.gtec.mySanctions);
-  const contestSanction = useMutation(api.gtec.contestSanction);
   const myPayouts = useQuery(api.gtec.listMyPayouts);
   const myVisits = useQuery(api.gtec.listMyVisits);
   const myReviews = useQuery(api.gtec.myTechnicianReviews);
@@ -607,7 +605,7 @@ export default function TechnicianSpace() {
   const [wdMethod, setWdMethod] = useState("mtn_momo");
   const [wdDestination, setWdDestination] = useState("");
   const [commPhone, setCommPhone] = useState("");
-  const [commRef, setCommRef] = useState("");
+  const [commRef] = useState("");
 
   const toggleZone = (city: string) =>
     setZones((prev) =>
@@ -1404,7 +1402,6 @@ export default function TechnicianSpace() {
                     fieldOfStudy={fieldOfStudy}
                     graduationYear={graduationYear}
                     documents={documents}
-                    onChangeDocuments={setDocuments}
                     school={school}
                     onChangeSchool={setSchool}
                     selected={selectedInstitution}

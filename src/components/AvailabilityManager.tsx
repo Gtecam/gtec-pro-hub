@@ -119,7 +119,7 @@ export function AvailabilityManager() {
 
   if (rules === undefined || appointments === undefined) return null;
 
-  const now = Date.now();
+  const now = useNow();
   const upcoming = appointments.asPro.filter((a) => a.slotEnd > now - 86_400_000);
   const openOnes = upcoming.filter((a) => a.status === "CONFIRME");
 

@@ -1,16 +1,10 @@
 import { useQuery } from "convex/react";
-import { useState } from "react";
 import { ArrowLeft, Wrench, Battery, Cloud, Snowflake, Network, ShieldAlert, FileText, Plus, PlusCircle, Zap, Scale, CircleDot, Landmark, Building2, Clock, AlertTriangle } from "lucide-react";
 import { useNavigate } from "react-router";
 import { formatDate } from "@/lib/gtec";
 import { api } from "@/convex/_generated/api";
-import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Badge } from "@/components/ui/badge";
-import { toast } from "sonner";
+import { Card, CardContent } from "@/components/ui/card";
 
 type SystemSection = { icon: React.ElementType; label: string; items: { label: string; value: string | null }[] };
 
@@ -64,15 +58,12 @@ const SYSTEMS: SystemSection[] = [
 ];
 
 export default function BuildingPassportPage() {
-  const { user } = useAuth();
   const navigate = useNavigate();
   const building = useQuery(api.buildings.getBuilding, "skip");
 
   const goBack = () => navigate(-1);
   const openEquipment = (assetId: string) => navigate(`/e/${assetId}`);
   const openDocument = (docId: string) => navigate(`/d/${docId}`);
-
-  const sections = SYSTEMS;
 
   return (
     <div className="flex flex-col gap-5 px-4 py-6 max-w-6xl mx-auto">

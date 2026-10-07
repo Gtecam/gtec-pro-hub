@@ -15,9 +15,7 @@ import {
   BALANCE_PERCENT,
 } from "../lib/gtec";
 import {
-  DEGREES,
   EXPERIENCE_BANDS,
-  NOMENCLATURE,
   degreeByKey,
   nomenSpecialtyByCode,
 } from "../lib/nomenclature";
@@ -695,7 +693,6 @@ export const createRequest = mutation({
       .map((s) => s.trim())
       .filter(Boolean)
       .filter((s, i, a) => a.findIndex((x) => x.toLowerCase() === s.toLowerCase()) === i);
-    const mergedCerts = intervention?.certifications ?? [];
     const id = await ctx.db.insert("serviceRequests", {
       clientId: user._id,
       reference,
@@ -1444,10 +1441,6 @@ export async function settleMilestone(
 ) {
   const request = await ctx.db.get(payment.requestId);
   if (!request) return;
-  const existing = await ctx.db
-    .query("payments")
-    .withIndex("by_request", (q: any) => q.eq("requestId", payment.requestId))
-    .collect();
   const isAdvance = payment.milestone !== "solde"; // rétrocompat : 1ʳᵉ tranche
   await ctx.db.patch(payment._id, {
     status: "valide",

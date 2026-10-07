@@ -9,14 +9,12 @@ import {
   CalendarClock,
   CheckCircle2,
   ChevronDown,
-  ClipboardCheck,
   Crown,
   Download,
   FileSignature,
   FileText,
   FolderDown,
   GraduationCap,
-  ImagePlus,
   Lightbulb,
   Loader2,
   Mail,
@@ -30,7 +28,6 @@ import {
   Send,
   ShieldCheck,
   Sparkles,
-  Trash2,
   UserCheck,
   UserPlus,
   Users,
@@ -38,7 +35,7 @@ import {
   Wrench,
   XCircle,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { api } from "@/convex/_generated/api";
 import { AppShell, StatusBadge } from "@/components/gtec";
@@ -60,10 +57,6 @@ import {
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -2576,7 +2569,7 @@ export default function AdminConsole() {
                 </h3>
                 {(allContractPays ?? [])
                   .filter((p) => p.payment.status !== "en_attente")
-                  .map((row, idx) => {
+                  .map((row) => {
                     const index = (allContractPays ?? []).indexOf(row);
                     return (
                       <div

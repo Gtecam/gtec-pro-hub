@@ -15,7 +15,7 @@
  */
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { v } from "convex/values";
-import { action, internalAction, internalMutation, internalQuery, mutation, query } from "./_generated/server";
+import { action, internalAction, internalMutation, internalQuery, mutation } from "./_generated/server";
 import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import { requireAdminScope } from "./gtec";
@@ -499,7 +499,7 @@ export const markWithdrawalTransferSent = internalMutation({
 export const adminPayWithdrawalAutomatic = mutation({
   args: { withdrawalId: v.id("withdrawals") },
   handler: async (ctx, args) => {
-    const admin = await requireAdminScope(ctx, "finance", "super_admin");
+    await requireAdminScope(ctx, "finance", "super_admin");
     const w = await ctx.db.get(args.withdrawalId);
     if (!w) throw new Error("Retrait introuvable.");
     if (w.status !== "approuve") {

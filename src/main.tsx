@@ -25,7 +25,6 @@ const RequestDetail = lazy(() => import("./pages/RequestDetail.tsx"));
 const TechnicianSpace = lazy(() => import("./pages/TechnicianSpace.tsx"));
 const AdminApp = lazy(() => import("./pages/AdminApp.tsx"));
 const DiasporaPage = lazy(() => import("./pages/DiasporaPage.tsx"));
-const BuildingsPage = lazy(() => import("./pages/BuildingsPage.tsx"));
 const AssetScanPage = lazy(() => import("./pages/AssetScanPage.tsx"));
 const VerifyPage = lazy(() => import("./pages/VerifyPage.tsx"));
 const EquipmentScanPage = lazy(() => import("./pages/EquipmentScanPage.tsx"));

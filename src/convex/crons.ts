@@ -69,7 +69,7 @@ export const dailySweep = internalMutation({
   handler: async (ctx) => {
     const now = Date.now();
     const DAY = 24 * 3600 * 1000;
-    const summary = { quotesExpired: 0, visitReminders: 0, subsExpiring: 0, debtReminders: 0, profileReminders: 0 };
+    const summary = { quotesExpired: 0, visitReminders: 0, subsExpiring: 0, profileReminders: 0 };
 
     // ---------- 1) Devis dont la validité est dépassée ----------
     const quotes = await ctx.db.query("quotes").collect();
@@ -184,7 +184,6 @@ export const dailySweep = internalMutation({
       .query("gtecCommissions")
       .withIndex("by_status", (q) => q.eq("status", "due"))
       .collect();
-    let debtReminders = 0;
     for (const c of debts) {
       if (!c.commissionDebt) continue;
       const deadline = c.commissionDebt.deadlineAt;
@@ -211,7 +210,6 @@ export const dailySweep = internalMutation({
           : `Commission de ${c.amount.toLocaleString("fr-FR")} FCFA à régulariser avant le ${new Date(deadline).toLocaleDateString("fr-FR")} (paiement en espèces).`,
         c.requestId,
       );
-      debtReminders++;
       if (overdue) {
         await pushAdmins(
           ctx.db,

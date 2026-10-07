@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
+import { useNow } from "@/hooks/use-now";
 import { api } from "@/convex/_generated/api";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -481,6 +482,7 @@ function StatusBadge({ status }: { status: string }) {
  * GTEC PRO (§5) et historique (§15).
  */
 export function MyProfile() {
+  const nowNow = useNow();
   const data = useQuery(api.profile.myProfileData, {});
   const completion = useQuery(api.profile.myProfileCompletion, {});
   const gtecExps = useQuery(api.profile.myGtecExperiences, {});
@@ -911,7 +913,7 @@ export function MyProfile() {
               .filter((c) => c.isActive)
               .map((c) => {
                 const daysToExpire = c.expiresAt
-                  ? Math.ceil((c.expiresAt - Date.now()) / 86400000)
+                  ? Math.ceil((c.expiresAt - nowNow) / 86400000)
                   : null;
                 return (
                   <div key={c._id} className="flex flex-col gap-1 rounded-lg border px-3 py-2">

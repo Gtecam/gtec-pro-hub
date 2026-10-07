@@ -2,6 +2,7 @@ import { useMutation, useQuery } from "convex/react";
 import { CalendarDays, CalendarPlus, MapPin, Search, Video, XCircle } from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
+import { useNow } from "@/hooks/use-now";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { Button } from "@/components/ui/button";
@@ -62,7 +63,6 @@ export function AppointmentsClientCard() {
   const mine = useQuery(api.appointments.myAppointments, {});
   const book = useMutation(api.appointments.bookAppointment);
   const updateAppt = useMutation(api.appointments.updateAppointment);
-  const openConversation = useMutation(api.appointments.createChatRoom);
 
   const slotsByDay = useMemo(() => {
     const map = new Map<string, Array<{ start: number; end: number }>>();
@@ -109,23 +109,9 @@ export function AppointmentsClientCard() {
     }
   };
 
-  const openChat = async (requestId: Id<"serviceRequests">, clientUserId: Id<"users">) => {
-    setBusy(true);
-    try {
-      const room = await openConversation({
-        requestId,
-        participantIds: [clientUserId],
-      });
-      toast.success("Conversation ouverte");
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Erreur");
-    } finally {
-      setBusy(false);
-    }
-  };
 
   if (pros === undefined || mine === undefined) return null;
-  const now = Date.now();
+  const now = useNow();
   const upcoming = mine.asClient.filter((a) => a.slotEnd > now && a.status === "CONFIRME");
   const history = mine.asClient.filter((a) => a.slotEnd <= now || a.status !== "CONFIRME").slice(-6);
 

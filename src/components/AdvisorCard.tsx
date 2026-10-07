@@ -1,5 +1,5 @@
 import { useMutation, useQuery } from "convex/react";
-import { ChevronDown, Lightbulb, RotateCcw, Wallet } from "lucide-react";
+import { Lightbulb, RotateCcw, Wallet } from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { api } from "@/convex/_generated/api";
@@ -63,7 +63,7 @@ export function AdvisorCard({
   const [answers, setAnswers] = useState<DiagnosticAnswer[]>([]);
   const [qIndex, setQIndex] = useState(0);
   const [result, setResult] = useState<ReturnType<typeof runDiagnostic> | null>(null);
-  const [busy, setBusy] = useState(false);
+  const [, setBusy] = useState(false);
 
   const guided = useMemo(() => questionsFor(question), [question]);
   const currentQ = guided.questions[qIndex];

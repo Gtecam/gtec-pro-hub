@@ -12,7 +12,7 @@ import type { Doc } from "./_generated/dataModel";
  * contrôle, pas une décision automatique.
  */
 
-const IOT_KINDS = ["conso_elec", "conso_eau", "conso_gaz", "temperature", "autre"] as const;
+export const IOT_KINDS = ["conso_elec", "conso_eau", "conso_gaz", "temperature", "autre"] as const;
 type IotKind = (typeof IOT_KINDS)[number];
 
 const IOT_LABELS: Record<IotKind, string> = {

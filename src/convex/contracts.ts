@@ -22,8 +22,6 @@
 
 import { v } from "convex/values";
 import { query, mutation, internalMutation } from "./_generated/server";
-import type { Id } from "./_generated/dataModel";
-import { internal } from "./_generated/api";
 import { requireAdminScope } from "./gtec";
 
 // =====================================================================

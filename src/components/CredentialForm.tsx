@@ -87,7 +87,6 @@ export function CredentialForm({
   fieldOfStudy,
   graduationYear,
   documents,
-  onChangeDocuments,
   school,
   onChangeSchool,
   selected,
@@ -100,7 +99,6 @@ export function CredentialForm({
   fieldOfStudy: string;
   graduationYear: number | "";
   documents: CredentialDoc[];
-  onChangeDocuments: (docs: CredentialDoc[]) => void;
   school: string;
   onChangeSchool: (v: string) => void;
   /** Établissement sélectionné dans le référentiel (état porté par le parent). */

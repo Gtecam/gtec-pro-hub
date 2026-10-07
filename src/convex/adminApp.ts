@@ -1,4 +1,3 @@
-import { v } from "convex/values";
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { mutation, query } from "./_generated/server";
 import type { Doc } from "./_generated/dataModel";
@@ -151,10 +150,6 @@ export const adminListRequestsLite = query({
   args: {},
   handler: async (ctx) => {
     await requireAdmin(ctx);
-    const requests = await ctx.db
-      .query("serviceRequests")
-      .withIndex("by_status", (q) => q.eq("status", "terminee"))
-      .collect();
     const all = await ctx.db.query("serviceRequests").collect();
     const out = [];
     for (const r of all.sort((a, b) => b._creationTime - a._creationTime)) {
