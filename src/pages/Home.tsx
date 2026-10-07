@@ -2,7 +2,7 @@
  * ACCUEIL CLIENT — GTEC PRO (refonte « Simple. Rapide. Professionnel. »)
  *
  * Une seule question : « De quel professionnel avez-vous besoin ? »
- * Hiérarchie : 1️⃣ recherche → 2️⃣ catégories → 3️⃣ urgence → 4️⃣ suivi.
+ * Hiérarchie : 1. recherche → 2. catégories → 3. urgence → 4. suivi.
  * Aucune statistique, commission, contrat ou bannière ici : tout le reste
  * vit dans les écrans dédiés (Mes demandes, Profil, Bâtiments…).
  */
@@ -111,7 +111,7 @@ export default function Home() {
           </p>
         </div>
 
-        {/* ---------- 1️⃣ Recherche ---------- */}
+        {/* ---------- 1. Recherche ---------- */}
         <button
           type="button"
           onClick={() => navigate("/search")}
@@ -124,7 +124,7 @@ export default function Home() {
           <ArrowRight className="size-4 shrink-0 text-muted-foreground" />
         </button>
 
-        {/* ---------- 2️⃣ Catégories principales (6 max) ---------- */}
+        {/* ---------- 2. Catégories principales (6 max) ---------- */}
         <div className="grid grid-cols-3 gap-3">
           {HOME_CATEGORY_KEYS.map((key) => {
             const cat = DEFAULT_CATEGORIES.find((c) => c.key === key);
@@ -146,7 +146,7 @@ export default function Home() {
           </Button>
         </div>
 
-        {/* ---------- 3️⃣ Intervention urgente ---------- */}
+        {/* ---------- 3. Intervention urgente ---------- */}
         <div className="flex flex-col items-center gap-1.5">
           <Button
             size="lg"
@@ -162,7 +162,7 @@ export default function Home() {
           </p>
         </div>
 
-        {/* ---------- 4️⃣ Demande en cours (si — et seulement si — elle existe) ---------- */}
+        {/* ---------- 4. Demande en cours (si — et seulement si — elle existe) ---------- */}
         {active && (
           <Card className="card-layered">
             <CardContent className="flex items-center gap-4 py-4">

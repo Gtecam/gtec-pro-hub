@@ -52,8 +52,8 @@ import { compressImageIfNeeded, dataUrlBytes, humanSize } from "@/lib/imageCompr
 import { AdvisorCard } from "@/components/AdvisorCard";
 import { BriefCard } from "@/components/BriefCard";
 import { ProfessionalMatches } from "@/components/ProfessionalMatches";
-import { Users } from "lucide-react";
-import { relationIcon } from "@/lib/diaspora";
+import { ArrowUpRight, Globe, Users } from "lucide-react";
+import { RelationGlyph } from "@/components/RelationGlyph";
 import { useSearchParams } from "react-router";
 
 const STEPS = [
@@ -406,7 +406,10 @@ export default function NewRequest() {
             {/* MODE DIASPORA (§2) : pour qui est l'intervention ? */}
             {step === 0 && diasporaMode && (
               <div className="mb-5 flex flex-col gap-2 rounded-xl border border-primary/25 bg-primary/[0.04] p-3">
-                <p className="text-sm font-semibold">🌍 Mode Diaspora — Pour qui souhaitez-vous commander ?</p>
+                <p className="flex items-center gap-1.5 text-sm font-semibold">
+                  <Globe className="size-4" /> Mode Diaspora — Pour qui
+                  souhaitez-vous commander ?
+                </p>
                 {beneficiaries === undefined ? (
                   <div className="h-16 animate-pulse rounded-lg bg-muted" />
                 ) : (beneficiaries ?? []).filter((b) => !b.archived).length === 0 ? (
@@ -436,7 +439,9 @@ export default function NewRequest() {
                           )}
                           onClick={() => setBeneficiaryId(b._id)}
                         >
-                          <span>{relationIcon(b.relation)}</span>
+                          <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                            <RelationGlyph relation={b.relation} />
+                          </span>
                           <span className="min-w-0">
                             <span className="block truncate">
                               {b.firstName} ({b.relation})
@@ -884,7 +889,8 @@ export default function NewRequest() {
                       rel="noreferrer"
                       className="text-xs font-medium text-primary hover:underline"
                     >
-                      Vérifier sur Google Maps ↗
+                      Vérifier sur Google Maps
+                      <ArrowUpRight className="ml-0.5 inline size-3" aria-hidden />
                     </a>
                   )}
                 </div>
@@ -964,7 +970,7 @@ export default function NewRequest() {
                     {voiceNoteUrl && (
                       <div className="flex justify-between gap-4">
                         <dt className="text-muted-foreground">Message vocal</dt>
-                        <dd className="font-medium">Joint ✓</dd>
+                        <dd className="font-medium">Joint</dd>
                       </div>
                     )}
                     <div className="flex justify-between gap-4">

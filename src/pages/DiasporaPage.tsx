@@ -1,14 +1,19 @@
 import { useMutation, useQuery } from "convex/react";
 import {
+  AlertTriangle,
   ArrowRight,
+  CheckCircle2,
   ClipboardList,
   CreditCard,
+  Globe,
   Landmark,
   Loader2,
   MapPin,
   Plus,
+  Search,
   Trash2,
   Users,
+  XCircle,
 } from "lucide-react";
 import { useState } from "react";
 import { useNavigate } from "react-router";
@@ -49,8 +54,8 @@ import {
   DIASPORA_TRACK,
   diasporaTrackIndex,
   displayConverted,
-  relationIcon,
 } from "@/lib/diaspora";
+import { RelationGlyph } from "@/components/RelationGlyph";
 
 export default function DiasporaPage() {
   const navigate = useNavigate();
@@ -119,8 +124,8 @@ export default function DiasporaPage() {
       <div className="mx-auto flex max-w-3xl flex-col gap-6">
         {/* En-tête Mode Diaspora */}
         <div className="rounded-2xl border border-primary/25 bg-gradient-to-br from-primary/[0.07] via-transparent to-emerald-500/[0.04] p-6">
-          <p className="text-xs font-semibold uppercase tracking-widest text-primary">
-            🌍 GTEC PRO Diaspora
+          <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-widest text-primary">
+            <Globe className="size-3.5" /> GTEC PRO Diaspora
           </p>
           <h1 className="font-display mt-1 text-2xl font-bold tracking-tight">
             Vous êtes à l'étranger ?
@@ -136,10 +141,10 @@ export default function DiasporaPage() {
         <div className="flex flex-wrap gap-2">
           {(
             [
-              ["accueil", "🏠 Accueil"],
-              ["proches", `👨‍👩‍👧 Mes proches (${active.length})`],
-              ["interventions", `📋 Mes interventions (${(history ?? []).length})`],
-              ["paiements", "💳 Mes paiements"],
+              ["accueil", "Accueil"],
+              ["proches", `Mes proches (${active.length})`],
+              ["interventions", `Mes interventions (${(history ?? []).length})`],
+              ["paiements", "Mes paiements"],
             ] as const
           ).map(([key, label]) => (
             <Button
@@ -158,7 +163,7 @@ export default function DiasporaPage() {
           <div className="grid gap-3 sm:grid-cols-2">
             {[
               {
-                icon: "🔎",
+                icon: Search,
                 title: "Trouver un technicien",
                 desc: "Commandez une intervention pour un proche au Cameroun.",
                 action: () =>
@@ -167,19 +172,19 @@ export default function DiasporaPage() {
                     : (setTab("proches"), setAddOpen(true)),
               },
               {
-                icon: "📋",
+                icon: ClipboardList,
                 title: "Suivre une intervention",
                 desc: "Statuts en temps réel, photos, rapport et validation.",
                 action: () => setTab("interventions"),
               },
               {
-                icon: "💳",
+                icon: CreditCard,
                 title: "Mes paiements",
                 desc: "Paiements internationaux, conversion et escrow.",
                 action: () => setTab("paiements"),
               },
               {
-                icon: "👨‍👩‍👧",
+                icon: Users,
                 title: "Mes proches",
                 desc: "Bénéficiaires enregistrés : famille, locataire, entreprise.",
                 action: () => setTab("proches"),
@@ -190,7 +195,7 @@ export default function DiasporaPage() {
                 className="flex flex-col gap-2 rounded-xl border border-border/70 bg-card p-4 text-left transition-all hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-md"
                 onClick={c.action}
               >
-                <span className="text-2xl">{c.icon}</span>
+                <span className="icon-tile size-10"><c.icon className="size-5" /></span>
                 <span className="font-medium">{c.title}</span>
                 <span className="text-xs text-muted-foreground">{c.desc}</span>
               </button>
@@ -224,7 +229,9 @@ export default function DiasporaPage() {
                   key={b._id}
                   className="flex flex-wrap items-center gap-3 rounded-xl border border-border/70 bg-card px-4 py-3"
                 >
-                  <span className="text-xl">{relationIcon(b.relation)}</span>
+                  <span className="icon-tile size-10 shrink-0">
+                    <RelationGlyph relation={b.relation} />
+                  </span>
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-medium">
                       {b.firstName} {b.lastName} · {b.relation}
@@ -289,8 +296,12 @@ export default function DiasporaPage() {
                   <Card key={request._id} className="card-layered">
                     <CardContent className="flex flex-col gap-3 py-4">
                       <div className="flex flex-wrap items-center gap-3">
-                        <span className="text-xl">
-                          {beneficiary ? relationIcon(beneficiary.relation) : "🌍"}
+                        <span className="icon-tile size-10 shrink-0">
+                          {beneficiary ? (
+                            <RelationGlyph relation={beneficiary.relation} />
+                          ) : (
+                            <Globe className="size-5" />
+                          )}
                         </span>
                         <div className="min-w-0 flex-1">
                           <p className="truncate text-sm font-medium">
@@ -332,7 +343,7 @@ export default function DiasporaPage() {
                                   : "bg-muted text-muted-foreground/50",
                             )}
                           >
-                            {step.icon} {step.label}
+                            <step.icon className="mr-1 inline size-3" /> {step.label}
                           </span>
                         ))}
                       </div>
@@ -341,11 +352,22 @@ export default function DiasporaPage() {
                           <p className="rounded-lg bg-muted/60 px-3 py-1.5 text-xs">
                             Validation du proche :{" "}
                             <span className="font-medium">
-                              {request.beneficiaryValidation === "conforme"
-                                ? "✅ Tout est correct"
-                                : request.beneficiaryValidation === "correction_demandee"
-                                  ? "⚠️ Correction demandée"
-                                  : "❌ Problème signalé"}
+                            {request.beneficiaryValidation === "conforme" ? (
+                              <>
+                                <CheckCircle2 className="mr-1 inline size-3.5" />
+                                Tout est correct
+                              </>
+                            ) : request.beneficiaryValidation === "correction_demandee" ? (
+                              <>
+                                <AlertTriangle className="mr-1 inline size-3.5" />
+                                Correction demandée
+                              </>
+                            ) : (
+                              <>
+                                <XCircle className="mr-1 inline size-3.5" />
+                                Problème signalé
+                              </>
+                            )}
                             </span>
                             {request.beneficiaryValidationNote
                               ? ` — ${request.beneficiaryValidationNote}`
@@ -390,10 +412,10 @@ export default function DiasporaPage() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="EUR">🇪🇺 Euro (EUR)</SelectItem>
-                    <SelectItem value="USD">🇺🇸 Dollar US (USD)</SelectItem>
-                    <SelectItem value="GBP">🇬🇧 Livre (GBP)</SelectItem>
-                    <SelectItem value="CAD">🇨🇦 Dollar canadien (CAD)</SelectItem>
+                    <SelectItem value="EUR">Euro (EUR)</SelectItem>
+                    <SelectItem value="USD">Dollar US (USD)</SelectItem>
+                    <SelectItem value="GBP">Livre (GBP)</SelectItem>
+                    <SelectItem value="CAD">Dollar canadien (CAD)</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -466,7 +488,7 @@ export default function DiasporaPage() {
                 <SelectContent>
                   {BENEFICIARY_RELATIONS.filter((r) => r !== "Moi-même").map((r) => (
                     <SelectItem key={r} value={r}>
-                      {relationIcon(r)} {r}
+                      <RelationGlyph relation={r} className="size-4" /> {r}
                     </SelectItem>
                   ))}
                 </SelectContent>

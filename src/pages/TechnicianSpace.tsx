@@ -267,7 +267,7 @@ function DocumentsUploader({
           <span className="min-w-0 flex-1">
             <span className="block truncate text-sm font-medium">{doc.label}</span>
             <span className="block truncate text-xs text-muted-foreground">
-              {doc.url ? "Fichier joint ✓" : "Fichier en attente"}
+              {doc.url ? "Fichier joint" : "Fichier en attente"}
             </span>
           </span>
           <Button
@@ -856,7 +856,7 @@ export default function TechnicianSpace() {
               Espace technicien
             </p>
             <h1 className="font-display mt-1 flex flex-wrap items-center gap-2 text-3xl font-bold tracking-tight">
-              Bonjour{user?.name ? `, ${user.name.split(" ")[0]}` : ""} 🛠️
+              Bonjour{user?.name ? `, ${user.name.split(" ")[0]}` : ""}
               {userVerified && (
                 <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2.5 py-1 align-middle text-xs font-semibold text-emerald-700 ring-1 ring-emerald-500/30 dark:text-emerald-400">
                   <BadgeCheck className="size-3.5" /> Numéro vérifié
@@ -1788,8 +1788,8 @@ export default function TechnicianSpace() {
                                         Déplacement vers le chantier
                                       </p>
                                       {arrived ? (
-                                        <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-xs font-semibold text-emerald-700 ring-1 ring-emerald-500/30 dark:text-emerald-400">
-                                          📍 Arrivée confirmée
+                                        <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-xs font-semibold text-emerald-700 ring-1 ring-emerald-500/30 dark:text-emerald-400">
+                                          <MapPin className="size-3" /> Arrivée confirmée
                                         </span>
                                       ) : (
                                         <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-semibold text-primary ring-1 ring-primary/20">
@@ -1817,8 +1817,8 @@ export default function TechnicianSpace() {
                                         </span>
                                       )}
                                       {dist !== null && dist < 0.2 && (
-                                        <span className="font-semibold text-emerald-600 dark:text-emerald-400">
-                                          Vous êtes sur place ✓
+                                        <span className="inline-flex items-center gap-1 font-semibold text-emerald-600 dark:text-emerald-400">
+                                          <CheckCircle2 className="size-3" /> Vous êtes sur place
                                         </span>
                                       )}
                                       <a
@@ -1860,7 +1860,7 @@ export default function TechnicianSpace() {
                                                 : {}),
                                             });
                                             toast.success(
-                                              "Arrivée confirmée — le client est prévenu 📍",
+                                              "Arrivée confirmée — le client est prévenu",
                                             );
                                           } catch (e) {
                                             toast.error(

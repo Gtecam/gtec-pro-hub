@@ -48,10 +48,10 @@ import { cn } from "@/lib/utils";
  */
 
 const PRESENCE_OPTIONS = [
-  { key: "disponible", label: "🟢 Disponible maintenant" },
-  { key: "occupe", label: "🟠 Disponible plus tard" },
-  { key: "en_intervention", label: "🔵 Sur une autre mission" },
-  { key: "hors_ligne", label: "⚫ Hors ligne / indisponible" },
+  { key: "disponible", label: "Disponible maintenant" },
+  { key: "occupe", label: "Disponible plus tard" },
+  { key: "en_intervention", label: "Sur une autre mission" },
+  { key: "hors_ligne", label: "Hors ligne / indisponible" },
 ] as const;
 
 // ============================ INBOX DEMANDES DE DEVIS ========================
@@ -166,8 +166,9 @@ function ProMarketInbox() {
             <CardContent className="flex flex-col gap-3">
               <p className="text-sm text-muted-foreground">{q.description}</p>
               {q.photosCount > 0 && (
-                <p className="text-xs text-muted-foreground">
-                  📷 {q.photosCount} photo(s) jointe(s)
+                <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <Camera className="size-3.5" />
+                  {q.photosCount} photo(s) jointe(s)
                 </p>
               )}
               <p
@@ -262,7 +263,7 @@ function ProMarketInbox() {
                 )}
                 {q.status === "acceptee" ? (
                   <Badge className="bg-emerald-500/10 text-emerald-600 ring-1 ring-emerald-500/20 ring-inset dark:text-emerald-400">
-                    Sélectionné ✓
+                    <CheckCircle2 className="size-3.5" /> Sélectionné
                   </Badge>
                 ) : q.status === "refusee" ? (
                   <Badge variant="outline" className="text-muted-foreground">
@@ -410,8 +411,8 @@ function ProPresencePanel() {
           </div>
         </div>
         <p className="w-full text-[11px] text-muted-foreground">
-          Votre statut alimente les pastilles 🟢🟠🔵⚫ et le tarif s'affiche
-          « À partir de X FCFA » sur vos cartes dans le marché.
+          Votre statut alimente les pastilles de disponibilité et le tarif
+          s'affiche « À partir de X FCFA » sur vos cartes dans le marché.
         </p>
       </div>
 

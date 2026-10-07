@@ -10,6 +10,7 @@ import {
   Plus,
   ShieldCheck,
   Trash2,
+  TriangleAlert,
 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -221,8 +222,9 @@ export default function BuildingsPage() {
                 <CalendarClock className="size-4 text-amber-600 dark:text-amber-400" /> Garanties à surveiller
               </p>
               {alerts.map((a) => (
-                <p key={a.assetId} className="text-xs text-muted-foreground">
-                  ⚠️ {a.daysLeft >= 0 ? `Garantie de « ${a.label} » (${a.buildingName}) expire dans ${a.daysLeft} jours.` : `Garantie de « ${a.label} » (${a.buildingName}) expirée.`}
+                <p key={a.assetId} className="flex items-start gap-1.5 text-xs text-muted-foreground">
+                  <TriangleAlert className="mt-0.5 size-3.5 shrink-0 text-amber-600 dark:text-amber-400" />
+                  {a.daysLeft >= 0 ? `Garantie de « ${a.label} » (${a.buildingName}) expire dans ${a.daysLeft} jours.` : `Garantie de « ${a.label} » (${a.buildingName}) expirée.`}
                 </p>
               ))}
             </CardContent>

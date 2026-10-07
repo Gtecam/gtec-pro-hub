@@ -31,7 +31,7 @@ const STATUS_META: Record<string, { label: string; cls: string }> = {
   DRAFT: { label: "Brouillon", cls: "text-muted-foreground" },
   SUBMITTED: { label: "À vérifier", cls: "text-amber-600 dark:text-amber-400" },
   UNDER_REVIEW: { label: "En examen", cls: "text-amber-600 dark:text-amber-400" },
-  VERIFIED: { label: "Vérifié ✓", cls: "text-emerald-600 dark:text-emerald-400" },
+  VERIFIED: { label: "Vérifié", cls: "text-emerald-600 dark:text-emerald-400" },
   REJECTED: { label: "Refusé", cls: "text-destructive" },
 };
 
@@ -55,7 +55,7 @@ const COMPANY_STATUS_META: Record<string, { label: string; cls: string }> = {
   DRAFT: { label: "Brouillon", cls: "text-muted-foreground" },
   SUBMITTED: { label: "À vérifier", cls: "text-amber-600 dark:text-amber-400" },
   UNDER_REVIEW: { label: "En examen", cls: "text-amber-600 dark:text-amber-400" },
-  VERIFIED: { label: "Vérifiée ✓", cls: "text-emerald-600 dark:text-emerald-400" },
+  VERIFIED: { label: "Vérifiée", cls: "text-emerald-600 dark:text-emerald-400" },
   REJECTED: { label: "Refusée", cls: "text-destructive" },
 };
 

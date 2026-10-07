@@ -6,6 +6,7 @@ import {
   CalendarClock,
   Download,
   FileText,
+  Globe,
   IdCard,
   MapPin,
   Phone,
@@ -358,7 +359,7 @@ export default function ClientDashboard() {
               Espace client
             </p>
             <h1 className="font-display mt-1 text-3xl font-bold tracking-tight">
-              Bonjour{user?.name ? `, ${user.name.split(" ")[0]}` : ""} 👋
+              Bonjour{user?.name ? `, ${user.name.split(" ")[0]}` : ""}
             </h1>
             <p className="mt-2 max-w-xl text-sm text-muted-foreground">
               Demande, devis, paiement, équipe, rapport et facture : suivez
@@ -378,7 +379,8 @@ export default function ClientDashboard() {
               Nouvelle demande
             </Button>
             <Button size="lg" variant="outline" onClick={() => navigate("/diaspora")}>
-              🌍 Mode Diaspora
+              <Globe className="mr-2 size-4" />
+              Mode Diaspora
             </Button>
           </div>
         </div>

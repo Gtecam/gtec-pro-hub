@@ -8,6 +8,25 @@
  * validation quand le mécanisme le permet).
  */
 
+import type { LucideIcon } from "lucide-react";
+import {
+  Briefcase,
+  Building2,
+  Car,
+  ClipboardList,
+  CreditCard,
+  FileCheck,
+  FileCheck2,
+  FileText,
+  Home,
+  Search,
+  Star,
+  UserCheck,
+  UserRound,
+  Users,
+  Wrench,
+} from "lucide-react";
+
 /** Relations proches (§15). */
 export const BENEFICIARY_RELATIONS = [
   "Maman",
@@ -29,30 +48,30 @@ export const BENEFICIARY_RELATIONS = [
 export type BeneficiaryRelation = (typeof BENEFICIARY_RELATIONS)[number];
 
 /** Icône indicative d'une relation (affichage liste « Pour qui ? »). */
-export function relationIcon(relation: string): string {
+export function relationIcon(relation: string): LucideIcon {
   switch (relation) {
     case "Maman":
     case "Papa":
     case "Grand-parent":
-      return "👤";
+      return UserRound;
     case "Frère":
     case "Sœur":
     case "Enfant":
     case "Oncle":
     case "Tante":
-      return "👥";
+      return Users;
     case "Locataire":
-      return "🏘️";
+      return Home;
     case "Employé":
-      return "🧑‍💼";
+      return Briefcase;
     case "Maison familiale":
-      return "🏠";
+      return Home;
     case "Entreprise":
-      return "🏢";
+      return Building2;
     case "Moi-même":
-      return "🙋";
+      return UserCheck;
     default:
-      return "👥";
+      return Users;
   }
 }
 
@@ -64,11 +83,11 @@ export function relationIcon(relation: string): string {
  * toujours et est journalisé au retour du paiement.
  */
 export const DIASPORA_CURRENCIES = [
-  { code: "EUR", label: "Euro", flag: "🇪🇺", perXaf: 1 / 655.957 },
-  { code: "USD", label: "Dollar US", flag: "🇺🇸", perXaf: 1 / 600 },
-  { code: "GBP", label: "Livre sterling", flag: "🇬🇧", perXaf: 1 / 760 },
-  { code: "CAD", label: "Dollar canadien", flag: "🇨🇦", perXaf: 1 / 440 },
-  { code: "XAF", label: "FCFA (local)", flag: "🇨🇲", perXaf: 1 },
+  { code: "EUR", label: "Euro", perXaf: 1 / 655.957 },
+  { code: "USD", label: "Dollar US", perXaf: 1 / 600 },
+  { code: "GBP", label: "Livre sterling", perXaf: 1 / 760 },
+  { code: "CAD", label: "Dollar canadien", perXaf: 1 / 440 },
+  { code: "XAF", label: "FCFA (local)", perXaf: 1 },
 ] as const;
 
 export type DiasporaCurrencyCode = (typeof DIASPORA_CURRENCIES)[number]["code"];
@@ -109,19 +128,19 @@ export function estimatedInternationalFee(amountXaf: number): number {
 export type DiasporaTrackStep = {
   key: string;
   label: string;
-  icon: string;
+  icon: LucideIcon;
 };
 
 export const DIASPORA_TRACK: DiasporaTrackStep[] = [
-  { key: "nouvelle", label: "Demande créée", icon: "🟡" },
-  { key: "recherche", label: "Recherche d'un professionnel", icon: "🔵" },
-  { key: "devis_emis", label: "Devis reçu", icon: "🟣" },
-  { key: "devis_accepte", label: "Devis accepté", icon: "🟢" },
-  { key: "paye", label: "Paiement confirmé", icon: "💳" },
-  { key: "affectee", label: "Technicien en déplacement", icon: "🚗" },
-  { key: "en_intervention", label: "Technicien arrivé · intervention en cours", icon: "🔧" },
-  { key: "rapport_emis", label: "Intervention terminée · rapport disponible", icon: "📄" },
-  { key: "terminee", label: "Validation et évaluation", icon: "⭐" },
+  { key: "nouvelle", label: "Demande créée", icon: ClipboardList },
+  { key: "recherche", label: "Recherche d'un professionnel", icon: Search },
+  { key: "devis_emis", label: "Devis reçu", icon: FileText },
+  { key: "devis_accepte", label: "Devis accepté", icon: FileCheck2 },
+  { key: "paye", label: "Paiement confirmé", icon: CreditCard },
+  { key: "affectee", label: "Technicien en déplacement", icon: Car },
+  { key: "en_intervention", label: "Technicien arrivé · intervention en cours", icon: Wrench },
+  { key: "rapport_emis", label: "Intervention terminée · rapport disponible", icon: FileCheck },
+  { key: "terminee", label: "Validation et évaluation", icon: Star },
 ];
 
 /** Index de l'étape de suivi correspondant à un statut du pipeline. */

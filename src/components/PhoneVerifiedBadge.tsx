@@ -79,7 +79,7 @@ export function PhoneVerifiedBadge({
     setBusy(true);
     try {
       await verifyCode({ code });
-      toast.success("Numéro de téléphone vérifié ✅");
+      toast.success("Numéro de téléphone vérifié");
       setDemoCode(null);
       setOpen(false);
       setStep("phone");

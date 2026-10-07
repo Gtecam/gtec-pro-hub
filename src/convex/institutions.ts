@@ -639,7 +639,7 @@ export const adminReviewVerificationRequest = mutation({
       req.userId,
       "general",
       args.decision === "APPROVED"
-        ? "Établissement ajouté au référentiel ✅"
+        ? "Établissement ajouté au référentiel"
         : args.decision === "REJECTED"
           ? "Demande d'établissement refusée"
           : "Demande d'établissement en cours d'examen",
@@ -823,7 +823,7 @@ export const adminReviewCredential = mutation({
       cred.userId,
       "general",
       args.decision === "verifie"
-        ? "Diplôme vérifié ✅"
+        ? "Diplôme vérifié"
         : args.decision === "rejete"
           ? "Diplôme non vérifié ❌"
           : "Diplôme en cours de vérification ⚠️",

@@ -48,7 +48,7 @@ export default function VerifyPage() {
                 <BadgeCheck className="size-6" />
               </span>
               <p className="font-display text-lg font-semibold">
-                Certificat {cert.number} authentique ✓
+                Certificat {cert.number} authentique
               </p>
               <p className="text-sm text-muted-foreground">
                 Ce certificat numérique d'intervention GTEC PRO est enregistré
@@ -60,11 +60,11 @@ export default function VerifyPage() {
                 <p><span className="text-muted-foreground">Ville :</span> {cert.city ?? "—"}</p>
                 <p>
                   <span className="text-muted-foreground">Check-list sécurité :</span>{" "}
-                  {cert.checklistComplete ? "complète ✓" : "—"}
+                  {cert.checklistComplete ? "complète" : "—"}
                 </p>
                 <p>
                   <span className="text-muted-foreground">Signature client :</span>{" "}
-                  {cert.clientSigned ? "recueillie ✓" : "—"}
+                  {cert.clientSigned ? "recueillie" : "—"}
                 </p>
                 <p><span className="text-muted-foreground">Émis le :</span> {formatDate(cert.issuedAt)}</p>
                 <p className="break-all text-[11px] text-muted-foreground/80">

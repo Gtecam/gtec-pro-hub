@@ -28,6 +28,7 @@ import {
   Send,
   ShieldCheck,
   Sparkles,
+  TriangleAlert,
   UserCheck,
   UserPlus,
   Users,
@@ -403,8 +404,9 @@ function ApplicationRow({
             {profile.city} · {profile.zones.join(", ")} ·{" "}
             {profile.documents.length} document(s)
             {profile.kycFlag && (
-              <span className="ml-1.5 font-semibold text-destructive">
-                · ⚠ KYC : {profile.kycFlag}
+              <span className="ml-1.5 inline-flex items-center gap-1 font-semibold text-destructive">
+                <TriangleAlert className="size-3" />
+                KYC : {profile.kycFlag}
               </span>
             )}
           </span>

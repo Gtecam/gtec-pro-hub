@@ -8,9 +8,11 @@ import {
   CheckCircle2,
   CircleDollarSign,
   ClipboardCheck,
+  Clock,
   Download,
   FileText,
   FolderDown,
+  Globe,
   Hourglass,
   ImagePlus,
   Loader2,
@@ -23,6 +25,7 @@ import {
   ShieldAlert,
   ShieldCheck,
   Truck,
+  TriangleAlert,
   Users,
   Wallet,
   Wrench,
@@ -687,7 +690,7 @@ export default function RequestDetail() {
             <CardContent className="flex flex-col gap-3">
               {request.teamArrivalAt ? (
                 <p className="flex items-center gap-2 rounded-lg bg-emerald-500/10 px-3 py-2 text-sm font-semibold text-emerald-700 ring-1 ring-emerald-500/30 dark:text-emerald-400">
-                  <CheckCircle2 className="size-4" /> Technicien arrivé 📍 —
+                  <CheckCircle2 className="size-4" /> Technicien arrivé —
                   arrivée confirmée le {formatDateTime(request.teamArrivalAt)}
                   {request.teamArrivalCoords && (
                     <a
@@ -812,7 +815,8 @@ export default function RequestDetail() {
           <Card className="card-layered border-primary/25 bg-primary/[0.03]">
             <CardHeader className="pb-2">
               <CardTitle className="flex items-center gap-2 text-sm">
-                🌍 Validation à distance — Mode Diaspora
+                <Globe className="size-4 text-primary" />
+                Validation à distance — Mode Diaspora
               </CardTitle>
               <CardDescription>
                 L'intervention est-elle terminée conformément au devis ? Votre
@@ -850,7 +854,7 @@ export default function RequestDetail() {
                     }
                   }}
                 >
-                  ✅ Oui, tout est correct
+                  <CheckCircle2 className="mr-1.5 size-4" /> Oui, tout est correct
                 </Button>
                 <Button
                   size="sm"
@@ -872,7 +876,7 @@ export default function RequestDetail() {
                     }
                   }}
                 >
-                  ⚠️ Demander une correction
+                  <TriangleAlert className="mr-1.5 size-4" /> Demander une correction
                 </Button>
                 <Button
                   size="sm"
@@ -895,7 +899,7 @@ export default function RequestDetail() {
                     }
                   }}
                 >
-                  ❌ Signaler un problème
+                  <XCircle className="mr-1.5 size-4" /> Signaler un problème
                 </Button>
               </div>
             </CardContent>
@@ -1188,13 +1192,19 @@ export default function RequestDetail() {
                         </div>
                         <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
                           {q.proposal?.arrivalDelayMin != null && (
-                            <span>🚗 Arrivée : ~{q.proposal.arrivalDelayMin} min</span>
+                            <span className="inline-flex items-center gap-1">
+                              <Clock className="size-3.5" /> Arrivée : ~{q.proposal.arrivalDelayMin} min
+                            </span>
                           )}
                           {q.proposal?.plannedAt && (
-                            <span>📅 {formatDateTime(q.proposal.plannedAt)}</span>
+                            <span className="inline-flex items-center gap-1">
+                              <CalendarClock className="size-3.5" /> {formatDateTime(q.proposal.plannedAt)}
+                            </span>
                           )}
                           {q.proposal?.warrantyDays != null && (
-                            <span>🛡️ Garantie : {q.proposal.warrantyDays} jours</span>
+                            <span className="inline-flex items-center gap-1">
+                              <ShieldCheck className="size-3.5" /> Garantie : {q.proposal.warrantyDays} jours
+                            </span>
                           )}
                         </div>
                         {q.proposal?.message && (
@@ -1261,7 +1271,7 @@ export default function RequestDetail() {
                             {q.status === "envoyee"
                               ? "réponse attendue"
                               : q.status === "acceptee"
-                                ? "sélectionné ✓"
+                                ? "sélectionné"
                                 : q.status === "refusee"
                                   ? "offre refusée"
                                   : "clôturé"}
@@ -1856,8 +1866,9 @@ export default function RequestDetail() {
                       </p>
                     )}
                     {guarantees?.some((g) => g.requestId === request._id) && (
-                      <p className="text-xs text-emerald-600 dark:text-emerald-400">
-                        🛡️ Garantie de travaux active jusqu'au {formatDate(guarantees.find((g) => g.requestId === request._id)!.until)} — tout signalement sera rattaché à cette mission.
+                      <p className="flex items-start gap-1.5 text-xs text-emerald-600 dark:text-emerald-400">
+                        <ShieldCheck className="mt-0.5 size-3.5 shrink-0" />
+                        Garantie de travaux active jusqu'au {formatDate(guarantees.find((g) => g.requestId === request._id)!.until)} — tout signalement sera rattaché à cette mission.
                       </p>
                     )}
                   </CardContent>

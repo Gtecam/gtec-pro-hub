@@ -14,6 +14,17 @@
  * administrable (statuts, historique, suspensions) — source : MINESUP.
  */
 
+import type { LucideIcon } from "lucide-react";
+import {
+  BadgeCheck,
+  Clock,
+  GraduationCap,
+  Landmark,
+  School,
+  ScrollText,
+  XCircle,
+} from "lucide-react";
+
 // ============================ NOMENCLATURES ==============================
 
 export const INSTITUTION_TYPES = [
@@ -177,38 +188,38 @@ export const CREDENTIAL_STATUS_LABELS: Record<CredentialStatus, string> = {
 
 /** Badges du profil (§12) — jamais « reconnu » sur simple déclaration. */
 export function credentialBadge(status: CredentialStatus | undefined): {
-  emoji: string;
+  icon: LucideIcon;
   label: string;
   tone: string;
 } {
   switch (status) {
     case "verifie":
-      return { emoji: "✅", label: "Diplôme vérifié GTEC PRO", tone: "text-emerald-600 dark:text-emerald-400" };
+      return { icon: BadgeCheck, label: "Diplôme vérifié GTEC PRO", tone: "text-emerald-600 dark:text-emerald-400" };
     case "en_attente":
-      return { emoji: "⚠️", label: "Diplôme en cours de vérification", tone: "text-amber-600 dark:text-amber-400" };
+      return { icon: Clock, label: "Diplôme en cours de vérification", tone: "text-amber-600 dark:text-amber-400" };
     case "rejete":
-      return { emoji: "❌", label: "Diplôme non vérifié", tone: "text-destructive" };
+      return { icon: XCircle, label: "Diplôme non vérifié", tone: "text-destructive" };
     default:
-      return { emoji: "🎓", label: "Diplôme déclaré", tone: "text-muted-foreground" };
+      return { icon: GraduationCap, label: "Diplôme déclaré", tone: "text-muted-foreground" };
   }
 }
 
 export function institutionBadge(status: InstitutionStatus | undefined): {
-  emoji: string;
+  icon: LucideIcon;
   label: string;
   tone: string;
 } {
   switch (status) {
     case "ACTIVE":
-      return { emoji: "🏫", label: "Établissement déclaré", tone: "text-primary" };
+      return { icon: School, label: "Établissement déclaré", tone: "text-primary" };
     case "PENDING_VERIFICATION":
-      return { emoji: "⚠️", label: "Établissement en cours de vérification", tone: "text-amber-600 dark:text-amber-400" };
+      return { icon: Clock, label: "Établissement en cours de vérification", tone: "text-amber-600 dark:text-amber-400" };
     case "SUSPENDED":
-      return { emoji: "❌", label: "Établissement suspendu", tone: "text-destructive" };
+      return { icon: XCircle, label: "Établissement suspendu", tone: "text-destructive" };
     case "CLOSED":
-      return { emoji: "🏛️", label: "Établissement fermé", tone: "text-muted-foreground" };
+      return { icon: Landmark, label: "Établissement fermé", tone: "text-muted-foreground" };
     default:
-      return { emoji: "📜", label: "Établissement historique", tone: "text-muted-foreground" };
+      return { icon: ScrollText, label: "Établissement historique", tone: "text-muted-foreground" };
   }
 }
 

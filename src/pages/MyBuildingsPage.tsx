@@ -76,7 +76,12 @@ export default function MyBuildingsPage() {
     <div className="flex flex-col gap-6 px-4 py-8 max-w-6xl mx-auto">
       <div className="flex items-start justify-between">
         <div>
-          <h1 className="font-display text-2xl font-bold tracking-tight">🏠 Mon bâtiment</h1>
+          <h1 className="font-display flex items-center gap-2.5 text-2xl font-bold tracking-tight">
+            <span className="icon-tile size-9">
+              <Building2 className="size-5" />
+            </span>
+            Mon bâtiment
+          </h1>
           <p className="text-sm text-muted-foreground">Enregistrez un ou plusieurs bâtiments et consultez leur dossier technique numérique.</p>
         </div>
         <Button variant="outline" size="sm" onClick={() => setShowForm((v) => !v)}>

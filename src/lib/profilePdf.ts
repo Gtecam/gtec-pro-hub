@@ -166,7 +166,7 @@ function buildProfileHtml(d: ProfilePdfData): string {
           (s) =>
             `<span class="chip${s.verified ? " chip-verified" : ""}">${esc(s.label)}${
               s.levelLabel ? ` — ${esc(s.levelLabel)}` : ""
-            }${s.years != null ? ` (${s.years} ans)` : ""}${s.verified ? " ✓" : ""}</span>`,
+            }${s.years != null ? ` (${s.years} ans)` : ""}            ${s.verified ? " — vérifié" : ""}</span>`,
         )
         .join("")}</div>`
     : `<p class="empty">Aucune compétence renseignée.</p>`;
@@ -245,7 +245,7 @@ function buildProfileHtml(d: ProfilePdfData): string {
         <div class="row-main">
           <strong>${esc(g.reference)}</strong>
           <span>${esc(g.title)}${g.city ? ` · ${esc(g.city)}` : ""} · ${esc(g.dateLabel)}${
-            g.rating ? ` · ${g.rating}/5 ⭐` : ""
+            g.rating ? ` · ${g.rating}/5` : ""
           }</span>
         </div>
         <span class="verif ok">PV signé</span>
