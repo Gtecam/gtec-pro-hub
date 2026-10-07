@@ -1,5 +1,5 @@
 import { useMutation, useQuery } from "convex/react";
-import { Lightbulb, RotateCcw, Wallet } from "lucide-react";
+import { Lightbulb, RotateCcw, Search, Wallet } from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { api } from "@/convex/_generated/api";
@@ -149,7 +149,7 @@ export function AdvisorCard({
           </p>
           <div className="flex flex-wrap gap-1.5">
             <Button size="sm" variant="outline" onClick={() => setMode("diagnostic")}>
-              🔍 Pré-diagnostic guidé
+              <Search className="mr-1.5 size-3.5" /> Pré-diagnostic guidé
             </Button>
             <Button size="sm" variant="outline" onClick={() => setMode("estimate")}>
               <Wallet className="mr-1.5 size-3.5" /> Estimer mon budget

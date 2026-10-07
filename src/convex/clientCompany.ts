@@ -505,7 +505,7 @@ export const adminReviewClientCompany = mutation({
       row.ownerUserId,
       `clientCompany.${args.decision.toLowerCase()}`,
       args.decision === "VERIFIED"
-        ? `Client entreprise « ${row.name} » vérifié par GTEC PRO ✓`
+        ? `Client entreprise « ${row.name} » vérifié par GTEC PRO`
         : args.decision === "REJECTED"
           ? `Client entreprise « ${row.name} » refusé`
           : `Client entreprise « ${row.name} » en cours d'examen`,
@@ -514,7 +514,7 @@ export const adminReviewClientCompany = mutation({
       ctx,
       row.ownerUserId,
       "general",
-      args.decision === "VERIFIED" ? "Entreprise vérifiée ✓" : args.decision === "REJECTED" ? "Entreprise refusée" : "Vérification en cours",
+      args.decision === "VERIFIED" ? "Entreprise vérifiée" : args.decision === "REJECTED" ? "Entreprise refusée" : "Vérification en cours",
       args.decision === "VERIFIED"
         ? `Le profil de « ${row.name} » est vérifié par GTEC PRO.`
         : args.decision === "REJECTED"

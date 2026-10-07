@@ -1438,7 +1438,7 @@ export default function TechnicianSpace() {
                               {c.graduationYear ? ` · ${c.graduationYear}` : ""}
                             </span>
                             <span className={cn("shrink-0", badge.tone)}>
-                              {badge.emoji} {badge.label}
+                              <badge.icon className="mr-1 inline size-3.5" /> {badge.label}
                             </span>
                           </div>
                         );

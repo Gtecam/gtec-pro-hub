@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 
 /**
- * §35 « ❤️ MES FAVORIS » — espace client : professionnels, entreprises et
+ * §35 « MES FAVORIS » — espace client : professionnels, entreprises et
  * services enregistrés pour les retrouver vite. Un favori n'accorde aucun
  * accès privilégié : les règles GTEC PRO (devis signé, KYC, abonnement)
  * restent inchangées.

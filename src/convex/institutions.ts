@@ -825,8 +825,8 @@ export const adminReviewCredential = mutation({
       args.decision === "verifie"
         ? "Diplôme vérifié"
         : args.decision === "rejete"
-          ? "Diplôme non vérifié ❌"
-          : "Diplôme en cours de vérification ⚠️",
+          ? "Diplôme non vérifié"
+          : "Diplôme en cours de vérification",
       args.decision === "verifie"
         ? `Votre diplôme (${cred.institutionName}) a été vérifié par GTEC PRO.`
         : args.decision === "rejete"

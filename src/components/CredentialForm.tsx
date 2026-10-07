@@ -166,8 +166,8 @@ export function CredentialForm({
       });
       toast.success(
         diplomaDoc
-          ? "Diplôme déclaré avec justificatif — vérification GTEC en cours ⚠️"
-          : "Diplôme déclaré — joignez le justificatif pour accélérer la vérification ⚠️",
+          ? "Diplôme déclaré avec justificatif — vérification GTEC en cours"
+          : "Diplôme déclaré — joignez le justificatif pour accélérer la vérification",
       );
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Erreur");
@@ -210,7 +210,16 @@ export function CredentialForm({
         <p className="flex items-center gap-1.5 text-sm font-semibold">
           <GraduationCap className="size-4 text-primary" /> Établissement du référentiel
         </p>
-        {selected && institutionBadge(selected.status as InstitutionStatus).emoji}
+        {selected && (() => {
+          const b = institutionBadge(selected.status as InstitutionStatus);
+          return (
+            <span
+              className={`inline-flex items-center gap-1 text-xs font-medium ${b.tone}`}
+            >
+              <b.icon className="size-3.5" /> {b.label}
+            </span>
+          );
+        })()}
       </div>
 
       {selected ? (

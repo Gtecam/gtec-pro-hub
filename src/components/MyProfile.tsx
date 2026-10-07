@@ -59,7 +59,7 @@ const STATUS_META: Record<string, { label: string; cls: string }> = {
   DRAFT: { label: "Brouillon", cls: "text-muted-foreground" },
   SUBMITTED: { label: "Soumis — à vérifier ⏳", cls: "text-amber-600 dark:text-amber-400" },
   UNDER_REVIEW: { label: "En cours d'examen", cls: "text-amber-600 dark:text-amber-400" },
-  VERIFIED: { label: "Vérifié GTEC PRO ✓", cls: "text-emerald-600 dark:text-emerald-400" },
+  VERIFIED: { label: "Vérifié GTEC PRO", cls: "text-emerald-600 dark:text-emerald-400" },
   REJECTED: { label: "Refusé", cls: "text-destructive" },
 };
 
@@ -659,7 +659,7 @@ export function MyProfile() {
                     : "border-dashed text-muted-foreground",
                 )}
               >
-                {i.done ? "✓" : "○"} {i.label}
+                {i.label}
               </span>
             ))}
           </div>
@@ -716,8 +716,8 @@ export function MyProfile() {
                   </p>
                   <p className="text-[11px] text-muted-foreground">
                     {x.city} · {formatDate(x.date)}
-                    {x.rating ? ` · ${x.rating}/5 ⭐` : ""}
-                    {x.finished ? " · Terminée ✓" : ` · ${x.status}`}
+                    {x.rating ? ` · ${x.rating}/5` : ""}
+                    {x.finished ? " · Terminée" : ` · ${x.status}`}
                   </p>
                 </div>
                 {x.finished &&
@@ -888,7 +888,7 @@ export function MyProfile() {
                     <p className="text-[11px] text-muted-foreground">{c.institutionName}</p>
                   </div>
                   <span className={cn("shrink-0 text-xs font-medium", badge.tone)}>
-                    {badge.emoji} {badge.label}
+                    <badge.icon className="mr-1 inline size-3.5" /> {badge.label}
                   </span>
                 </div>
               );
@@ -1014,7 +1014,7 @@ export function MyProfile() {
                     {p.domainLabel ? `${p.domainLabel} · ` : ""}
                     {p.city ? `${p.city} · ` : ""}
                     {p.completedAt ? formatDate(p.completedAt) : ""}
-                    {p.linkedRequestId ? " · Intervention GTEC PRO ✓" : ""}
+                    {p.linkedRequestId ? " · Intervention GTEC PRO" : ""}
                   </p>
                   {p.description && <p className="text-xs text-muted-foreground">{p.description}</p>}
                   {p.outcome && (
@@ -1133,7 +1133,7 @@ const COMPANY_STATUS_META: Record<string, { label: string; cls: string }> = {
   DRAFT: { label: "Brouillon", cls: "text-muted-foreground" },
   SUBMITTED: { label: "Soumise — à vérifier", cls: "text-amber-600 dark:text-amber-400" },
   UNDER_REVIEW: { label: "En cours d'examen", cls: "text-amber-600 dark:text-amber-400" },
-  VERIFIED: { label: "Vérifiée GTEC PRO ✓", cls: "text-emerald-600 dark:text-emerald-400" },
+  VERIFIED: { label: "Vérifiée GTEC PRO", cls: "text-emerald-600 dark:text-emerald-400" },
   REJECTED: { label: "Refusée", cls: "text-destructive" },
 };
 

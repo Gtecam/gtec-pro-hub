@@ -2049,7 +2049,7 @@ export const markTeamArrival = mutation({
       ctx,
       request.clientId,
       "intervention",
-      "Votre technicien est arrivé 📍",
+      "Votre technicien est arrivé",
       `L'équipe GTEC PRO est sur place pour ${request.reference}. L'intervention peut démarrer.`,
       request._id,
     );
@@ -2068,7 +2068,7 @@ export const markTeamArrival = mutation({
           await ctx.db.insert("notifications", {
             userId: beneficiaryUser._id,
             kind: "diaspora",
-            title: "L'équipe GTEC est arrivée 📍",
+            title: "L'équipe GTEC est arrivée",
             body: `L'équipe envoyée par votre proche est arrivée pour ${request.reference}. Vous pouvez l'accueillir.`,
             requestId: request._id,
             at: Date.now(),
@@ -2713,7 +2713,7 @@ export const adminReviewTechnician = mutation({
         ctx,
         profile.userId,
         "general",
-        "Dossier validé ✓",
+        "Dossier validé",
         "Félicitations ! Votre dossier est validé. Activez votre abonnement pour recevoir des missions.",
       );
     } else {

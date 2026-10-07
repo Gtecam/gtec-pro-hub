@@ -6,6 +6,7 @@ import {
   Car,
   CheckSquare,
   ChevronDown,
+  Coins,
   Crown,
   MapPin,
   Scale,
@@ -13,8 +14,12 @@ import {
   Square,
   Star,
   Timer,
+  Trophy,
   Users,
+  Wrench,
+  Zap,
 } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/convex/_generated/api";
 import { Button } from "@/components/ui/button";
@@ -59,7 +64,7 @@ type ProMatch = {
   zones: string[];
 };
 
-/** 🟢🟠🔵⚫ — indicateurs de statut (§15). */
+/** Pastilles de disponibilité — indicateurs de statut (§15). */
 export function availabilityMeta(a: string): {
   dot: string;
   label: string;
@@ -114,7 +119,7 @@ function ProCard({
   onCompare: () => void;
   compareChecked: boolean;
   rank: number;
-  badge?: { emoji: string; label: string; hint: string };
+  badge?: { icon: LucideIcon; label: string; hint: string };
 }) {
   const navigate = useNavigate();
   const ava = availabilityMeta(pro.availability);
@@ -147,8 +152,8 @@ function ProCard({
               <BadgeCheck className="size-3" /> Vérifié
             </span>
             {rank === 1 && (
-              <span className="rounded-full bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-amber-600 ring-1 ring-amber-500/20 dark:text-amber-400">
-                🏆 Meilleure correspondance
+              <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-amber-600 ring-1 ring-amber-500/20 dark:text-amber-400">
+                <Trophy className="size-3" /> Meilleure correspondance
               </span>
             )}
           </div>
@@ -160,7 +165,7 @@ function ProCard({
               className="mt-1 w-fit cursor-help rounded-md bg-muted px-1.5 py-0.5 text-[11px] font-medium"
               title={badge.hint}
             >
-              {badge.emoji} {badge.label}
+              <badge.icon className="mr-1 inline size-3" /> {badge.label}
             </p>
           )}
           <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
@@ -200,7 +205,7 @@ function ProCard({
         {/* Actions verticales */}
         <div className="flex shrink-0 flex-col items-end gap-1.5">
           <Button size="sm" variant={selected ? "secondary" : "default"} onClick={onToggle}>
-            {selected ? "Sélectionné ✓" : "Sélectionner"}
+            {selected ? "Sélectionné" : "Sélectionner"}
           </Button>
           <Button
             size="sm"
@@ -233,7 +238,7 @@ function ProCard({
 
 function ComparisonTable({ pros }: { pros: ProMatch[] }) {
   const rows: { label: string; render: (p: ProMatch) => React.ReactNode }[] = [
-    { label: "Vérifié", render: () => "✓" },
+    { label: "Vérifié", render: () => "Oui" },
     {
       label: "Spécialité",
       render: (p) => [p.jobTitle, p.specialtyLabel].filter(Boolean).join(" · ") || "—",
@@ -259,7 +264,7 @@ function ComparisonTable({ pros }: { pros: ProMatch[] }) {
     },
     {
       label: "Certifications",
-      render: (p) => (p.certifications.length > 0 ? `✓ (${p.certifications.length})` : "—"),
+      render: (p) => (p.certifications.length > 0 ? `${p.certifications.length}` : "—"),
     },
   ];
   return (
@@ -344,12 +349,12 @@ export function ProfessionalMatches({
 
   // Recommandations explicables (§10) — critères objectifs uniquement.
   const badges = useMemo(() => {
-    const out = new Map<string, { emoji: string; label: string; hint: string }>();
+    const out = new Map<string, { icon: LucideIcon; label: string; hint: string }>();
     if (matches.length === 0) return out;
     const available = matches.filter((m) => m.availability === "disponible");
     const best = available[0] ?? matches[0];
     out.set(best.proUserId, {
-      emoji: "🏆",
+      icon: Trophy,
       label: "Meilleur choix",
       hint: "Professionnel particulièrement adapté à votre demande : compétences, proximité et disponibilité combinées.",
     });
@@ -358,7 +363,7 @@ export function ProfessionalMatches({
     )[0];
     if (fastest && !out.has(fastest.proUserId)) {
       out.set(fastest.proUserId, {
-        emoji: "⚡",
+        icon: Zap,
         label: "Plus rapide",
         hint: "Disponible immédiatement et le plus proche de votre chantier.",
       });
@@ -368,7 +373,7 @@ export function ProfessionalMatches({
       .sort((a, b) => (a.fromPrice ?? 0) - (b.fromPrice ?? 0))[0];
     if (cheapest && !out.has(cheapest.proUserId)) {
       out.set(cheapest.proUserId, {
-        emoji: "💰",
+        icon: Coins,
         label: "Option économique",
         hint: "Offre présentant le montant estimé le plus faible parmi les tarifs déclarés.",
       });
@@ -378,7 +383,7 @@ export function ProfessionalMatches({
       .sort((a, b) => (b.avgRating ?? 0) - (a.avgRating ?? 0))[0];
     if (bestRated && !out.has(bestRated.proUserId)) {
       out.set(bestRated.proUserId, {
-        emoji: "⭐",
+        icon: Star,
         label: "Mieux noté",
         hint: "Meilleure évaluation client sur les interventions réalisées.",
       });
@@ -392,7 +397,7 @@ export function ProfessionalMatches({
       )[0];
     if (expert && !out.has(expert.proUserId)) {
       out.set(expert.proUserId, {
-        emoji: "🛠️",
+        icon: Wrench,
         label: "Expert",
         hint: "Expérience et certifications particulièrement adaptées à cette intervention.",
       });

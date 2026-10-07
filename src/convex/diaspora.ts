@@ -479,10 +479,10 @@ export const validateByBeneficiaryCode = mutation({
       kind: "diaspora",
       title:
         args.verdict === "conforme"
-          ? "Votre proche valide l'intervention ✅"
+          ? "Votre proche valide l'intervention"
           : args.verdict === "correction_demandee"
-            ? "Votre proche demande une correction ⚠️"
-            : "Votre proche signale un problème ❌",
+            ? "Votre proche demande une correction"
+            : "Votre proche signale un problème",
       body: `Intervention ${request.reference} — ${args.note?.trim() || "Sans commentaire."}`,
       requestId: request._id,
       at: Date.now(),

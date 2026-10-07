@@ -3,7 +3,7 @@ import { mutation, query } from "./_generated/server";
 import { requireUser } from "./gtec";
 
 /**
- * GTEC PRO — Favoris client (§35 « ❤️ MES FAVORIS »).
+ * GTEC PRO — Favoris client (§35 « MES FAVORIS »).
  *
  * Le client enregistre les professionnels, entreprises et services qu'il
  * connaît pour les retrouver vite et commander directement auprès d'eux, dans

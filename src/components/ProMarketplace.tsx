@@ -4,6 +4,7 @@ import { useNow } from "@/hooks/use-now";
 import {
   BadgeCheck,
   CalendarClock,
+  Camera,
   CheckCircle2,
   Coins,
   Hourglass,
@@ -43,7 +44,7 @@ import { cn } from "@/lib/utils";
  *    (description, ville, urgence, photos) avec une adresse APPROXIMATIVE
  *    (§16 : confidentialité de la localisation avant acceptation) et répond
  *    montant + délai d'arrivée + garantie + message.
- * 2. Présence temps réel (🟢🟠🔵⚫) + tarif indicatif « à partir de ».
+ * 2. Présence temps réel (pastilles de disponibilité) + tarif indicatif « à partir de ».
  * 3. Zones couvertes + créneaux publiés (§20).
  */
 

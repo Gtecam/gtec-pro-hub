@@ -583,7 +583,7 @@ export const addGtecExperienceToPortfolio = mutation({
   },
 });
 
-// ==================== COMPLÉTION DU PROFIL (§12, 🔥) =======================
+// ==================== COMPLÉTION DU PROFIL (§12) =======================
 
 export const myProfileCompletion = query({
   args: {},
@@ -680,7 +680,7 @@ export const adminReviewProfileItem = mutation({
       kind: `${args.kind}.${args.decision.toLowerCase()}`,
       label:
         args.decision === "VERIFIED"
-          ? `« ${label} » vérifié par GTEC PRO ✓`
+          ? `« ${label} » vérifié par GTEC PRO`
           : args.decision === "REJECTED"
             ? `« ${label} » refusé`
             : `« ${label} » en cours d'examen`,
@@ -691,7 +691,7 @@ export const adminReviewProfileItem = mutation({
       row.userId as Id<"users">,
       "general",
       args.decision === "VERIFIED"
-        ? "Votre nouvelle information a été vérifiée ✓"
+        ? "Votre nouvelle information a été vérifiée"
         : args.decision === "REJECTED"
           ? "Information refusée"
           : "Vérification en cours",
@@ -1111,7 +1111,7 @@ export const adminReviewCompany = mutation({
       row.ownerUserId,
       `company.${args.decision.toLowerCase()}`,
       args.decision === "VERIFIED"
-        ? `Entreprise « ${row.name} » vérifiée par GTEC PRO ✓`
+        ? `Entreprise « ${row.name} » vérifiée par GTEC PRO`
         : args.decision === "REJECTED"
           ? `Entreprise « ${row.name} » refusée`
           : `Entreprise « ${row.name} » en cours d'examen`,
@@ -1120,7 +1120,7 @@ export const adminReviewCompany = mutation({
       ctx,
       row.ownerUserId,
       "general",
-      args.decision === "VERIFIED" ? "Entreprise vérifiée ✓" : args.decision === "REJECTED" ? "Entreprise refusée" : "Vérification en cours",
+      args.decision === "VERIFIED" ? "Entreprise vérifiée" : args.decision === "REJECTED" ? "Entreprise refusée" : "Vérification en cours",
       args.decision === "VERIFIED"
         ? `Le profil de « ${row.name} » est vérifié par GTEC PRO. Il sera mis en avant auprès des clients.`
         : args.decision === "REJECTED"

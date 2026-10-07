@@ -63,7 +63,7 @@ export function MissionChecklist({
               )}
             >
               {data.checklist.status === "COMPLETE"
-                ? "Complète ✓ — clôture possible"
+                ? "Complète — clôture possible"
                 : `${mandatoryDone}/${mandatory.length} obligatoires validés`}
             </span>
           )}
