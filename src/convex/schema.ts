@@ -511,12 +511,32 @@ const schemaDefinition = defineSchema(
       .index("by_request", ["requestId"])
       .index("by_status", ["status"]),
 
+    // Plans d'abonnement professionnel — modifiables par l'administration.
+    // Nouveau modèle économique GTEC PRO : aucune commission sur les prestations,
+    // rémunération par abonnements.
+    subscriptionPlans: defineTable({
+      plan: v.union(
+        v.literal("mensuel"),
+        v.literal("trimestriel"),
+        v.literal("semestriel"),
+        v.literal("annuel"),
+      ),
+      priceFcfa: v.number(),
+      months: v.number(),
+      active: v.boolean(),
+      advantages: v.string(), // texte libre, ex : \n séparé
+      recommended: v.optional(v.boolean()),
+      defaultForNew: v.optional(v.boolean()),
+    })
+      .index("by_plan", ["plan"]),
+
     subscriptionPayments: defineTable({
       profileId: v.id("technicianProfiles"),
       techUserId: v.id("users"),
       plan: v.union(
         v.literal("mensuel"),
         v.literal("trimestriel"),
+        v.literal("semestriel"),
         v.literal("annuel"),
       ),
       amount: v.number(),
@@ -526,6 +546,8 @@ const schemaDefinition = defineSchema(
         v.literal("orange_money"),
         v.literal("especes"),
         v.literal("virement"),
+        v.literal("carte"),
+        v.literal("paypal"),
       ),
       payerPhone: v.string(),
       status: v.union(
@@ -534,9 +556,13 @@ const schemaDefinition = defineSchema(
         v.literal("echoue"),
       ),
       externalRef: v.optional(v.string()),
+      startsAt: v.optional(v.number()),
+      endsAt: v.optional(v.number()),
+      receiptNo: v.optional(v.string()),
     })
       .index("by_profile", ["profileId"])
-      .index("by_status", ["status"]),
+      .index("by_status", ["status"])
+      .index("by_receipt", ["receiptNo"]),
 
     payouts: defineTable({
       techUserId: v.id("users"),
@@ -551,6 +577,10 @@ const schemaDefinition = defineSchema(
       .index("by_tech", ["techUserId", "status"])
       .index("by_request", ["requestId"]),
 
+    // GTEC PRO — modèle économique changé : aucune commission sur les prestations.
+    // La rémunération de GTEC provient des abonnements professionnels.
+    // Cette table est conservée en lecture seule pour l'historique des dossiers
+    // déjà créés ; elle n'est plus créée, payée ou validée par le système.
     gtecCommissions: defineTable({
       requestId: v.id("serviceRequests"),
       quoteId: v.id("quotes"),
