@@ -5,7 +5,6 @@ import {
   Banknote,
   BarChart3,
   Landmark,
-  Percent,
   CalendarClock,
   CheckCircle2,
   ChevronDown,
@@ -925,15 +924,16 @@ export default function AdminConsole() {
   const scheduleVisit = useMutation(api.gtec.adminScheduleContractVisit);
   const assignVisit = useMutation(api.gtec.adminAssignVisit);
 
-  // V6 : retraits (techniciens + admin) et commissions GTEC.
+  // GTEC PRO 2.0 — modèle 2026 : retraits + gestion des abonnements
+  // (aucune commission sur les prestations).
   const withdrawals = useQuery(api.gtec.adminListWithdrawals);
-  const commissions = useQuery(api.gtec.adminListCommissions);
-  const commissionStats = useQuery(api.gtec.adminCommissionStats);
   const adminWallet = useQuery(api.gtec.myWallet);
   const processWithdrawal = useMutation(api.gtec.adminProcessWithdrawal);
-  const validateCommission = useMutation(api.gtec.adminValidateCommission);
-  const waiveCommission = useMutation(api.gtec.adminWaiveCommission);
   const adminRequestWithdrawal = useMutation(api.gtec.requestWithdrawal);
+  const subStats = useQuery(api.gtec.adminSubscriptionStats);
+  const subList = useQuery(api.gtec.adminListSubscriptions);
+  const updatePlanPrice = useMutation(api.gtec.adminUpdatePlanPrice);
+  const setSubscriptionStatus = useMutation(api.gtec.adminSetSubscriptionStatus);
 
   // GTEC PRO 2.0 : litiges, sanctions, audit, rôles admin.
   const disputes = useQuery(api.gtec.adminListDisputes);
@@ -967,54 +967,41 @@ export default function AdminConsole() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const [disputeNote, setDisputeNote] = useState("");
+  const [planPrices, setPlanPrices] = useState<Record<string, string>>({});
   const [sanctionTarget, setSanctionTarget] = useState<string>("");
   const [sanctionLevel, setSanctionLevel] = useState<string>("1");
   const [sanctionReason, setSanctionReason] = useState("");
   const [sanctionDays, setSanctionDays] = useState<string>("7");
   const [adminRoleDrafts, setAdminRoleDrafts] = useState<Record<string, string>>({});
 
-  // Exports comptables CSV (commissions 15 % et retraits).
-  const exportCommissionsCsv = () => {
-    if (!commissions || commissions.length === 0) {
-      toast.error("Aucune commission à exporter.");
+  // Exports comptables CSV (abonnements et retraits).
+  const exportSubscriptionsCsv = () => {
+    if (!subList || subList.length === 0) {
+      toast.error("Aucun abonnement à exporter.");
       return;
     }
     downloadCsv(
-      `commissions-gtec-${todayStamp()}.csv`,
+      `abonnements-gtec-${todayStamp()}.csv`,
       [
-        "Commission",
-        "Demande",
-        "Redevable",
-        "Base TTC (FCFA)",
-        "Part équipe 90% (FCFA)",
-        "Commission GTEC 10% (FCFA)",
+        "Professionnel",
+        "Formule",
+        "Prix payé (FCFA)",
+        "Début",
+        "Expiration",
         "Statut",
-        "Moyen",
-        "Numéro payeur",
-        "Réf. externe",
-        "Payée le",
-        "Créée le",
+        "Paiements validés",
       ],
-      commissions.map(({ commission, request, tech }) => [
-        commission.breakdown ? commission.breakdown.gtecAmount : commission.amount,
-        request?.reference ?? "",
-        tech?.name ?? "",
-        commission.baseAmount,
-        commission.breakdown?.teamAmount ?? "",
-        commission.breakdown?.gtecAmount ?? commission.amount,
-        commission.status === "payee"
-          ? "Encaissée"
-          : commission.status === "exoneree"
-            ? "Exonérée"
-            : "Due",
-        commission.method ?? "",
-        commission.payerPhone ?? "",
-        commission.externalRef ?? "",
-        commission.paidAt ? new Date(commission.paidAt).toLocaleString("fr-FR") : "",
-        new Date(commission._creationTime).toLocaleString("fr-FR"),
+      subList.map(({ user, plan, priceFcfa, startsAt, until, statusLabel, history }) => [
+        user?.name ?? "",
+        plan,
+        priceFcfa ?? "",
+        startsAt ? new Date(startsAt).toLocaleDateString("fr-FR") : "",
+        until ? new Date(until).toLocaleDateString("fr-FR") : "",
+        statusLabel,
+        (history ?? []).filter((p: any) => p.status === "valide").length,
       ]),
     );
-    toast.success(`${commissions.length} commission(s) exportée(s).`);
+    toast.success(`${subList.length} abonnement(s) exporté(s).`);
   };
 
   const exportWithdrawalsCsv = () => {
@@ -1039,7 +1026,7 @@ export default function AdminConsole() {
       withdrawals.map(({ withdrawal, user }) => [
         withdrawal.reference,
         user?.name ?? "",
-        withdrawal.sourceRole === "admin" ? "Administration (commissions)" : "Technicien (gains)",
+        withdrawal.sourceRole === "admin" ? "Administration (abonnements)" : "Technicien (gains)",
         withdrawal.amount,
         withdrawal.method,
         withdrawal.destination,
@@ -1464,9 +1451,6 @@ export default function AdminConsole() {
                   {withdrawals?.length}
                 </span>
               )}
-            </TabsTrigger>
-            <TabsTrigger value="commissions">
-              <Percent className="mr-1.5 size-4" /> Commissions 10 %
             </TabsTrigger>
             <TabsTrigger value="litiges">
               <Scale className="mr-1.5 size-4" /> Litiges
@@ -2470,8 +2454,70 @@ export default function AdminConsole() {
             </div>
           </TabsContent>
 
+          {/* Abonnements — modèle économique 2026 (0 % commission, revenus par abonnement) */}
           <TabsContent value="abonnements" className="mt-4">
-            {subPayments === undefined ? (
+            <div className="flex flex-col gap-4">
+              {/* Statistiques abonnements */}
+              <div className="grid gap-3 sm:grid-cols-4">
+                {[
+                  { label: "Abonnés actifs", value: subStats?.activeCount },
+                  { label: "Nouveaux (mois)", value: subStats?.newThisMonth },
+                  { label: "À renouveler (7 j)", value: subStats?.expiringSoon, tone: "text-amber-600 dark:text-amber-400" },
+                  { label: "Expirés", value: subStats?.expiredCount, tone: "text-destructive" },
+                  { label: "Mensuels", value: subStats?.byPlan?.mensuel },
+                  { label: "Trimestriels", value: subStats?.byPlan?.trimestriel },
+                  { label: "Semestriels", value: subStats?.byPlan?.semestriel },
+                  { label: "Annuels", value: subStats?.byPlan?.annuel, tone: "text-primary" },
+                ].map(({ label, value, tone }) => (
+                  <Card key={label} className="card-layered">
+                    <CardContent className="px-4 py-3.5">
+                      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                        {label}
+                      </p>
+                      <p className={cn("font-display mt-1 text-lg font-bold", tone)}>
+                        {value === undefined ? "—" : value}
+                      </p>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+              <div className="grid gap-3 sm:grid-cols-3">
+                {[
+                  {
+                    label: "Chiffre d'affaires abonnements",
+                    value: subStats?.revenue,
+                    tone: "text-primary",
+                  },
+                  {
+                    label: "Revenus du mois",
+                    value: subStats?.monthlyRevenue,
+                    tone: "text-emerald-600 dark:text-emerald-400",
+                  },
+                  { label: "Taux de renouvellement", value: subStats?.renewalRate, suffix: "%" },
+                ].map(({ label, value, tone, suffix }: any) => (
+                  <Card key={label} className="card-layered">
+                    <CardContent className="px-4 py-3.5">
+                      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                        {label}
+                      </p>
+                      <p className={cn("font-display mt-1 text-lg font-bold", tone)}>
+                        {value === undefined
+                          ? "—"
+                          : suffix
+                            ? `${value} ${suffix}`
+                            : fcfa(value)}
+                      </p>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+              <p className="rounded-lg bg-muted/60 px-4 py-3 text-xs text-muted-foreground">
+                Modèle 2026 : <span className="font-medium text-foreground">0 % de commission</span> sur
+                les prestations — le professionnel conserve 100 % du montant payé par le client.
+                Les revenus GTEC PRO proviennent des abonnements professionnels.
+              </p>
+              {/* Paiements d'abonnement en attente de vérification */}
+              {subPayments === undefined ? (
               <div className="h-40 animate-pulse rounded-xl bg-muted" />
             ) : pendingSubs.length === 0 ? (
               <Card className="card-layered">
@@ -2537,6 +2583,136 @@ export default function AdminConsole() {
                 ))}
               </div>
             )}
+              {/* Modification des tarifs d'abonnement */}
+              <Card className="card-layered">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm">Modification des tarifs d'abonnement</CardTitle>
+                  <CardDescription className="text-xs">
+                    Référence mensuelle : 10 000 FCFA/mois. Le tarif trimestriel (48 000 FCFA)
+                    n'offre aucune remise ; les remises s'affichent automatiquement côté public.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="flex flex-col gap-2">
+                  {[
+                    { key: "mensuel", label: "Mensuel", months: 1, defaut: 10000 },
+                    { key: "trimestriel", label: "Trimestriel", months: 3, defaut: 48000 },
+                    { key: "semestriel", label: "Semestriel", months: 6, defaut: 55000 },
+                    { key: "annuel", label: "Annuel", months: 12, defaut: 100000 },
+                  ].map((p) => (
+                    <div
+                      key={p.key}
+                      className="flex flex-wrap items-center gap-2 rounded-xl border border-border/60 px-3 py-2"
+                    >
+                      <span className="w-24 text-sm font-medium">{p.label}</span>
+                      <span className="text-xs text-muted-foreground">
+                        {p.months} mois · tarif de référence {fcfa(p.defaut)}
+                      </span>
+                      <Input
+                        className="ml-auto w-32"
+                        inputMode="numeric"
+                        placeholder={String(p.defaut)}
+                        value={planPrices[p.key] ?? ""}
+                        onChange={(e) =>
+                          setPlanPrices((prev) => ({ ...prev, [p.key]: e.target.value }))
+                        }
+                      />
+                      <span className="text-xs text-muted-foreground">FCFA</span>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={busy || !planPrices[p.key]}
+                        onClick={() =>
+                          run(
+                            () =>
+                              updatePlanPrice({
+                                plan: p.key as "mensuel" | "trimestriel" | "semestriel" | "annuel",
+                                priceFcfa: Number(planPrices[p.key]),
+                              }),
+                            `Tarif ${p.label.toLowerCase()} mis à jour`,
+                          )
+                        }
+                      >
+                        Enregistrer
+                      </Button>
+                    </div>
+                  ))}
+                </CardContent>
+              </Card>
+              {/* Liste des professionnels abonnés */}
+              {subList === undefined ? (
+                <div className="h-32 animate-pulse rounded-xl bg-muted" />
+              ) : subList.length === 0 ? (
+                <Card className="card-layered">
+                  <CardContent className="py-10 text-center text-sm text-muted-foreground">
+                    Aucun professionnel abonné pour le moment.
+                  </CardContent>
+                </Card>
+              ) : (
+                <div className="flex flex-col gap-2">
+                  {subList.map(
+                    ({ profile, user, plan, priceFcfa, startsAt, until, statusLabel, history }) => (
+                      <div
+                        key={profile._id}
+                        className="flex flex-wrap items-center gap-3 rounded-xl border border-border/70 bg-card px-4 py-3"
+                      >
+                        <span className="flex size-9 items-center justify-center rounded-full bg-primary/15 text-primary">
+                          <Crown className="size-4" />
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-medium">
+                            {user?.name ?? "—"} ·{" "}
+                            <span className="capitalize text-muted-foreground">{plan}</span>
+                          </p>
+                          <p className="truncate text-xs text-muted-foreground">
+                            {priceFcfa ? `${fcfa(priceFcfa)} · ` : ""}
+                            {startsAt
+                              ? `début ${new Date(startsAt).toLocaleDateString("fr-FR")} · `
+                              : ""}
+                            {until
+                              ? `expire le ${new Date(until).toLocaleDateString("fr-FR")}`
+                              : "—"}
+                            {" · "}
+                            {(history ?? []).filter((p: any) => p.status === "valide").length}{" "}
+                            paiement(s)
+                          </p>
+                        </div>
+                        <span
+                          className={cn(
+                            "rounded-full px-2.5 py-1 text-xs font-medium ring-1 ring-inset",
+                            statusLabel === "Actif"
+                              ? "bg-emerald-500/10 text-emerald-600 ring-emerald-500/20 dark:text-emerald-400"
+                              : statusLabel === "Expire bientôt"
+                                ? "bg-amber-500/10 text-amber-700 ring-amber-500/20 dark:text-amber-400"
+                                : "bg-muted text-muted-foreground ring-border",
+                          )}
+                        >
+                          {statusLabel}
+                        </span>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={busy}
+                          onClick={() =>
+                            run(
+                              () =>
+                                setSubscriptionStatus({
+                                  profileId: profile._id as never,
+                                  action: statusLabel === "Actif" ? "suspendre" : "reactiver",
+                                }),
+                              statusLabel === "Actif"
+                                ? "Abonnement suspendu"
+                                : "Abonnement réactivé",
+                            )
+                          }
+                        >
+                          {statusLabel === "Actif" ? "Suspendre" : "Réactiver"}
+                        </Button>
+                      </div>
+                    ),
+                  )}
+                </div>
+              )}
+            </div>
           </TabsContent>
 
           {/* Mensualités des contrats de maintenance */}
@@ -2812,22 +2988,22 @@ export default function AdminConsole() {
           {/* Retraits (techniciens + administration) */}
           <TabsContent value="retraits" className="mt-4">
             <div className="flex flex-col gap-4">
-              {/* Solde de l'administration (commissions 15 % encaissées) */}
+              {/* Solde de l'administration (abonnements encaissés) */}
               <Card className="card-layered border-primary/25">
                 <CardHeader className="pb-2">
                   <CardTitle className="flex items-center gap-2 text-sm">
                     <Landmark className="size-4 text-primary" /> Solde
-                    commissions GTEC (administration)
+                    administration GTEC PRO
                   </CardTitle>
                   <CardDescription>
-                    15 % de chaque intervention, encaissés par GTEC PRO —
-                    retirable sur le compte de la société.
+                    Revenus des abonnements professionnels — retirable sur le
+                    compte de la société.
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="flex flex-col gap-3">
                   <div className="grid gap-3 sm:grid-cols-3">
                     {[
-                      { label: "Commissions encaissées", value: adminWallet?.earned },
+                      { label: "Encaissé (historique)", value: adminWallet?.earned },
                       { label: "Retraits effectués", value: adminWallet?.withdrawn },
                       { label: "Disponible", value: adminWallet?.available },
                     ].map(({ label, value }) => (
@@ -3029,150 +3205,6 @@ export default function AdminConsole() {
             </div>
           </TabsContent>
 
-          {/* Commissions GTEC 15 % — répartition détaillée */}
-          <TabsContent value="commissions" className="mt-4">
-            <div className="flex flex-col gap-4">
-              <div className="flex justify-end">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={(commissions?.length ?? 0) === 0}
-                  onClick={exportCommissionsCsv}
-                >
-                  <Download className="mr-1.5 size-4" />
-                  Export CSV (commissions)
-                </Button>
-              </div>
-              <div className="grid gap-3 sm:grid-cols-4">
-                {[
-                  { label: "Commission due", value: commissionStats?.dueTotal, tone: "text-amber-600 dark:text-amber-400" },
-                  { label: "Commission encaissée", value: commissionStats?.paidTotal, tone: "text-emerald-600 dark:text-emerald-400" },
-                  {
-                    label: "Part équipe (85 %)",
-                    value: (commissions ?? []).reduce(
-                      (s, c) => s + (c.commission.breakdown?.teamAmount ?? 0),
-                      0,
-                    ),
-                    tone: "text-sky-600 dark:text-sky-400",
-                  },
-                  {
-                    label: "Part GTEC (15 %)",
-                    value: (commissions ?? []).reduce(
-                      (s, c) => s + (c.commission.breakdown?.gtecAmount ?? c.commission.amount),
-                      0,
-                    ),
-                    tone: "text-primary",
-                  },
-                ].map(({ label, value, tone }) => (
-                  <Card key={label} className="card-layered">
-                    <CardContent className="px-4 py-3.5">
-                      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                        {label}
-                      </p>
-                      <p className={cn("font-display mt-1 text-lg font-bold", tone)}>
-                        {value === undefined ? "—" : fcfa(value)}
-                      </p>
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
-              <p className="rounded-lg bg-muted/60 px-4 py-3 text-xs text-muted-foreground">
-                Sur chaque intervention : <span className="font-medium text-foreground">85 %</span>{" "}
-                reviennent à l'équipe terrain (payouts) et{" "}
-                <span className="font-medium text-foreground">15 %</span> reviennent à GTEC PRO
-                (commission à la charge du technicien, réglée puis encaissée ici).
-              </p>
-              {commissions === undefined ? (
-                <div className="h-32 animate-pulse rounded-xl bg-muted" />
-              ) : commissions.length === 0 ? (
-                <Card className="card-layered">
-                  <CardContent className="py-10 text-center text-sm text-muted-foreground">
-                    Aucune commission — elles sont générées quand l'avance de 50 % est validée.
-                  </CardContent>
-                </Card>
-              ) : (
-                <div className="flex flex-col gap-2">
-                  {commissions.map(({ commission, request, tech }) => (
-                    <div
-                      key={commission._id}
-                      className="flex flex-wrap items-center gap-3 rounded-xl border border-border/70 bg-card px-4 py-3"
-                    >
-                      <span className="flex size-9 items-center justify-center rounded-full bg-primary/15 text-xs font-bold text-primary">
-                        15%
-                      </span>
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-sm font-medium">
-                          {request?.reference ?? "—"} ·{" "}
-                          <span className="text-muted-foreground">
-                            base {fcfa(commission.baseAmount)}
-                          </span>
-                        </p>
-                        <p className="truncate text-xs text-muted-foreground">
-                          {commission.breakdown
-                            ? `Équipe ${fcfa(commission.breakdown.teamAmount)} (85 %) · GTEC ${fcfa(commission.breakdown.gtecAmount)} (15 %)`
-                            : `Montant ${fcfa(commission.amount)}`}{" "}
-                          · redevable : {tech?.name ?? "—"}
-                        </p>
-                      </div>
-                      <span
-                        className={cn(
-                          "rounded-full px-2.5 py-1 text-xs font-medium capitalize ring-1 ring-inset",
-                          commission.status === "payee"
-                            ? "bg-emerald-500/10 text-emerald-600 ring-emerald-500/20 dark:text-emerald-400"
-                            : commission.status === "exoneree"
-                              ? "bg-muted text-muted-foreground ring-border"
-                              : "bg-amber-500/10 text-amber-700 ring-amber-500/20 dark:text-amber-400",
-                        )}
-                      >
-                        {commission.status === "payee"
-                          ? "Encaissée"
-                          : commission.status === "exoneree"
-                            ? "Exonérée"
-                            : "Due"}
-                      </span>
-                      {commission.status === "due" && (
-                        <div className="flex items-center gap-2">
-                          <Button
-                            className="halo-amber"
-                            size="sm"
-                            disabled={busy}
-                            onClick={() =>
-                              run(
-                                () =>
-                                  validateCommission({
-                                    commissionId: commission._id as never,
-                                  }),
-                                "Commission encaissée",
-                              )
-                            }
-                          >
-                            <CheckCircle2 className="mr-1.5 size-4" /> Encaisser
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="text-destructive"
-                            disabled={busy}
-                            onClick={() =>
-                              run(
-                                () =>
-                                  waiveCommission({
-                                    commissionId: commission._id as never,
-                                  }),
-                                "Commission exonérée",
-                              )
-                            }
-                          >
-                            <XCircle className="mr-1.5 size-4" /> Exonérer
-                          </Button>
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </TabsContent>
 
           {/* GTEC PRO 2.0 : Litiges (§36) */}
           <TabsContent value="litiges" className="mt-4">
@@ -3523,7 +3555,7 @@ export default function AdminConsole() {
             ) : auditLogs.length === 0 ? (
               <Card className="card-layered">
                 <CardContent className="py-10 text-center text-sm text-muted-foreground">
-                  Aucune entrée — le journal se remplit à chaque action sensible (commissions, litiges, sanctions, rôles, devis révisés).
+                  Aucune entrée — le journal se remplit à chaque action sensible (abonnements, litiges, sanctions, rôles, devis révisés).
                 </CardContent>
               </Card>
             ) : (

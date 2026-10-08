@@ -7,7 +7,7 @@
  *
  * Flux CinetPay (§20) :
  *   client paie → fonds sécurisés chez l'EPI agréé → mission réalisée →
- *   validation (check serveur / webhook) → commission 10 % → solde prestataire
+ *   validation (check serveur / webhook) → solde intégral prestataire (0 % de commission)
  *
  * Clés requises pour activer le canal (onglet Clés / API keys) :
  *   CINETPAY_API_KEY, CINETPAY_SITE_ID (+ CINETPAY_WEBHOOK_SECRET optionnel,

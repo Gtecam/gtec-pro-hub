@@ -720,33 +720,23 @@ export const BANK_DETAILS = {
 
 // ---------- abonnements techniciens (paiement Mobile Money vérifié) ----------
 
-/**
- * Formules d'abonnement technicien (cahier des charges 2.0 §26) :
- * mensuel 6 000 · trimestriel 20 000 · annuel 55 000 FCFA.
- */
-export const SUBSCRIPTION_PLANS = [
-  { key: "mensuel", label: "Mensuel", price: 6000, days: 30, hint: "1 mois" },
-  { key: "trimestriel", label: "Trimestriel", price: 20000, days: 90, hint: "3 mois" },
-  { key: "annuel", label: "Annuel", price: 55000, days: 365, hint: "12 mois · 2 mois offerts" },
-] as const;
+// Modèle économique 2026 : les formules d'abonnement vivent désormais dans
+// `src/lib/subscriptions.ts` (mensuel 10 000 · trimestriel 48 000 ·
+// semestriel 55 000 · annuel 100 000 FCFA, remises calculées automatiquement).
 
-export type SubscriptionPlanKey = (typeof SUBSCRIPTION_PLANS)[number]["key"];
-
-// ---------- rémunération techniciens (règles GTEC V1) ----------
+// ---------- rémunération techniciens (modèle 2026 : 0 % de commission) ----------
 
 /**
- * Commission GTEC : 15 % de chaque mission obtenue via GTEC PRO (cahier des
- * charges 2.0 §22). Base = montant total de l'intervention (TTC du devis).
- * Le reste (85 %) revient à l'équipe selon la répartition ci-dessous.
+ * Modèle 2026 : GTEC PRO ne prélève AUCUNE commission sur les prestations.
+ * Le professionnel conserve 100 % du montant payé par le client ; GTEC PRO se
+ * rémunère uniquement via les abonnements professionnels.
  */
-export const GTEC_COMMISSION_PERCENT = 15;
-export const TEAM_SHARE_PERCENT = 100 - GTEC_COMMISSION_PERCENT; // 85 pour 15 commission
-/** Délai de régularisation d'une dette de commission (§24) : 7 jours. */
-export const COMMISSION_DEBT_DAYS = 7;
+export const GTEC_COMMISSION_PERCENT = 0;
+export const TEAM_SHARE_PERCENT = 100; // 100 % pour l'équipe (aucune commission)
 export const LEADER_WEIGHT = 1.5;
 export const MEMBER_WEIGHT = 1;
 
-/** Commission GTEC due sur une intervention (15 % du montant TTC, §22). */
+/** Commission GTEC due sur une intervention : 0 FCFA (modèle 2026). */
 export function commissionFor(quoteTotal: number): number {
   return Math.round((quoteTotal * GTEC_COMMISSION_PERCENT) / 100);
 }
@@ -756,7 +746,8 @@ export function payoutFor(
   role: string,
   crewSize: number,
 ): { amount: number; sharePercent: number } {
-  const teamPot = Math.round((quoteTotal * TEAM_SHARE_PERCENT) / 100);
+  // 100 % du montant de la prestation revient à l'équipe.
+  const teamPot = quoteTotal;
   const weight = role === "Chef d'équipe" ? LEADER_WEIGHT : MEMBER_WEIGHT;
   const totalWeights = LEADER_WEIGHT + (crewSize - 1) * MEMBER_WEIGHT;
   const amount = Math.round((teamPot * weight) / (totalWeights || 1));

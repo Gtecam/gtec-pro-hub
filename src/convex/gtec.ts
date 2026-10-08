@@ -689,6 +689,12 @@ export const listQuoteableRequests = query({
       .collect();
     const profile = profiles[0];
     if (!profile || profile.status !== "verifie") return [];
+    // Modèle économique 2026 : sans abonnement actif, le professionnel ne
+    // reçoit plus de nouvelles demandes (les missions en cours restent
+    // accessibles jusqu'à leur clôture).
+    if (profile.subscriptionUntil && profile.subscriptionUntil <= Date.now()) {
+      return [];
+    }
     const rows = await ctx.db
       .query("serviceRequests")
       .withIndex("by_status", (q: any) => q.eq("status", "nouvelle"))
@@ -1555,12 +1561,16 @@ export const submitTechnicianApplication = mutation({
   },
 });
 
-const PLAN_FALLBACK: Record<string, { priceFcfa: number; months: number }> = {
-  mensuel: { priceFcfa: 5000, months: 1 },
-  trimestriel: { priceFcfa: 13500, months: 3 },
-  semestriel: { priceFcfa: 24000, months: 6 },
-  annuel: { priceFcfa: 45000, months: 12 },
+// Tarifs officiels des abonnements professionnels (modèle économique 2026 :
+// aucune commission sur les prestations, revenus via abonnements).
+export const SUBSCRIPTION_PRICES: Record<string, { priceFcfa: number; months: number }> = {
+  mensuel: { priceFcfa: 10000, months: 1 },
+  trimestriel: { priceFcfa: 48000, months: 3 },
+  semestriel: { priceFcfa: 55000, months: 6 },
+  annuel: { priceFcfa: 100000, months: 12 },
 };
+
+const PLAN_FALLBACK = SUBSCRIPTION_PRICES;
 
 export const requestSubscriptionPayment = mutation({
   args: {
@@ -1623,6 +1633,50 @@ export const myPendingSubscriptionPayment = query({
     const rows = await ctx.db.query("subscriptionPayments").collect();
     rows.sort((a: any, b: any) => b._creationTime - a._creationTime);
     return rows.find((r: any) => r.techUserId === user._id && r.status === "en_attente") ?? null;
+  },
+});
+
+/**
+ * « MON ABONNEMENT » — formule actuelle, dates, jours restants, statut et
+ * historique complet des paiements (reçus d'abonnement, distincts des
+ * factures de prestation).
+ */
+export const mySubscription = query({
+  args: {},
+  handler: async (
+    ctx: any,
+  ): Promise<{
+    plan: string | null;
+    priceFcfa: number | null;
+    until: number | null;
+    daysLeft: number;
+    active: boolean;
+    statusLabel: "Actif" | "Expire bientôt" | "Expiré" | "Aucun";
+    history: any[];
+  }> => {
+    const user = await requireUser(ctx);
+    const profiles = await ctx.db
+      .query("technicianProfiles")
+      .withIndex("by_user", (q: any) => q.eq("userId", user._id))
+      .collect();
+    const profile = profiles[0];
+    const until = profile?.subscriptionUntil ?? null;
+    const daysLeft = until ? Math.max(0, Math.ceil((until - Date.now()) / 86_400_000)) : 0;
+    const active = daysLeft > 0 && profile?.subscription !== "aucun";
+    const payments = await ctx.db.query("subscriptionPayments").collect();
+    const history = payments
+      .filter((p: any) => p.techUserId === user._id)
+      .sort((a: any, b: any) => b._creationTime - a._creationTime);
+    const lastPaid = history.find((p: any) => p.status === "valide");
+    return {
+      plan: active ? (profile?.subscription ?? null) : null,
+      priceFcfa: lastPaid?.amount ?? null,
+      until,
+      daysLeft,
+      active,
+      statusLabel: !until || !active ? "Expiré" : daysLeft <= 7 ? "Expire bientôt" : "Actif",
+      history: history as any[],
+    };
   },
 });
 
@@ -2037,7 +2091,13 @@ export const myTechnicianReviews = query({
     return Promise.all(
       rows.map(async (r: any) => {
         const request = await ctx.db.get(r.requestId);
-        return { review: r, request: request ?? null };
+        const client = await ctx.db.get(r.clientId);
+        return {
+          review: r,
+          clientName: client?.name ?? "Client GTEC",
+          requestRef: request?.reference ?? "—",
+          request: request ?? null,
+        };
       }),
     );
   },
@@ -3054,6 +3114,210 @@ export const adminCommissionStats = query({
         .filter((r: any) => r.status === "payee")
         .reduce((acc: number, r: any) => acc + r.amount, 0),
     };
+  },
+});
+
+// =====================================================================
+// GESTION DES ABONNEMENTS (modèle économique 2026)
+// =====================================================================
+
+/** Statistiques abonnements — remplace les statistiques de commissions. */
+export const adminSubscriptionStats = query({
+  args: {},
+  handler: async (
+    ctx: any,
+  ): Promise<{
+    activeCount: number;
+    newThisMonth: number;
+    expiredCount: number;
+    expiringSoon: number;
+    byPlan: Record<string, number>;
+    revenue: number;
+    monthlyRevenue: number;
+    renewalRate: number;
+  }> => {
+    await requireAdminScope(ctx);
+    const profiles = await ctx.db.query("technicianProfiles").collect();
+    const payments = await ctx.db.query("subscriptionPayments").collect();
+    const now = Date.now();
+    const monthStart = new Date(
+      new Date().getFullYear(),
+      new Date().getMonth(),
+      1,
+    ).getTime();
+    const activeProfiles = profiles.filter(
+      (p: any) => p.subscriptionUntil && p.subscriptionUntil > now,
+    );
+    const expired = profiles.filter(
+      (p: any) => p.subscriptionUntil && p.subscriptionUntil <= now,
+    );
+    const expiringSoon = activeProfiles.filter(
+      (p: any) => p.subscriptionUntil! - now <= 7 * 86_400_000,
+    );
+    const byPlan: Record<string, number> = {
+      mensuel: 0,
+      trimestriel: 0,
+      semestriel: 0,
+      annuel: 0,
+    };
+    for (const p of activeProfiles) {
+      const k = p.subscription ?? "mensuel";
+      byPlan[k] = (byPlan[k] ?? 0) + 1;
+    }
+    const validated = payments.filter((p: any) => p.status === "valide");
+    const revenue = validated.reduce((acc: number, p: any) => acc + p.amount, 0);
+    const renewals = validated.filter(
+      (p: any) => (p.startsAt ?? 0) > 0,
+    ).length;
+    const renewers = new Set(
+      validated.map((p: any) => String(p.techUserId)),
+    ).size;
+    const clients = new Set(validated.map((p: any) => String(p.techUserId))).size;
+    return {
+      activeCount: activeProfiles.length,
+      newThisMonth: validated.filter(
+        (p: any) => (p.startsAt ?? p._creationTime) >= monthStart,
+      ).length,
+      expiredCount: expired.length,
+      expiringSoon: expiringSoon.length,
+      byPlan,
+      revenue,
+      monthlyRevenue: validated
+        .filter((p: any) => (p.startsAt ?? 0) >= monthStart)
+        .reduce((acc: number, p: any) => acc + p.amount, 0),
+      renewalRate:
+        clients > 0
+          ? Math.round(
+              (validated.filter((p: any) => (p.startsAt ?? 0) > p._creationTime).length /
+                clients) *
+                100,
+            )
+          : 0,
+      _renewals: renewals,
+    } as any;
+  },
+});
+
+/** Liste des professionnels et de leurs abonnements + historique de paiements. */
+export const adminListSubscriptions = query({
+  args: {},
+  handler: async (ctx: any): Promise<any[]> => {
+    await requireAdminScope(ctx);
+    const profiles = await ctx.db.query("technicianProfiles").collect();
+    const payments = await ctx.db.query("subscriptionPayments").collect();
+    const now = Date.now();
+    return Promise.all(
+      profiles.map(async (profile: any) => {
+        const user = await ctx.db.get(profile.userId);
+        const history = payments
+          .filter((p: any) => p.techUserId === profile.userId)
+          .sort((a: any, b: any) => b._creationTime - a._creationTime);
+        const active =
+          profile.subscriptionUntil && profile.subscriptionUntil > now;
+        return {
+          profile,
+          user: user ? { name: displayName(user), phone: user.phone ?? null, email: user.email ?? null } : null,
+          plan: profile.subscription ?? "aucun",
+          priceFcfa: history.find((p: any) => p.status === "valide")?.amount ?? null,
+          startsAt: history.find((p: any) => p.status === "valide")?.startsAt ?? null,
+          until: profile.subscriptionUntil ?? null,
+          statusLabel: !active ? "Expiré" : profile.subscriptionUntil! - now <= 7 * 86_400_000 ? "Expire bientôt" : "Actif",
+          history: history as any[],
+        };
+      }),
+    );
+  },
+});
+
+/** Modification des tarifs d'abonnement (upsert du plan). */
+export const adminUpdatePlanPrice = mutation({
+  args: {
+    plan: v.union(
+      v.literal("mensuel"),
+      v.literal("trimestriel"),
+      v.literal("semestriel"),
+      v.literal("annuel"),
+    ),
+    priceFcfa: v.number(),
+    advantages: v.optional(v.string()),
+  },
+  handler: async (ctx: any, args: any) => {
+    const admin = await requireAdminScope(ctx, "super_admin", "finance");
+    if (args.priceFcfa <= 0) throw new Error("Prix invalide.");
+    const existing = await ctx.db
+      .query("subscriptionPlans")
+      .withIndex("by_plan", (q: any) => q.eq("plan", args.plan))
+      .collect();
+    const months = SUBSCRIPTION_PRICES[args.plan]?.months ?? 1;
+    if (existing[0]) {
+      await ctx.db.patch(existing[0]._id, {
+        priceFcfa: args.priceFcfa,
+        months,
+        ...(args.advantages ? { advantages: args.advantages } : {}),
+      });
+    } else {
+      await ctx.db.insert("subscriptionPlans", {
+        plan: args.plan,
+        priceFcfa: args.priceFcfa,
+        months,
+        active: true,
+        advantages: args.advantages ?? "Accès plateforme · demandes clients · profil vérifié",
+      });
+    }
+    await auditLog(ctx, {
+      actorId: admin._id,
+      actorRole: "admin",
+      action: "subscriptionPlan.updated",
+      targetTable: "subscriptionPlans",
+      targetId: args.plan,
+      newValue: `${args.priceFcfa} FCFA / ${months} mois`,
+    });
+    return { ok: true };
+  },
+});
+
+/** Suspension ou réactivation manuelle d'un abonnement professionnel. */
+export const adminSetSubscriptionStatus = mutation({
+  args: {
+    profileId: v.id("technicianProfiles"),
+    action: v.union(v.literal("suspendre"), v.literal("reactiver")),
+    note: v.optional(v.string()),
+  },
+  handler: async (ctx: any, args: any) => {
+    const admin = await requireAdminScope(ctx);
+    const profile = await ctx.db.get(args.profileId);
+    if (!profile) throw new Error("Profil introuvable.");
+    if (args.action === "suspendre") {
+      await ctx.db.patch(profile._id, {
+        subscription: "aucun",
+        subscriptionUntil: Date.now(),
+      });
+    } else {
+      await ctx.db.patch(profile._id, {
+        subscription: "mensuel",
+        subscriptionUntil: Date.now() + 30 * 86_400_000,
+      });
+    }
+    await notify(ctx, profile.userId, {
+      kind: "abonnement",
+      title:
+        args.action === "suspendre"
+          ? "Abonnement suspendu"
+          : "Abonnement réactivé",
+      body: args.note ??
+        (args.action === "suspendre"
+          ? "Votre abonnement a été suspendu par l'administration GTEC PRO."
+          : "Votre abonnement a été réactivé pour 30 jours."),
+    });
+    await auditLog(ctx, {
+      actorId: admin._id,
+      actorRole: "admin",
+      action: `subscription.${args.action}`,
+      targetTable: "technicianProfiles",
+      targetId: String(profile._id),
+      detail: args.note ?? undefined,
+    });
+    return { ok: true };
   },
 });
 

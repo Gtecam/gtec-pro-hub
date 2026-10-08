@@ -13,16 +13,6 @@ import type { Id } from "./_generated/dataModel";
 
 const crons = cronJobs();
 
-/**
- * GTEC PRO 2.0 (§24) : rappel quotidien des dettes de commission (paiements
- * cash) — au prestataire concerné et, à l'échéance dépassée, à l'admin.
- */
-crons.daily(
-  "gtec-commission-debt-reminder",
-  { hourUTC: 6, minuteUTC: 15 },
-  internal.crons.commissionDebtSweep,
-);
-
 crons.daily(
   "gtec-maintenance-sweep",
   { hourUTC: 6, minuteUTC: 0 },
@@ -308,65 +298,9 @@ export const dailySweep = internalMutation({
   },
 });
 
-/**
- * Sweep des dettes de commission (§24) : rappels au prestataire + escalade
- * admin au-delà de l'échéance. Idempotent via notification récente.
- */
-export const commissionDebtSweep = internalMutation({
-  args: {},
-  handler: async (ctx) => {
-    const now = Date.now();
-    const DAY = 24 * 3600 * 1000;
-    const debts = await ctx.db
-      .query("gtecCommissions")
-      .withIndex("by_status", (q) => q.eq("status", "due"))
-      .collect();
-    let reminded = 0;
-    let overdue = 0;
-    for (const c of debts) {
-      if (!c.commissionDebt) continue;
-      const isOverdue = c.commissionDebt.deadlineAt < now;
-      const kind = isOverdue ? "commission_dette_en_retard" : "commission_dette";
-      const title = isOverdue ? "Commission en retard" : "Commission à régulariser";
-      const recent = await ctx.db
-        .query("notifications")
-        .withIndex("by_user", (q) => q.eq("userId", c.techUserId))
-        .collect();
-      const hasRecent = recent.some(
-        (n) => n.kind === kind && n.title === title && now - n.at < 2 * DAY,
-      );
-      if (hasRecent) continue;
-      await ctx.db.insert("notifications", {
-        userId: c.techUserId,
-        kind,
-        title,
-        body: isOverdue
-          ? `La commission de ${c.amount.toLocaleString("fr-FR")} FCFA est en retard — vos retraits et nouvelles missions restent bloqués jusqu'à régularisation.`
-          : `Commission de ${c.amount.toLocaleString("fr-FR")} FCFA à régulariser avant le ${new Date(c.commissionDebt.deadlineAt).toLocaleDateString("fr-FR")} (paiement en espèces).`,
-        requestId: c.requestId,
-        at: now,
-      });
-      reminded++;
-      if (isOverdue) overdue++;
-    }
-    if (overdue > 0) {
-      const admins = await ctx.db
-        .query("users")
-        .filter((q: any) => q.eq(q.field("role"), "admin"))
-        .collect();
-      for (const a of admins) {
-        await ctx.db.insert("notifications", {
-          userId: a._id,
-          kind: "general",
-          title: "Dettes de commission en retard",
-          body: `${overdue} commission(s) cash non régularisée(s) après échéance — intervention requise (Centre financier).`,
-          at: now,
-        });
-      }
-    }
-    return { reminded, overdue };
-  },
-});
+// Modèle 2026 : plus aucune commission sur les prestations — le sweep de
+// dettes de commission (§24, ancien modèle) a été supprimé. La table
+// `gtecCommissions` n'est conservée que pour l'historique.
 
 /* =================== EXTENSIONS PHASE 2 (maintenance + garanties) =================== */
 

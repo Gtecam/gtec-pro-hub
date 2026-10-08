@@ -5,7 +5,6 @@ import {
   Banknote,
   FileText,
   Landmark,
-  Percent,
   CalendarClock,
   CheckCircle2,
   ClipboardCheck,
@@ -77,6 +76,13 @@ import { NavigationOff, Store } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { CITIES, fcfa, formatDate, formatDateTime, MAX_FILE_SIZE, MAX_FILE_SIZE_LABEL, PAYMENT_METHODS } from "@/lib/gtec";
 import {
+  SUBSCRIPTION_PLANS,
+  monthlyEquivalentLabel,
+  planPricing,
+  planByKey,
+  subscriptionStatus,
+} from "@/lib/subscriptions";
+import {
   CERTIFICATION_SUGGESTIONS,
   DEGREES,
   EXPERIENCE_BANDS,
@@ -88,12 +94,21 @@ import {
 import { compressImageIfNeeded, dataUrlBytes, humanSize } from "@/lib/imageCompress";
 import { Navigate } from "react-router";
 
-// Prix officiels GTEC PRO 2.0 (§26) — alignés sur le backend (SUBSCRIPTION_PRICES).
-const PLANS = [
-  { key: "mensuel", label: "Mensuel", price: "6 000 FCFA", hint: "30 jours" },
-  { key: "trimestriel", label: "Trimestriel", price: "20 000 FCFA", hint: "90 jours · 2 mois offerts sur l'année" },
-  { key: "annuel", label: "Annuel", price: "55 000 FCFA", hint: "365 jours · meilleur tarif" },
-] as const;
+// Formules d'abonnement officielles (modèle économique 2026) — source unique :
+// src/lib/subscriptions.ts. Remise calculée par rapport au mensuel de
+// référence (10 000 FCFA/mois) ; « Aucune remise » si le prix n'est pas
+// inférieur au coût mensuel équivalent.
+const PLANS = SUBSCRIPTION_PLANS.map((p) => {
+  const pricing = planPricing(p);
+  return {
+    key: p.key,
+    label: p.label,
+    price: fcfa(p.priceFcfa),
+    hint: `${p.months} mois · équivalent ${monthlyEquivalentLabel(p)}`,
+    discountLabel: pricing.discountLabel,
+    recommended: p.recommended ?? false,
+  };
+});
 
 // Disponibilité technicien (§12 cahier des charges 2.0).
 const AVAILABILITY_OPTIONS = [
@@ -530,10 +545,9 @@ export default function TechnicianSpace() {
   const geo = useGeolocation({ watch: true });
 
   const pendingSubPayment = useQuery(api.gtec.myPendingSubscriptionPayment);
-  const myCommissions = useQuery(api.gtec.myCommissions);
+  const mySubscription = useQuery(api.gtec.mySubscription);
   const myWallet = useQuery(api.gtec.myWallet);
   const requestWithdrawal = useMutation(api.gtec.requestWithdrawal);
-  const payCommission = useMutation(api.gtec.payCommission);
   const setAvailability = useMutation(api.gtec.setAvailability);
   const myScore = useQuery(api.gtec.myProviderScore);
   const mySanctions = useQuery(api.gtec.mySanctions);
@@ -586,7 +600,9 @@ export default function TechnicianSpace() {
   const myCredentials = useQuery(api.institutions.myCredentials, {});
 
   // Paiement d'abonnement
-  const [subPlan, setSubPlan] = useState<"mensuel" | "trimestriel" | "annuel" | null>(null);
+  const [subPlan, setSubPlan] = useState<
+    "mensuel" | "trimestriel" | "semestriel" | "annuel" | null
+  >(null);
   const [subMethod, setSubMethod] = useState<string>("mtn_momo");
   const [subPhone, setSubPhone] = useState("");
 
@@ -600,12 +616,10 @@ export default function TechnicianSpace() {
   const [materialLabel, setMaterialLabel] = useState("");
   const [materialQty, setMaterialQty] = useState(1);
 
-  // V6 : retraits + règlement des commissions GTEC 15 %
+  // Retraits — GTEC PRO ne prélève aucune commission sur les prestations.
   const [wdAmount, setWdAmount] = useState("");
   const [wdMethod, setWdMethod] = useState("mtn_momo");
   const [wdDestination, setWdDestination] = useState("");
-  const [commPhone, setCommPhone] = useState("");
-  const [commRef] = useState("");
 
   const toggleZone = (city: string) =>
     setZones((prev) =>
@@ -691,7 +705,13 @@ export default function TechnicianSpace() {
     try {
       await requestSubPayment({
         plan: subPlan,
-        method: subMethod as "mtn_momo" | "orange_money" | "especes" | "virement",
+        method: subMethod as
+          | "mtn_momo"
+          | "orange_money"
+          | "especes"
+          | "virement"
+          | "carte"
+          | "paypal",
         payerPhone: subPhone.trim(),
       });
       toast.success(
@@ -1522,37 +1542,24 @@ export default function TechnicianSpace() {
               </CardContent>
             </Card>
           )}
-          {/* GTEC PRO 2.0 §24 : dette de commission (paiement cash) */}
-          {myCommissions && myCommissions.dueTotal > 0 && (
-            <Card className={cn(
-              "card-layered",
-              myCommissions.debtOverdue
-                ? "border-destructive/40 bg-destructive/[0.04]"
-                : "border-amber-500/40 bg-amber-500/[0.04]",
-            )}>
+          {/* Modèle 2026 : alerte d'expiration d'abonnement (aucune commission) */}
+          {mySubscription && mySubscription.statusLabel === "Expire bientôt" && (
+            <Card className="card-layered border-amber-500/40 bg-amber-500/[0.04]">
               <CardContent className="flex flex-wrap items-center gap-4 py-4">
-                <span className={cn(
-                  "flex size-10 shrink-0 items-center justify-center rounded-xl",
-                  myCommissions.debtOverdue
-                    ? "bg-destructive/10 text-destructive"
-                    : "bg-amber-500/10 text-amber-600 dark:text-amber-400",
-                )}>
-                  <Percent className="size-5" />
+                <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400">
+                  <CalendarClock className="size-5" />
                 </span>
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-semibold">
-                    Commission à régulariser : {fcfa(myCommissions.dueTotal)}
+                    Votre abonnement expire dans {mySubscription.daysLeft} jour
+                    {mySubscription.daysLeft > 1 ? "s" : ""}.
                   </p>
                   <p className="truncate text-xs text-muted-foreground">
-                    {myCommissions.debtDeadline
-                      ? myCommissions.debtOverdue
-                        ? `Échéance dépassée (${formatDate(myCommissions.debtDeadline)}) — retraits et nouvelles missions bloqués.`
-                        : `À régler avant le ${formatDate(myCommissions.debtDeadline)} — sinon retraits et nouvelles missions seront bloqués.`
-                      : "Régularisez depuis l'onglet Gains."}
+                    Renouvelez maintenant pour continuer à recevoir des demandes.
                   </p>
                 </div>
                 <Button size="sm" variant="outline" asChild>
-                  <a href="#tab-gains">Régler maintenant</a>
+                  <a href="#tab-abonnement">Renouveler</a>
                 </Button>
               </CardContent>
             </Card>
@@ -2081,9 +2088,9 @@ export default function TechnicianSpace() {
                     Rappel du flux : le client accepte votre intervention puis
                     vous chiffrez sur place. Dès l'envoi, GTEC valide
                     automatiquement le devis. Le client paie 50 % avant les
-                    travaux (avance) et 50 % à la fin (solde) — la
-                    part GTEC de 15 % est déduite de la mission et
-                    réglée depuis l'onglet Commissions.
+                    travaux (avance) et 50 % à la fin (solde) — vous
+                    conservez 100 % du montant, aucune commission n'est
+                    déduite.
                   </CardContent>
                 </Card>
               </div>
@@ -2237,6 +2244,133 @@ export default function TechnicianSpace() {
             <TabsContent value="abonnement" className="mt-4">
               <div className="grid gap-4 lg:grid-cols-[1fr_340px]">
                 <div className="flex flex-col gap-4">
+                  {/* MON ABONNEMENT — statut, dates, jours restants, historique */}
+                  {mySubscription && (
+                    <Card
+                      className={cn(
+                        "card-layered",
+                        mySubscription.statusLabel === "Expiré"
+                          ? "border-destructive/40"
+                          : mySubscription.statusLabel === "Expire bientôt"
+                            ? "border-amber-500/40"
+                            : "border-primary/30",
+                      )}
+                    >
+                      <CardHeader className="pb-2">
+                        <CardTitle className="flex items-center gap-2 text-sm">
+                          <Crown className="size-4 text-primary" /> Mon abonnement
+                          <span
+                            className={cn(
+                              "ml-auto rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ring-inset",
+                              mySubscription.statusLabel === "Actif"
+                                ? "bg-emerald-500/10 text-emerald-600 ring-emerald-500/20 dark:text-emerald-400"
+                                : mySubscription.statusLabel === "Expire bientôt"
+                                  ? "bg-amber-500/10 text-amber-700 ring-amber-500/20 dark:text-amber-400"
+                                  : "bg-destructive/10 text-destructive ring-destructive/20",
+                            )}
+                          >
+                            {mySubscription.statusLabel}
+                          </span>
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent className="flex flex-col gap-3">
+                        <div className="grid gap-2 sm:grid-cols-2">
+                          <div className="rounded-lg bg-muted/60 px-3 py-2">
+                            <p className="text-xs text-muted-foreground">Formule actuelle</p>
+                            <p className="text-sm font-semibold capitalize">
+                              {mySubscription.plan ?? "Aucune"}
+                              {mySubscription.priceFcfa
+                                ? ` · ${fcfa(mySubscription.priceFcfa)}`
+                                : ""}
+                            </p>
+                          </div>
+                          <div className="rounded-lg bg-muted/60 px-3 py-2">
+                            <p className="text-xs text-muted-foreground">Jours restants</p>
+                            <p className="text-sm font-semibold">
+                              {mySubscription.active ? mySubscription.daysLeft : 0}
+                            </p>
+                          </div>
+                          <div className="rounded-lg bg-muted/60 px-3 py-2">
+                            <p className="text-xs text-muted-foreground">Date d'expiration</p>
+                            <p className="text-sm font-semibold">
+                              {mySubscription.until
+                                ? formatDate(mySubscription.until)
+                                : "—"}
+                            </p>
+                          </div>
+                          <div className="rounded-lg bg-muted/60 px-3 py-2">
+                            <p className="text-xs text-muted-foreground">Dernier paiement</p>
+                            <p className="text-sm font-semibold">
+                              {mySubscription.history.find((p: any) => p.status === "valide")
+                                ? formatDate(
+                                    mySubscription.history.find((p: any) => p.status === "valide")
+                                      .startsAt ?? mySubscription.history.find((p: any) => p.status === "valide")
+                                      ._creationTime,
+                                  )
+                                : "—"}
+                            </p>
+                          </div>
+                        </div>
+                        {mySubscription.statusLabel === "Expiré" && (
+                          <p className="rounded-lg bg-destructive/[0.06] px-3 py-2 text-xs text-destructive">
+                            Votre abonnement a expiré : votre profil reste enregistré et vos missions
+                            en cours restent accessibles, mais vous ne recevez plus de nouvelles
+                            demandes. Réactivez votre abonnement pour continuer.
+                          </p>
+                        )}
+                        {mySubscription.statusLabel === "Expire bientôt" && (
+                          <p className="rounded-lg bg-amber-500/[0.08] px-3 py-2 text-xs text-amber-700 dark:text-amber-400">
+                            Votre abonnement expire dans {mySubscription.daysLeft} jour
+                            {mySubscription.daysLeft > 1 ? "s" : ""}. Renouvelez maintenant pour
+                            continuer à recevoir des demandes.
+                          </p>
+                        )}
+                        {mySubscription.history.length > 0 && (
+                          <div className="flex flex-col gap-1.5">
+                            <p className="text-xs font-medium text-muted-foreground">
+                              Historique des paiements (reçus d'abonnement)
+                            </p>
+                            {mySubscription.history.slice(0, 6).map((p: any) => (
+                              <div
+                                key={p._id}
+                                className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border/60 px-3 py-1.5 text-xs"
+                              >
+                                <span className="font-medium capitalize">
+                                  {p.plan} · {fcfa(p.amount)}
+                                </span>
+                                <span className="text-muted-foreground">
+                                  {p.receiptNo ? `Reçu ${p.receiptNo} · ` : ""}
+                                  {formatDate(p.startsAt ?? p._creationTime)} ·{" "}
+                                  {p.status === "valide"
+                                    ? "Payé"
+                                    : p.status === "en_attente"
+                                      ? "En vérification"
+                                      : "Échoué"}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        <div className="flex flex-wrap gap-2">
+                          <Button
+                            size="sm"
+                            disabled={busy || !!pendingSubPayment}
+                            onClick={() => setSubPlan("mensuel")}
+                          >
+                            {mySubscription.active ? "Renouveler" : "Réactiver mon abonnement"}
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={busy || !!pendingSubPayment}
+                            onClick={() => setSubPlan("annuel")}
+                          >
+                            Changer de formule
+                          </Button>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  )}
                   {pendingSubPayment && (
                     <Card className="card-layered border-amber-500/30 bg-amber-500/[0.04]">
                       <CardContent className="flex items-center gap-3 py-4">
@@ -2261,13 +2395,30 @@ export default function TechnicianSpace() {
                             isCurrent && "border-primary/40 ring-2 ring-primary/20",
                           )}
                         >
-                          <p className="font-display text-lg font-bold">
-                            {plan.label}
-                          </p>
+                          <div className="flex items-center justify-between gap-2">
+                            <p className="font-display text-lg font-bold">
+                              {plan.label}
+                            </p>
+                            {plan.recommended && (
+                              <span className="rounded-full bg-primary/10 px-2.5 py-1 text-[10px] font-semibold text-primary ring-1 ring-inset ring-primary/20">
+                                Meilleur rapport qualité/prix
+                              </span>
+                            )}
+                          </div>
                           <p className="text-xl font-bold text-primary">
                             {plan.price}
                           </p>
                           <p className="text-xs text-muted-foreground">{plan.hint}</p>
+                          <p
+                            className={cn(
+                              "text-xs font-medium",
+                              plan.discountLabel === "Aucune remise"
+                                ? "text-muted-foreground"
+                                : "text-emerald-600 dark:text-emerald-400",
+                            )}
+                          >
+                            {plan.discountLabel}
+                          </p>
                           <Button
                             className="mt-auto"
                             size="sm"
@@ -2275,7 +2426,7 @@ export default function TechnicianSpace() {
                             disabled={busy || !!pendingSubPayment}
                             onClick={() => setSubPlan(plan.key)}
                           >
-                            {isCurrent ? "Renouveler" : "Choisir"}
+                            {isCurrent ? "Renouveler" : "Choisir cette formule"}
                           </Button>
                         </Card>
                       );
@@ -2382,42 +2533,7 @@ export default function TechnicianSpace() {
                 <div className="h-40 animate-pulse rounded-xl bg-muted" />
               ) : myPayouts.length === 0 ? (
                 <div className="flex flex-col gap-4">
-                  {myCommissions && myCommissions.items.length > 0 && (
-                    <Card className="card-layered border-primary/20">
-                      <CardHeader className="pb-2">
-                        <CardTitle className="flex items-center gap-2 text-sm">
-                          <Percent className="size-4 text-primary" /> Commission
-                          GTEC 10 %
-                          {myCommissions.dueTotal > 0 && (
-                            <span className="ml-auto rounded-full bg-amber-500/10 px-2.5 py-1 text-xs font-semibold text-amber-700 ring-1 ring-inset ring-amber-500/20 dark:text-amber-400">
-                              {fcfa(myCommissions.dueTotal)} à régler
-                            </span>
-                          )}
-                        </CardTitle>
-                        <CardDescription>
-                          90 % équipe / 10 % GTEC PRO (§22) — réglez la part
-                          GTEC depuis une mission terminée ou contactez
-                          l'administration.
-                        </CardDescription>
-                      </CardHeader>
-                      <CardContent>
-                        <div className="grid gap-2 sm:grid-cols-2">
-                          <div className="rounded-lg bg-muted/60 px-3 py-2">
-                            <p className="text-xs text-muted-foreground">Dû</p>
-                            <p className="text-sm font-semibold">
-                              {fcfa(myCommissions.dueTotal)}
-                            </p>
-                          </div>
-                          <div className="rounded-lg bg-muted/60 px-3 py-2">
-                            <p className="text-xs text-muted-foreground">Réglé</p>
-                            <p className="text-sm font-semibold">
-                              {fcfa(myCommissions.paidTotal)}
-                            </p>
-                          </div>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  )}
+                  {/* Modèle 2026 : aucune commission GTEC — 100 % pour le pro */}
                   <Card className="card-layered">
                     <CardContent className="flex flex-col items-center gap-3 py-12 text-center">
                       <Wallet className="size-8 text-muted-foreground" />
@@ -2436,25 +2552,25 @@ export default function TechnicianSpace() {
                   <div className="grid gap-3 sm:grid-cols-3">
                     {[
                       {
-                        label: "Total gagné",
+                        label: "Chiffre d'affaires des prestations",
                         value: fcfa(
                           myPayouts.reduce((s, p) => s + p.payout.amount, 0),
                         ),
                       },
                       {
-                        label: "En attente de paiement",
-                        value: fcfa(
-                          myPayouts
-                            .filter((p) => p.payout.status === "dû")
-                            .reduce((s, p) => s + p.payout.amount, 0),
-                        ),
-                      },
-                      {
-                        label: "Déjà payé",
+                        label: "Montant encaissé",
                         value: fcfa(
                           myPayouts
                             .filter((p) => p.payout.status === "payé")
                             .reduce((s, p) => s + p.payout.amount, 0),
+                        ),
+                      },
+                      {
+                        label: "Abonnement GTEC PRO",
+                        value: fcfa(
+                          (mySubscription?.history ?? [])
+                            .filter((p: any) => p.status === "valide")
+                            .reduce((s: number, p: any) => s + p.amount, 0),
                         ),
                       },
                     ].map(({ label, value }) => (
@@ -2470,112 +2586,12 @@ export default function TechnicianSpace() {
                       </Card>
                     ))}
                   </div>
-                  {/* Commission GTEC 10 % (§22-24 cahier des charges 2.0) — détail & régularisation */}
-                  {myCommissions && myCommissions.items.length > 0 && (
-                    <Card className="card-layered border-primary/20">
-                      <CardHeader className="pb-2">
-                        <CardTitle className="flex items-center justify-between gap-2 text-sm">
-                          <span className="flex items-center gap-2">
-                            <Percent className="size-4 text-primary" /> Commission
-                            GTEC 10 %
-                          </span>
-                          <span
-                            className={cn(
-                              "rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ring-inset",
-                              myCommissions.dueTotal > 0
-                                ? "bg-amber-500/10 text-amber-700 ring-amber-500/20 dark:text-amber-400"
-                                : "bg-emerald-500/10 text-emerald-600 ring-emerald-500/20 dark:text-emerald-400",
-                            )}
-                          >
-                            {myCommissions.dueTotal > 0
-                              ? `${fcfa(myCommissions.dueTotal)} à régler`
-                              : "A jour"}
-                          </span>
-                        </CardTitle>
-                        <CardDescription>
-                          Sur chaque mission : 90 % pour l'équipe, 10 % pour
-                          GTEC PRO (§22). Paiement en espèces = dette de
-                          commission à régulariser avant l'échéance (§24) —
-                          retraits et nouvelles missions restent bloqués sinon.
-                        </CardDescription>
-                      </CardHeader>
-                      <CardContent className="flex flex-col gap-3">
-                        <div className="grid gap-2 sm:grid-cols-3">
-                          {[
-                            { label: "Dû", value: myCommissions.dueTotal },
-                            { label: "Réglé", value: myCommissions.paidTotal },
-                            {
-                              label: "Répartition",
-                              value: null,
-                              detail: "90 % équipe / 10 % GTEC",
-                            },
-                          ].map(({ label, value, detail }) => (
-                            <div key={label} className="rounded-lg bg-muted/60 px-3 py-2">
-                              <p className="text-xs text-muted-foreground">{label}</p>
-                              <p className="text-sm font-semibold">
-                                {value === null ? detail : fcfa(value)}
-                              </p>
-                            </div>
-                          ))}
-                        </div>
-                        {myCommissions.items.slice(0, 6).map((c) => (
-                          <div
-                            key={c._id}
-                            className="flex flex-wrap items-center gap-2 rounded-xl border border-border/70 px-3 py-2"
-                          >
-                            <div className="min-w-0 flex-1">
-                              <p className="truncate text-sm font-medium">
-                                {fcfa(c.baseAmount)} × {c.ratePercent} % ={" "}
-                                <span className="text-primary">{fcfa(c.amount)}</span>
-                                {c.breakdown && (
-                                  <span className="ml-2 text-xs font-normal text-muted-foreground">
-                                    (équipe {fcfa(c.breakdown.teamAmount)} / GTEC{" "}
-                                    {fcfa(c.breakdown.gtecAmount)})
-                                  </span>
-                                )}
-                              </p>
-                              <p className="text-xs capitalize text-muted-foreground">
-                                Statut : {c.status === "due" ? "à régler" : c.status === "payee" ? "réglée" : "exonérée"}
-                              </p>
-                            </div>
-                            {c.status === "due" && (
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                disabled={busy || commPhone.trim().length < 6}
-                                onClick={async () => {
-                                  setBusy(true);
-                                  try {
-                                    await payCommission({
-                                      commissionId: c._id,
-                                      method: "mtn_momo",
-                                      payerPhone: commPhone.trim(),
-                                      externalRef: commRef.trim() || undefined,
-                                    });
-                                    toast.success("Règlement déclaré — validation GTEC en cours");
-                                  } catch (e) {
-                                    toast.error(e instanceof Error ? e.message : "Erreur");
-                                  } finally {
-                                    setBusy(false);
-                                  }
-                                }}
-                              >
-                                Déclarer le règlement
-                              </Button>
-                            )}
-                          </div>
-                        ))}
-                        {myCommissions.dueCount > 0 && (
-                          <Input
-                            value={commPhone}
-                            onChange={(e) => setCommPhone(e.target.value)}
-                            placeholder="Numéro payeur MoMo (6 XX XX XX XX)"
-                            inputMode="tel"
-                          />
-                        )}
-                      </CardContent>
-                    </Card>
-                  )}
+                  <p className="rounded-lg bg-emerald-500/[0.06] px-4 py-3 text-xs text-emerald-700 dark:text-emerald-400">
+                    Aucune commission GTEC PRO sur vos prestations : vous conservez
+                    100 % du montant payé par le client. L'abonnement GTEC PRO est
+                    une transaction séparée, jamais déduite de vos prestations.
+                  </p>
+                  {/* Rémunérations — modèle 2026 : 100 % pour le professionnel */}
                   <div className="flex flex-col gap-2">
                     {myPayouts.map(({ payout, request }) => (
                       <div

@@ -422,7 +422,7 @@ export const getOwnPayment = internalQuery({
 
 /**
  * §8 : capture les fonds après validation (proche ou diaspora) — libération
- * escrow, puis le pipeline standard (commission 10 %, solde prestataire)
+ * escrow, puis le pipeline standard (0 % de commission, solde intégral au prestataire)
  * s'applique. Interne : appelé par les mutations de validation.
  */
 export const captureInternationalPayment = internalMutation({

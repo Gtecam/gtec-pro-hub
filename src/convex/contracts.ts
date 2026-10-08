@@ -1,15 +1,16 @@
-// GTEC PRO 2.0 — Module CONTRATS, COMMISSIONS ET FACTURATION
+// GTEC PRO 2.0 — Module CONTRATS ET FACTURATION
 // src/convex/contracts.ts
 //
 // Fichier d'API métier uniquement (queries / mutations / actions) pour le
-// module CONTRATS, COMMISSIONS ET FACTURATION. Les tables Convex sont
+// module CONTRATS ET FACTURATION. Les tables Convex sont
 // définies dans src/convex/schemaExtensions.ts et fusionnées dans le schéma
 // principal par schema.ts. Ce fichier sert au front-end (ContractsDashboard,
 // ContractDetail, DocumentsPage, etc.) pour appeler les opérations.
 //
 // Principes du module (§1..§31) :
-//  • Taux de commission figé par transaction : 15 % (configurable par
-//    l'administration, journal d'audit).
+//  • AUCUNE commission GTEC PRO sur les prestations (0 %) — le professionnel
+//    conserve 100 % du montant payé par le client ; GTEC PRO se rémunère
+//    uniquement via les abonnements professionnels.
 //  • Tout montant stocké EN FCFA entiers (pas de calcul en flottant).
 //  • Idempotence des opérations financières via externalRef / transactionRef.
 //  • Immuabilité des contrats signés : un avenant crée une version séparée.
@@ -28,7 +29,10 @@ import { requireAdminScope } from "./gtec";
 // 1. RÈGLES DE COMMISSION (§1)
 // =====================================================================
 
-/** Lecture du taux de commission en vigueur (15 % initial). */
+/**
+ * Lecture du taux de commission en vigueur — toujours 0 % depuis le nouveau
+ * modèle économique (aucun prélèvement sur les prestations).
+ */
 export const getCommissionRateQuery = query({
   args: {},
   handler: async (ctx) => {
@@ -59,6 +63,8 @@ export const setCommissionRate = internalMutation({
         .withIndex("by_updatedAt")
         .collect()
     ).sort((a, b) => b.updatedAt - a.updatedAt)[0];
+    // Modèle 2026 : la règle reste journalisée mais le taux appliqué au
+    // calcul des prestations reste 0 % (voir createContractFromQuote).
     await ctx.db.insert("commissionRules", {
       adminId: args.adminId,
       oldRatePercent: existing?.newRatePercent ?? 15,
@@ -111,7 +117,7 @@ export const selectTemplateQuery = query({
 // 3. CRÉATION D'UN CONTRAT À PARTIR D'UN DEVIS (§14)
 // =====================================================================
 
-/** Crée un contrat à partir d'un devis, avec commission figée à 15 % (§1, §19). */
+/** Crée un contrat à partir d'un devis — sans aucune commission GTEC (0 %). */
 export const createContractFromQuote = mutation({
   args: {
     quoteId: v.id("quotes"),
@@ -145,9 +151,11 @@ export const createContractFromQuote = mutation({
     }
     const reference = `GTEC-CTR-${year}-${seqNum}`;
 
-    // ===== Commission figée 15 % (§1, §19) =====
-    const commission = Math.round((args.amountHT * 15) / 100);
-    const net = args.amountHT - commission;
+    // ===== Modèle économique 2026 : commission GTEC PRO = 0 % =====
+    // Le professionnel conserve 100 % du montant HT convenu ; GTEC PRO ne
+    // prélève rien sur la prestation (revenus via abonnements uniquement).
+    const commission = 0;
+    const net = args.amountHT;
 
     const contractId = await ctx.db.insert("contracts", {
       reference,
@@ -163,8 +171,8 @@ export const createContractFromQuote = mutation({
       frequency: args.frequency,
       frequencyCustom: args.frequencyCustom,
       amountHT: args.amountHT,
-      commissionRatePercent: 15,
-      commissionAmount: commission,
+      commissionRatePercent: 0,
+      commissionAmount: 0,
       netAmount: net,
       currency: "FCFA",
       status: "en_attente",
@@ -174,23 +182,10 @@ export const createContractFromQuote = mutation({
       archived: false,
     });
 
-    // ===== Enregistrement de la commission (§19) =====
-    await ctx.db.insert("commissionRecords", {
-      requestId: quote.requestId,
-      quoteId: args.quoteId,
-      contractId,
-      clientId: args.clientId,
-      professionalId: args.professionalId,
-      baseAmount: args.amountHT,
-      ratePercent: 15,
-      amount: commission,
-      netAmount: net,
-      currency: "FCFA",
-      paymentStatus: "en_attente",
-      version: 1,
-    });
+    // Aucun commissionRecord : les commissions sur prestations sont
+    // supprimées du modèle économique (table conservée pour l'historique).
 
-    return { contractId, reference, commission, netAmount: net };
+    return { contractId, reference, commission: 0, netAmount: net };
   },
 });
 
